@@ -77,9 +77,6 @@ object ConfigLoader {
                 materialPackages = p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }
                     .getOrDefault("")
                     .let(::splitPackages),
-                materialForceOffscreen = p.runCatching {
-                    getBoolean(PrefKeys.MATERIAL_FORCE_OFFSCREEN, true)
-                }.getOrDefault(true),
             ).also {
                 if (!legacy.isNaN()) L.sampled("legacy") { "event=legacy_gap_dp_seen value=$legacy" }
             }
@@ -114,7 +111,6 @@ object ConfigLoader {
         val materialEnabled: Boolean,
         val materialForceAll: Boolean,
         val materialPackages: Set<String>,
-        val materialForceOffscreen: Boolean,
     ) {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
@@ -143,7 +139,6 @@ object ConfigLoader {
                 materialEnabled = false,
                 materialForceAll = false,
                 materialPackages = emptySet(),
-                materialForceOffscreen = true,
             )
         }
     }

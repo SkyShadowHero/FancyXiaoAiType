@@ -121,24 +121,6 @@ fun MaterialPage(
                 )
             }
         }
-
-        item { SmallTitle("透明度") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.materialForceOffscreen,
-                    onCheckedChange = { checked ->
-                        uiState.materialForceOffscreen = checked
-                        uiState.save { editor ->
-                            editor.putBoolean(PrefKeys.MATERIAL_FORCE_OFFSCREEN, checked)
-                        }
-                    },
-                    title = "强制离屏填充",
-                    summary = "修复「圆角有了但背景是实心」：按支持上报离屏填充能力，并直接补上窗口模糊标记",
-                    enabled = uiState.materialEnabled,
-                )
-            }
-        }
     }
 
     AppPickerDialog(

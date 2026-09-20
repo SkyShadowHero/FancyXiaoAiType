@@ -90,13 +90,4 @@ object PrefKeys {
      * RemotePreferences 的集合类型在跨进程同步上更容易出意外，字符串最稳且便于日志排查。
      */
     const val MATERIAL_PACKAGES = "material_packages"
-
-    /**
-     * 强制开启离屏填充。
-     *
-     * 目标应用把 `z7.a.f18746a`（= `persist.sys.advanced_visual_release >= 6`）当作
-     * 「支持离屏填充」的门。该门为假时不会调 `setMiBlurWinType`，模糊取不到背后内容，
-     * 结果就是「圆角有了但背景实心」。本机属性值为 5，所以默认打开强制。
-     */
-    const val MATERIAL_FORCE_OFFSCREEN = "material_force_offscreen"
 }

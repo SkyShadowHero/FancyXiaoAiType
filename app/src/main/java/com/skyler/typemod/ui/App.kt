@@ -44,7 +44,6 @@ class AppUiState {
     var materialEnabled by mutableStateOf(false)
     var materialForceAll by mutableStateOf(false)
     var materialPackages by mutableStateOf<Set<String>>(emptySet())
-    var materialForceOffscreen by mutableStateOf(true)
 
     /**
      * 是否已从远端把配置读进来。
@@ -158,7 +157,4 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.materialPackages = MaterialPackages.decode(
         p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }.getOrDefault("")
     )
-    uiState.materialForceOffscreen = p.runCatching {
-        getBoolean(PrefKeys.MATERIAL_FORCE_OFFSCREEN, true)
-    }.getOrDefault(true)
 }

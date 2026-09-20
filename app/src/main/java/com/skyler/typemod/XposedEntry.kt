@@ -410,7 +410,7 @@ class XposedEntry : XposedModule() {
                     }
                     if (view != null) {
                         val cfg = ConfigLoader.snapshot()
-                        if (cfg.materialEnabled && cfg.materialForceOffscreen) {
+                        if (cfg.materialEnabled) {
                             try {
                                 MaterialEnhancer.ensureOffscreenFill(view)
                             } catch (t: Throwable) {
@@ -431,7 +431,7 @@ class XposedEntry : XposedModule() {
      * 判断设备是否支持离屏填充，为假时不调 `setMiBlurWinType`，模糊就没有内容可采样。
      * 这里在该属性被读取时按配置上报 6。
      *
-     * 只在「启用超级材质」且未关闭强制开关时生效；其余情况原样透传，
+     * 只在「启用超级材质」时生效；其余情况原样透传，
      * 避免影响系统里其它读这个属性的代码。
      */
     private fun hookSystemPropertiesForMaterial(cl: ClassLoader): Int {
@@ -455,8 +455,7 @@ class XposedEntry : XposedModule() {
                 .intercept { chain ->
                     val key = chain.getArg(0) as? String
                     if (key == MaterialDiag.PROP_ADVANCED_VISUAL) {
-                        val cfg = ConfigLoader.snapshot()
-                        if (cfg.materialEnabled && cfg.materialForceOffscreen) {
+                        if (ConfigLoader.snapshot().materialEnabled) {
                             L.sampled("sysprop_force", limit = 4) {
                                 "event=sysprop_force key=$key -> ${MaterialDiag.FORCED_ADVANCED_VISUAL}"
                             }
