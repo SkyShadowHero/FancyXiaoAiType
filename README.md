@@ -255,6 +255,22 @@ app/src/main/
 
 ## 已知限制
 
+- **非白名单应用的「背景模糊」是框架限制，模块解决不了。**
+  键盘毛玻璃的本质是 MIUI 的**透过窗口模糊**（pass window blur）：输入法窗口要糊的是宿主应用窗口的画面，
+  而宿主窗口能否被穿透，由 system_server 侧的 **`PassWindowBlurFilterData`**（**云端下发**的名单）决定。
+  实测：
+  ```
+  host=com.android.quicksearchbox   hostWhitelisted=true    ← 原厂唯一放行的那个
+  host=tv.danmaku.bili              hostWhitelisted=false
+  ```
+  这正是原厂 `hyper_material_allowed_packages` 里只有 `com.android.quicksearchbox` 的原因 ——
+  那份名单是框架能力的镜像，不是产品选择。名单位于 `/system_ext/framework/miui-services.jar`（`android` 进程），
+  `framework-res.apk` / `services.jar` / 应用可改的任何位置都没有它。
+  分屏 / 小窗下之所以能糊，是因为那些排布下键盘上方是已注册 pass-blur 表面的另一层（如 launcher / 壁纸），
+  糊到的是「别的窗口」而不是当前宿主窗口。
+  **模块能给的**：圆角 + 半透明叠加（描述符中的混合色为 `0x80FFFFFF`，50% 白），
+  以及让原厂限定失效；**给不了的**：非白名单宿主的真实背景模糊。
+  诊断入口：`adb logcat -s TypeMod:* | grep pass_window_blur`。
 - **超级材质仅 `0.2.910` 可用**（依赖的 `bb.b0->j()` 与 `pc.m->L0(Iterable,Object)` 在更早版本不存在）。
 - **超级材质依赖系统能力**：`persist.sys.background_blur_supported` 必须为 `true`，且
   `Settings.Secure["background_blur_enable"]` 必须为 `1`；不满足时原厂自己也不会启用材质。
