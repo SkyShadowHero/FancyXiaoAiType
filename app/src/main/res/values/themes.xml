@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 与 miuix example/android 的 Theme.Miuix 保持一致：无 ActionBar 的 Material 主题 -->
+<resources>
+    <style name="Theme.Miuix" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

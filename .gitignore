@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# 本机 SDK 路径，不应提交
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# 生成的 APK / 混淆映射
+*.apk
+*.ap_
+*.dex
+mapping.txt
