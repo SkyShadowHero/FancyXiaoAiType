@@ -52,7 +52,7 @@ fun SettingsPage(
                         uiState.save { editor -> editor.putBoolean(PrefKeys.GAP_ENABLED, checked) }
                     },
                     title = "启用宽度调节",
-                    summary = "关闭后完全恢复原厂间隙",
+                    summary = "关闭后完全恢复默认间隙",
                 )
                 AnimatedVisibility(visible = uiState.gapEnabled) {
                     Column {
@@ -101,7 +101,7 @@ fun SettingsPage(
                         uiState.save { editor -> editor.putBoolean(PrefKeys.CORNER_ENABLED, checked) }
                     },
                     title = "启用圆角调节",
-                    summary = "统一调整按键与按键气泡的圆角；关闭则保持原厂",
+                    summary = "统一调整按键与按键气泡的圆角；关闭则保持默认",
                 )
                 AnimatedVisibility(visible = uiState.cornerEnabled) {
                     Column {

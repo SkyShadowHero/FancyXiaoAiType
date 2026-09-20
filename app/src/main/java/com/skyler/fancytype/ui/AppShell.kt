@@ -14,14 +14,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.skyler.fancytype.ImeRestarter
 import com.skyler.fancytype.L
 import com.skyler.fancytype.PrefKeys
-import com.skyler.fancytype.RemoteConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
@@ -207,19 +211,27 @@ private fun PageHost(
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     var showRestartDialog by remember { mutableStateOf(false) }
-    var restartPending by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    // 用 composition 作用域而不是 LaunchedEffect(key)：
+    // 之前把「进行中」标记当 key，在里面把它置回 false 会让 Compose 直接取消当前协程，
+    // withContext 在挂起点被中断，结果上报与 Snackbar 都走不到（实测重启生效了但没有任何提示）。
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(restartPending) {
-        if (!restartPending) return@LaunchedEffect
-        restartPending = false
+    fun startRestart() {
         L.i("event=restart_clicked")
-        val ok = RemoteConfig.requestImeRestart()
-        L.i("event=restart_write_result ok=$ok")
-        if (ok) {
-            snackbarHostState.showSnackbar("已发送重启请求：下次弹出键盘时生效", "请求成功")
-        } else {
-            snackbarHostState.showSnackbar("未连接到 LSPosed 框架，无法发送重启请求", "请求失败")
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { ImeRestarter.forceStop() }
+                    .getOrElse { ImeRestarter.Result.Failed(it.message ?: "未知错误") }
+            }
+            L.i("event=restart_result result=$result")
+            when (result) {
+                is ImeRestarter.Result.Killed ->
+                    snackbarHostState.showSnackbar("已关闭输入法，下次弹出键盘时自动重启", "重启成功")
+
+                is ImeRestarter.Result.Failed ->
+                    snackbarHostState.showSnackbar("重启失败：需要 root 授权（KernelSU）", "失败")
+            }
         }
     }
 
@@ -274,9 +286,8 @@ private fun PageHost(
     // （实测弹窗完全不出现）。WindowDialog 自带窗口层，跨页面可用，符合 Miuix 对全局弹窗的推荐。
     WindowDialog(
         show = showRestartDialog,
-        title = "重启输入法？",
-        summary = "即将强制关闭并重启「超级小爱输入法」进程。" +
-            "下次弹出键盘时生效，用于让改动（尤其是按键圆角这类构建期参数）完全应用。",
+        title = "重启超级小爱输入法？",
+        summary = "需要 root 授权；授权后立即从系统层面关闭该进程。",
         onDismissRequest = { showRestartDialog = false },
         content = {
             Row(horizontalArrangement = Arrangement.SpaceBetween) {
@@ -290,7 +301,7 @@ private fun PageHost(
                     text = "重启",
                     onClick = {
                         showRestartDialog = false
-                        restartPending = true
+                        startRestart()
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.textButtonColorsPrimary(),

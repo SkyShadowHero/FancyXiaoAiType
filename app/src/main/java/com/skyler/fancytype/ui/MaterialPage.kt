@@ -37,9 +37,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
- * 「超级材质」页：接管原厂「哪些应用能用毛玻璃键盘背景」的白名单判定。
+ * 「超级材质」页：接管默认「哪些应用能用毛玻璃键盘背景」的白名单判定。
  *
- * 原厂只有 `com.android.quicksearchbox` 在白名单里；本页可以把范围放开到
+ * 默认只有 `com.android.quicksearchbox` 在白名单里；本页可以把范围放开到
  * 「强制所有应用」或「手动勾选的一批应用」。
  *
  * 关掉总开关 / 打开强制全部时，下方依赖项**变灰**（保持布局稳定），
@@ -90,7 +90,7 @@ fun MaterialPage(
                         uiState.save { editor -> editor.putBoolean(PrefKeys.MATERIAL_ENABLED, checked) }
                     },
                     title = "启用超级材质",
-                    summary = "让键盘背景使用系统毛玻璃材质（原厂仅系统搜索可用）",
+                    summary = "让键盘背景使用系统毛玻璃材质（默认仅系统搜索可用）",
                 )
             }
         }
@@ -113,7 +113,7 @@ fun MaterialPage(
                     summary = when {
                         !uiState.materialEnabled -> "需先启用超级材质"
                         uiState.materialForceAll -> "已开启强制全部，此项不生效"
-                        pickedCount == 0 -> "未选择（保持原厂白名单）"
+                        pickedCount == 0 -> "未选择（保持默认白名单）"
                         else -> "已选择 $pickedCount 个应用"
                     },
                     onClick = { showPicker = true },

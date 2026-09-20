@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 功能 2：竖屏强制普通键盘。
  *
  * 仅在开关打开、且原值为 true（用户确实开着分离键盘）时才压为 false，
- * 保证「用户自己关掉分离键盘」的原厂语义不被破坏。
+ * 保证「用户自己关掉分离键盘」的默认语义不被破坏。
  */
 object PortraitGuard {
 

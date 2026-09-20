@@ -81,25 +81,4 @@ object RemoteConfig {
         L.e("event=write_failed", t)
         false
     }
-
-    /**
-     * 请求重启输入法：把计数器 +1 写入远端配置，Hook 侧下次键盘弹出时执行重启。
-     */
-    fun requestImeRestart(): Boolean = try {
-        val p = prefs()
-        if (p == null) {
-            L.w("event=restart_skipped reason=service_not_ready")
-            false
-        } else {
-            val next = p.getLong(PrefKeys.RESTART_SIGNAL, 0L) + 1L
-            val editor = p.edit()
-            editor.putLong(PrefKeys.RESTART_SIGNAL, next)
-            editor.apply()
-            L.i("event=restart_request_sent signal=$next")
-            true
-        }
-    } catch (t: Throwable) {
-        L.e("event=restart_request_failed", t)
-        false
-    }
 }

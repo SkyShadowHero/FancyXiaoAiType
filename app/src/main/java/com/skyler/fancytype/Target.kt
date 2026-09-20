@@ -33,7 +33,7 @@ object Target {
     // 注：分离键盘横屏间隙走 bb.h1.h() -> Resources.getDimension()，
     // 不经过 Compose 尺寸解析器 a.a.t，因此 Hook 点是 Resources 而非 a.a.t。
 
-    /** 原厂默认值（dip），用于 UI 提示与日志对照 */
+    /** 默认值（dip），用于 UI 提示与日志对照 */
     const val ORIGINAL_GAP_LAND_DP = 284f
     const val ORIGINAL_GAP_PORT_DP = 113f
 
@@ -51,19 +51,8 @@ object Target {
 
     val ALL_GAP_RES_IDS = LANDSCAPE_GAP_RES_IDS + PORTRAIT_GAP_RES_IDS
 
-    // ---- 输入法服务（用于「重启输入法」） ----
+    // ---- 输入法服务 ----
     const val CLS_IME_SERVICE = "com.mi.ime.MiInputMethodService"
-    const val M_IME_ON_WINDOW_SHOWN = "onWindowShown"
-
-    /**
-     * 轮询重启信号的挂载点：(方法名, 参数个数)。
-     * 多挂几个点，任何一次输入会话开始都会立刻检查信号，不必死等键盘弹出。
-     */
-    val IME_POLL_POINTS = arrayOf(
-        "onWindowShown" to 0,
-        "onStartInput" to 2,       // (EditorInfo, boolean)
-        "onStartInputView" to 2,   // (EditorInfo, boolean)
-    )
 
     /**
      * 资源名映射（用于运行时按名解析 ID）。
@@ -124,11 +113,39 @@ object Target {
 
     /**
      * 按键预览气泡（点击按键时弹出来的放大气泡）的圆角。
-     * 与按键圆角是两个独立参数：原厂键 8dp / 气泡 14dp。
+     * 与按键圆角是两个独立参数：默认键 8dp / 气泡 14dp。
      */
     const val RES_BUBBLE_CORNER = 0x7f0701e3        // key_preview_bubble_corner_radius = 14.0dip
     const val NAME_BUBBLE_CORNER = "key_preview_bubble_corner_radius"
     const val ORIGINAL_BUBBLE_CORNER_DP = 14f
+
+    /**
+     * 键盘外边距（离屏幕左/右/下的距离）。
+     *
+     * 同一类里手机版与平板版、以及按导航方式分的底部变体，实际只会命中其中一个，
+     * 不会叠加，所以**全部一起改**，不用逐机型判断。
+     */
+    val MARGIN_HORIZONTAL_NAMES = arrayOf(
+        "keyboard_container_horizontal_padding",
+        "keyboard_container_horizontal_padding_landscape",
+        "keyboard_container_horizontal_padding_pad_portrait",
+        "keyboard_container_horizontal_padding_q18_inner",
+        "pad_keyboard_container_horizontal_padding_landscape",
+        "pad_landscape_split_content_edge_padding",
+        "keyboard_padding_q18_outer_landscape",
+        "keyboard_padding_q18_outer_portrait",
+    )
+
+    val MARGIN_BOTTOM_NAMES = arrayOf(
+        "pad_keyboard_bottom_margin",
+        "keyboard_bottom_margin",
+        "keyboard_bottom_margin_gesture_no_bar",
+        "keyboard_bottom_margin_gesture_with_bar",
+        "keyboard_bottom_margin_three_button",
+        "keyboard_bottom_margin_with_bottom_view",
+    )
+
+    val MARGIN_NAMES = MARGIN_HORIZONTAL_NAMES + MARGIN_BOTTOM_NAMES
 
     /**
      * 按键圆角资源集合（统一改，不分横竖屏、不按角区分）。
@@ -139,7 +156,7 @@ object Target {
         RES_QWERTY_LAND_KEY_CORNER, RES_T9_LAND_KEY_CORNER,
     )
 
-    /** 原厂默认圆角（dip） */
+    /** 默认圆角（dip） */
     const val ORIGINAL_KEY_CORNER_DP = 8f
     const val ORIGINAL_KEY_LARGE_CORNER_DP = 22f
 
@@ -159,7 +176,7 @@ object Target {
 
     // ---- 超级材质（Hyper Material / 毛玻璃键盘背景）----
     //
-    // 原厂逻辑（bb.b0.j()）：
+    // 默认逻辑（bb.b0.j()）：
     //     map        = 解析 prefs["hyper_material_package_versions"]（缺失时由 allowed_packages 推导，值均为 1）
     //     linkedMap  = map 里 value <= 2 的项
     //     z10        = b0.s && pc.m.L0(linkedMap.keySet(), 当前前台包名)

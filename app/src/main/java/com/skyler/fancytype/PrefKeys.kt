@@ -17,12 +17,6 @@ object PrefKeys {
 
     const val PORTRAIT_FORCE_NORMAL = "portrait_force_normal"
 
-    /**
-     * 「重启输入法」信号：设置页写入一个自增计数，Hook 侧在键盘弹出前轮询，
-     * 发现比上次大就自杀，由系统重新拉起输入法（等效强制关闭 + 重启）。
-     */
-    const val RESTART_SIGNAL = "restart_signal"
-
     /** 主题模式（ThemeMode 序号），跨启动记忆 */
     const val THEME_MODE = "theme_mode"
 
@@ -30,7 +24,7 @@ object PrefKeys {
     const val CORNER_ENABLED = "corner_enabled"
     const val CORNER_DP = "corner_dp"
 
-    /** 按键预览气泡圆角（dip）。与按键圆角独立，原厂 14dp。 */
+    /** 按键预览气泡圆角（dip）。与按键圆角独立，默认 14dp。 */
     const val BUBBLE_CORNER_DP = "bubble_corner_dp"
 
     /** 圆角范围（dip） */
@@ -38,6 +32,18 @@ object PrefKeys {
     const val CORNER_MAX = 48f
     const val CORNER_DEFAULT = 8f
     const val BUBBLE_CORNER_DEFAULT = 14f
+
+    // ---- 键盘外边距（离屏幕左/右/下的距离，dip） ----
+    const val MARGIN_ENABLED = "margin_enabled"
+    const val MARGIN_HORIZONTAL_DP = "margin_horizontal_dp"
+    const val MARGIN_BOTTOM_DP = "margin_bottom_dp"
+
+    const val MARGIN_MIN = 0f
+    const val MARGIN_MAX = 80f
+
+    /** 默认参考值：平板横屏左右 25dp、底部 17dp */
+    const val MARGIN_HORIZONTAL_DEFAULT = 25f
+    const val MARGIN_BOTTOM_DEFAULT = 17f
 
     // ---- 按键间距 / 键高（二级「间距」页，横竖屏各一套） ----
     const val SPACE_ENABLED = "space_enabled"
@@ -54,12 +60,12 @@ object PrefKeys {
 
     /**
      * 按键高度上限（dip）。比横向/行间距高：
-     * 原厂键高就有 51.5dp，若沿用 40 的上限则「上限 6/10 = 24dp」的原厂值本身就会误报，
-     * 所以键高单独给 100dp，安全阈值 60dp，原厂值落在安全区内。
+     * 默认键高就有 51.5dp，若沿用 40 的上限则「上限 6/10 = 24dp」的默认值本身就会误报，
+     * 所以键高单独给 100dp，安全阈值 60dp，默认值落在安全区内。
      */
     const val SPACE_KEY_H_MAX = 100f
 
-    /** 原厂默认（dip） */
+    /** 默认（dip） */
     const val SPACE_KEY_H_LAND_DEFAULT = 51.5f
     const val SPACE_KEY_H_PORT_DEFAULT = 51.5f
     const val SPACE_KEY_HORIZ_LAND_DEFAULT = 8f
@@ -68,7 +74,7 @@ object PrefKeys {
     const val SPACE_ROW_PORT_DEFAULT = 10f
 
     /**
-     * 间隙范围（dip）。原厂横屏 284 / 竖屏 113。
+     * 间隙范围（dip）。默认横屏 284 / 竖屏 113。
      *
      * 上限不写死：按「对应朝向的屏幕宽度 × 0.9」动态计算
      * （横屏用长边、竖屏用短边），[GAP_MAX_FALLBACK] 仅作下限兜底。
@@ -76,7 +82,7 @@ object PrefKeys {
     const val GAP_MIN = 0f
     const val GAP_MAX_FALLBACK = 600f
 
-    /** 原厂默认值 */
+    /** 默认值 */
     const val GAP_DEFAULT_LAND = 284f
     const val GAP_DEFAULT_PORT = 113f
 

@@ -77,7 +77,7 @@ object MaterialEnhancer {
             }
             return
         }
-        // 同时确保「透过窗口模糊」是开着的（原厂门为假时 bb.b0 也不会走到这一步）
+        // 同时确保「透过窗口模糊」是开着的（默认门为假时 bb.b0 也不会走到这一步）
         runCatching {
             method("setPassWindowBlurEnabled", Boolean::class.javaPrimitiveType!!)?.invoke(view, true)
         }

@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 超级小爱输入法增强模块。
  *
  * 功能 1：调整分离键盘中心间隙（滑块）；间隙减小后两半更靠近屏幕中部。
- * 功能 2：竖屏强制普通键盘（开关，默认关闭 = 保持原厂行为）。
+ * 功能 2：竖屏强制普通键盘（开关，默认关闭 = 保持默认行为）。
  * 功能 3：按键圆角 / 键高 / 键距（横竖屏分设）。
  * 功能 4：设置页右上角「强制关闭输入法」——写入重启信号，本进程在键盘再次弹出时自杀重启。
  * 功能 5：超级材质——接管「哪些应用能用毛玻璃键盘背景」的判定，支持强制全部 / 手动选择。
@@ -48,7 +48,6 @@ class XposedEntry : XposedModule() {
         ok += hookPadSplitDims(cl)
         ok += hookSplitEnabledGetter(cl)
         ok += hookPrefBool(cl)
-        ok += hookRestartSignal(cl)
         ok += hookMaterial(cl)
         // 顺序要紧：先把属性 Hook 装好，再做诊断。
         // 诊断会读 z7.a 的静态字段，那一步会触发它的 <clinit>，
@@ -126,6 +125,20 @@ class XposedEntry : XposedModule() {
             }
         }
         L.i("event=resid_resolved by_name=$ok/${Target.RES_NAMES.size}")
+
+        // 外边距资源名一并登记进 nameToId：解析不到就留 0，覆写判定靠 idIn 比较，
+        // 而资源 ID 不可能是 0，所以不会误命中。
+        var marginOk = 0
+        for (name in Target.MARGIN_NAMES) {
+            val id = try {
+                res.getIdentifier(name, "dimen", Target.PACKAGE)
+            } catch (t: Throwable) {
+                0
+            }
+            nameToId[name] = id
+            if (id != 0) marginOk++
+        }
+        L.i("event=margin_resolved by_name=$marginOk/${Target.MARGIN_NAMES.size}")
     }
 
     /** 该资源 ID 是否属于某个名字集合 */
@@ -144,6 +157,9 @@ class XposedEntry : XposedModule() {
         idIn(resId, Target.GAP_PORT_NAMES) -> if (cfg.gapEnabled) cfg.gapPort else null
         idIn(resId, Target.CORNER_NAMES) -> if (cfg.cornerEnabled) cfg.cornerDp else null
         resId == nameToId[Target.NAME_BUBBLE_CORNER] -> if (cfg.cornerEnabled) cfg.bubbleCornerDp else null
+
+        idIn(resId, Target.MARGIN_HORIZONTAL_NAMES) -> if (cfg.marginEnabled) cfg.marginHorizontalDp else null
+        idIn(resId, Target.MARGIN_BOTTOM_NAMES) -> if (cfg.marginEnabled) cfg.marginBottomDp else null
 
         resId == nameToId[Target.NAME_KEY_HEIGHT_LAND] -> if (cfg.spaceEnabled) cfg.spaceKeyHLand else null
         resId == nameToId[Target.NAME_KEY_HEIGHT_PORT] -> if (cfg.spaceEnabled) cfg.spaceKeyHPort else null
@@ -292,38 +308,6 @@ class XposedEntry : XposedModule() {
     }
 
     /**
-     * 「重启输入法」：在多个输入法生命周期点轮询信号，被请求则自杀，由系统重新拉起。
-     *
-     * 挂多个点是为了「更直接」：只挂 onWindowShown 时，必须等键盘再次弹出才检查；
-     * 多挂 onStartInput / onStartInputView 后，任何一次输入会话开始都会立刻检查。
-     * 注意：真正的「杀进程」只能由输入法进程自己执行（模块 App 无权限杀别人，
-     * 即便 Process.killProcess(myPid()) 杀的也是自己），所以必须走这条信号+轮询路径。
-     */
-    private fun hookRestartSignal(cl: ClassLoader): Int {
-        val cls = loadClass(cl, Target.CLS_IME_SERVICE) ?: return 0
-        // 先把「配置里已有的信号」记为基线，否则残留的旧信号会让新进程启动即自杀
-        RestartSignal.initBaseline()
-        var ok = 0
-        for ((methodName, arity) in Target.IME_POLL_POINTS) {
-            val m = findMethodByArity(cls, methodName, arity) ?: continue
-            try {
-                hook(m)
-                    .setId("ime_poll_$methodName")
-                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                    .intercept { chain ->
-                        val r = chain.proceed()
-                        RestartSignal.poll()
-                        r
-                    }
-                ok++
-            } catch (t: Throwable) {
-                L.e("event=hook_failed target=$methodName", t)
-            }
-        }
-        return ok
-    }
-
-    /**
      * 超级材质：把「哪些应用能用毛玻璃键盘背景」的判定接管过来。
      *
      * 先挂 `bb.b0.j()`（只为把拦截范围收紧到它内部，不改它的行为），
@@ -388,7 +372,7 @@ class XposedEntry : XposedModule() {
      * 材质描述符应用入口 `xe.b.a(View, xe.e)`。
      *
      * 1) 观测：把描述符里的模糊参数 / 混合色打出来（采样限流），便于核对材质是否真的带上模糊。
-     * 2) 修正：描述符应用完后，补上离屏填充标记 —— 原厂因为
+     * 2) 修正：描述符应用完后，补上离屏填充标记 —— 默认因为
      *    `persist.sys.advanced_visual_release` 只有 5 而跳过了这一步，
      *    导致模糊采不到窗口背后的内容，看着是实色。这里直接补，拨开关即时生效。
      */

@@ -57,13 +57,13 @@ object MaterialGate {
     private fun insideHelper(): Boolean = !helperHooked || current() > 0
 
     /**
-     * @return true/false 表示覆写判定结果；null 表示「不干预，走原厂逻辑」。
+     * @return true/false 表示覆写判定结果；null 表示「不干预，走默认逻辑」。
      */
     fun decide(iterable: Any?, candidate: Any?): Boolean? {
         val pkg = candidate as? String ?: return null
         if (pkg.isEmpty()) return null
         // 只有 bb.b0.j() 里那个 LinkedHashMap 的 keySet 才是材质总门；
-        // force_dark / force_light 用的是别的集合，交给原厂。
+        // force_dark / force_light 用的是别的集合，交给默认实现。
         if (iterable == null || iterable.javaClass.name != Target.MATERIAL_GATE_SET_CLASS) return null
         if (!insideHelper()) return null
 
@@ -76,7 +76,7 @@ object MaterialGate {
             "event=material_gate pkg=$pkg forceAll=${cfg.materialForceAll} " +
                 "picked=${cfg.materialPackages.size} allowed=$allowed"
         }
-        // 命中就给 true；没命中返回 null，让原厂白名单（如 com.android.quicksearchbox）继续生效
+        // 命中就给 true；没命中返回 null，让默认白名单（如 com.android.quicksearchbox）继续生效
         return if (allowed) true else null
     }
 }

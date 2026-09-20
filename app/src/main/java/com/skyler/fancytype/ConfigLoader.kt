@@ -58,6 +58,14 @@ object ConfigLoader {
                 bubbleCornerDp = p.runCatching {
                     getFloat(PrefKeys.BUBBLE_CORNER_DP, PrefKeys.BUBBLE_CORNER_DEFAULT)
                 }.getOrDefault(PrefKeys.BUBBLE_CORNER_DEFAULT),
+                marginEnabled = p.runCatching { getBoolean(PrefKeys.MARGIN_ENABLED, false) }
+                    .getOrDefault(false),
+                marginHorizontalDp = p.runCatching {
+                    getFloat(PrefKeys.MARGIN_HORIZONTAL_DP, PrefKeys.MARGIN_HORIZONTAL_DEFAULT)
+                }.getOrDefault(PrefKeys.MARGIN_HORIZONTAL_DEFAULT),
+                marginBottomDp = p.runCatching {
+                    getFloat(PrefKeys.MARGIN_BOTTOM_DP, PrefKeys.MARGIN_BOTTOM_DEFAULT)
+                }.getOrDefault(PrefKeys.MARGIN_BOTTOM_DEFAULT),
                 spaceEnabled = p.runCatching { getBoolean(PrefKeys.SPACE_ENABLED, false) }.getOrDefault(false),
                 spaceKeyHLand = p.runCatching { getFloat(PrefKeys.SPACE_KEY_H_LAND, PrefKeys.SPACE_KEY_H_LAND_DEFAULT) }
                     .getOrDefault(PrefKeys.SPACE_KEY_H_LAND_DEFAULT),
@@ -104,6 +112,10 @@ object ConfigLoader {
         val cornerDp: Float,
         /** 按键预览气泡圆角（dip） */
         val bubbleCornerDp: Float,
+        // ---- 键盘外边距（离屏幕左/右/下的距离，dip） ----
+        val marginEnabled: Boolean,
+        val marginHorizontalDp: Float,
+        val marginBottomDp: Float,
         // ---- 按键间距 / 键高（横竖屏各一套） ----
         val spaceEnabled: Boolean,
         val spaceKeyHLand: Float,
@@ -135,6 +147,9 @@ object ConfigLoader {
                 cornerEnabled = false,
                 cornerDp = PrefKeys.CORNER_DEFAULT,
                 bubbleCornerDp = PrefKeys.BUBBLE_CORNER_DEFAULT,
+                marginEnabled = false,
+                marginHorizontalDp = PrefKeys.MARGIN_HORIZONTAL_DEFAULT,
+                marginBottomDp = PrefKeys.MARGIN_BOTTOM_DEFAULT,
                 spaceEnabled = false,
                 spaceKeyHLand = PrefKeys.SPACE_KEY_H_LAND_DEFAULT,
                 spaceKeyHPort = PrefKeys.SPACE_KEY_H_PORT_DEFAULT,

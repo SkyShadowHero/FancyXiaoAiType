@@ -33,6 +33,11 @@ class AppUiState {
     var cornerDp by mutableStateOf(8f)
     var bubbleCornerDp by mutableStateOf(PrefKeys.BUBBLE_CORNER_DEFAULT)
 
+    // ---- 键盘外边距 ----
+    var marginEnabled by mutableStateOf(false)
+    var marginHorizontalDp by mutableStateOf(PrefKeys.MARGIN_HORIZONTAL_DEFAULT)
+    var marginBottomDp by mutableStateOf(PrefKeys.MARGIN_BOTTOM_DEFAULT)
+
     var spaceEnabled by mutableStateOf(false)
     var spaceKeyHLand by mutableStateOf(51.5f)
     var spaceKeyHPort by mutableStateOf(51.5f)
@@ -134,6 +139,13 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.bubbleCornerDp = p.runCatching {
         getFloat(PrefKeys.BUBBLE_CORNER_DP, PrefKeys.BUBBLE_CORNER_DEFAULT)
     }.getOrDefault(PrefKeys.BUBBLE_CORNER_DEFAULT)
+    uiState.marginEnabled = p.runCatching { getBoolean(PrefKeys.MARGIN_ENABLED, false) }.getOrDefault(false)
+    uiState.marginHorizontalDp = p.runCatching {
+        getFloat(PrefKeys.MARGIN_HORIZONTAL_DP, PrefKeys.MARGIN_HORIZONTAL_DEFAULT)
+    }.getOrDefault(PrefKeys.MARGIN_HORIZONTAL_DEFAULT)
+    uiState.marginBottomDp = p.runCatching {
+        getFloat(PrefKeys.MARGIN_BOTTOM_DP, PrefKeys.MARGIN_BOTTOM_DEFAULT)
+    }.getOrDefault(PrefKeys.MARGIN_BOTTOM_DEFAULT)
 
     uiState.spaceEnabled = p.runCatching { getBoolean(PrefKeys.SPACE_ENABLED, false) }.getOrDefault(false)
     uiState.spaceKeyHLand = p.runCatching { getFloat(PrefKeys.SPACE_KEY_H_LAND, PrefKeys.SPACE_KEY_H_LAND_DEFAULT) }
