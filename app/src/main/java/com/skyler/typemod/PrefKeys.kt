@@ -48,6 +48,13 @@ object PrefKeys {
     const val SPACE_MIN = 0f
     const val SPACE_MAX = 40f
 
+    /**
+     * 按键高度上限（dip）。比横向/行间距高：
+     * 原厂键高就有 51.5dp，若沿用 40 的上限则「上限 6/10 = 24dp」的原厂值本身就会误报，
+     * 所以键高单独给 100dp，安全阈值 60dp，原厂值落在安全区内。
+     */
+    const val SPACE_KEY_H_MAX = 100f
+
     /** 原厂默认（dip） */
     const val SPACE_KEY_H_LAND_DEFAULT = 51.5f
     const val SPACE_KEY_H_PORT_DEFAULT = 51.5f
@@ -71,4 +78,25 @@ object PrefKeys {
 
     /** 动态上限占对应屏幕宽度的比例 */
     const val GAP_MAX_RATIO = 0.9f
+
+    // ---- 超级材质（放行 Hyper Material 毛玻璃键盘背景） ----
+    const val MATERIAL_ENABLED = "material_enabled"
+
+    /** 强制所有应用：不看清单，任何前台应用弹出键盘都启用材质 */
+    const val MATERIAL_FORCE_ALL = "material_force_all"
+
+    /**
+     * 手动选择的应用。存成换行分隔的字符串而不是 StringSet：
+     * RemotePreferences 的集合类型在跨进程同步上更容易出意外，字符串最稳且便于日志排查。
+     */
+    const val MATERIAL_PACKAGES = "material_packages"
+
+    /**
+     * 强制开启离屏填充。
+     *
+     * 目标应用把 `z7.a.f18746a`（= `persist.sys.advanced_visual_release >= 6`）当作
+     * 「支持离屏填充」的门。该门为假时不会调 `setMiBlurWinType`，模糊取不到背后内容，
+     * 结果就是「圆角有了但背景实心」。本机属性值为 5，所以默认打开强制。
+     */
+    const val MATERIAL_FORCE_OFFSCREEN = "material_force_offscreen"
 }

@@ -147,4 +147,75 @@ object Target {
         RES_KEY_SPACING_LAND, RES_KEY_SPACING_PORT,
         RES_ROW_SPACING_LAND, RES_ROW_SPACING_PORT,
     )
+
+    // ---- 超级材质（Hyper Material / 毛玻璃键盘背景）----
+    //
+    // 原厂逻辑（bb.b0.j()）：
+    //     map        = 解析 prefs["hyper_material_package_versions"]（缺失时由 allowed_packages 推导，值均为 1）
+    //     linkedMap  = map 里 value <= 2 的项
+    //     z10        = b0.s && pc.m.L0(linkedMap.keySet(), 当前前台包名)
+    //     enable     = z10
+    //     dark       = force_dark 命中包名（或内部标志）
+    //     light      = !dark && z10 && force_light 命中包名
+    //
+    // 其中 b0.s = xe.b.c() && xe.b.b(service)：
+    //     c() = SystemProperties["persist.sys.background_blur_supported"]
+    //     b() = Secure["background_blur_enable"] == 1
+    // 本机两者均为 true，所以唯一的门就是 pc.m.L0(...)。
+    //
+    // 设备实测 prefs 里只有 com.android.quicksearchbox 在白名单，且
+    // hyper_material_package_versions **不存在**，因此 map 由 allowed_packages 推导。
+    // Hook 选择「判定入口」pc.m.L0 而不是改 prefs：这样无论云端后续如何覆写
+    // allowed_packages / package_versions，放行结果都由本模块决定。
+
+    /** 集合包含判定的工具类：public static boolean L0(Iterable, Object) */
+    const val CLS_COLLECTIONS_UTIL = "pc.m"
+    const val M_CONTAINS = "L0"
+
+    /** 材质状态机的宿主，用于把拦截范围限制在它自己的判定里 */
+    const val CLS_MATERIAL_HELPER = "bb.b0"
+    const val M_MATERIAL_APPLY = "j"
+
+    /**
+     * `pc.m.L0` 的第一个参数在材质判定里始终是 `bb.b0.j()` 内部
+     * `new LinkedHashMap()` 的 keySet，jar 里的类名就是这个（稳定，不含混淆编号）。
+     */
+    const val MATERIAL_GATE_SET_CLASS = "java.util.LinkedHashMap\$LinkedKeySet"
+
+    // 目标应用自身的材质配置键（只读，用于诊断日志）
+    const val KEY_MATERIAL_ALLOWED = "hyper_material_allowed_packages"
+    const val KEY_MATERIAL_FORCE_DARK = "hyper_material_force_dark"
+    const val KEY_MATERIAL_FORCE_LIGHT = "hyper_material_force_light"
+    const val KEY_MATERIAL_VERSIONS = "hyper_material_package_versions"
+
+    // ---- 材质「透明度」链路（诊断 + 修正）----
+
+    /**
+     * 离屏填充能力门：`z7.a.f18746a`。
+     * 为 false 时 `bb.b0` 不会调 `setMiBlurWinType`，模糊拿不到背后的内容 → 背景看着是实心。
+     */
+    const val CLS_ADVANCED_VISUAL_GATE = "z7.a"
+    const val F_SUPPORTS_OFFSCREEN_FILL = "f18746a"
+
+    /** 模糊能力位所在类 `xe.b` 的静态字段 */
+    const val CLS_BLUR_GATE = "xe.b"
+    const val F_BLUR_SUPPORTED = "f18279a"       // persist.sys.background_blur_supported
+    const val F_BLUR_VERSION = "f18281d"         // persist.sys.advanced_visual_release / background_blur_version
+    const val F_BLUR_STATUS_DEFAULT = "f18280c"  // persist.sys.background_blur_status_default
+    const val F_BIONIC_MATERIAL = "b"            // persist.sys.bionic_material_supported
+
+    /** 材质描述符 `xe.e` 的字段 */
+    const val F_DESC_BLEND = "f18303a"   // w5.i 混合色
+    const val F_DESC_BLUR = "f18304c"    // d 模糊参数
+    const val F_DESC_INNER = "f18305d"   // i3.h 内阴影
+    const val F_DESC_CORNER = "f18306e"  // c 描边/圆角
+
+    /** `d` 模糊参数里的字段 */
+    const val F_BLUR_MODE = "f18298a"
+    const val F_BLUR_RADIUS = "f18300d"
+    const val F_BLUR_TYPE = "f18299c"
+
+    /** 材质描述符应用入口：`xe.b.a(View, xe.e)` */
+    const val CLS_MATERIAL_APPLIER = "xe.b"
+    const val M_APPLY_MATERIAL = "a"
 }

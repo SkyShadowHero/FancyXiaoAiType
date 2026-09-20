@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import com.skyler.typemod.MaterialPackages
 import com.skyler.typemod.PrefKeys
 import com.skyler.typemod.RemoteConfig
 import kotlinx.coroutines.delay
@@ -38,6 +39,12 @@ class AppUiState {
     var spaceKeyHorizPort by mutableStateOf(8f)
     var spaceRowLand by mutableStateOf(10f)
     var spaceRowPort by mutableStateOf(10f)
+
+    // ---- 超级材质 ----
+    var materialEnabled by mutableStateOf(false)
+    var materialForceAll by mutableStateOf(false)
+    var materialPackages by mutableStateOf<Set<String>>(emptySet())
+    var materialForceOffscreen by mutableStateOf(true)
 
     /**
      * 是否已从远端把配置读进来。
@@ -143,4 +150,15 @@ private fun loadConfigInto(uiState: AppUiState) {
 
     uiState.themeMode = p.runCatching { getInt(PrefKeys.THEME_MODE, 0) }.getOrDefault(0)
         .coerceIn(0, ThemeMode.entries.size - 1)
+
+    uiState.materialEnabled = p.runCatching { getBoolean(PrefKeys.MATERIAL_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.materialForceAll = p.runCatching { getBoolean(PrefKeys.MATERIAL_FORCE_ALL, false) }
+        .getOrDefault(false)
+    uiState.materialPackages = MaterialPackages.decode(
+        p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }.getOrDefault("")
+    )
+    uiState.materialForceOffscreen = p.runCatching {
+        getBoolean(PrefKeys.MATERIAL_FORCE_OFFSCREEN, true)
+    }.getOrDefault(true)
 }

@@ -7,11 +7,13 @@ import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 超级小爱输入法「分离键盘」增强模块。
+ * 超级小爱输入法增强模块。
  *
  * 功能 1：调整分离键盘中心间隙（滑块）；间隙减小后两半更靠近屏幕中部。
  * 功能 2：竖屏强制普通键盘（开关，默认关闭 = 保持原厂行为）。
- * 功能 3：设置页右上角「强制关闭输入法」——写入重启信号，本进程在键盘再次弹出时自杀重启。
+ * 功能 3：按键圆角 / 键高 / 键距（横竖屏分设）。
+ * 功能 4：设置页右上角「强制关闭输入法」——写入重启信号，本进程在键盘再次弹出时自杀重启。
+ * 功能 5：超级材质——接管「哪些应用能用毛玻璃键盘背景」的判定，支持强制全部 / 手动选择。
  *
  * Hook 策略：改「读取入口」而非改磁盘/资源，避免缓存与落盘副作用。
  */
@@ -47,6 +49,12 @@ class XposedEntry : XposedModule() {
         ok += hookSplitEnabledGetter(cl)
         ok += hookPrefBool(cl)
         ok += hookRestartSignal(cl)
+        ok += hookMaterial(cl)
+        // 顺序要紧：先把属性 Hook 装好，再做诊断。
+        // 诊断会读 z7.a 的静态字段，那一步会触发它的 <clinit>，
+        // 一旦在 Hook 之前触发，离屏填充门就被永久算成 false 了。
+        ok += hookSystemPropertiesForMaterial(cl)
+        ok += hookMaterialDiagnostics(cl)
         L.i("event=install_done hooks=$ok process=$processName")
         if (ok == 0) installed.set(false)
     }
@@ -312,6 +320,155 @@ class XposedEntry : XposedModule() {
             }
         }
         return ok
+    }
+
+    /**
+     * 超级材质：把「哪些应用能用毛玻璃键盘背景」的判定接管过来。
+     *
+     * 先挂 `bb.b0.j()`（只为把拦截范围收紧到它内部，不改它的行为），
+     * 再挂 `pc.m.L0(Iterable, Object)` 做真正的放行判定。
+     * 即使 `bb.b0.j()` 挂不上，判定仍靠集合类名生效，只是范围略宽 —— 会降级但不会失效。
+     */
+    private fun hookMaterial(cl: ClassLoader): Int {
+        var ok = 0
+
+        // 1) 范围锚点：bb.b0.j()
+        val helperCls = loadClass(cl, Target.CLS_MATERIAL_HELPER)
+        val applyMethod = findMethodByArity(helperCls, Target.M_MATERIAL_APPLY, 0) {
+            it.returnType == Void.TYPE
+        }
+        if (applyMethod != null) {
+            try {
+                hook(applyMethod)
+                    .setId("material_apply")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept { chain ->
+                        MaterialGate.enterHelper()
+                        try {
+                            chain.proceed()
+                        } finally {
+                            MaterialGate.exitHelper()
+                        }
+                    }
+                MaterialGate.helperHooked = true
+                ok++
+            } catch (t: Throwable) {
+                L.e("event=hook_failed target=material_apply", t)
+            }
+        }
+
+        // 2) 判定入口：pc.m.L0(Iterable, Object)
+        val utilCls = loadClass(cl, Target.CLS_COLLECTIONS_UTIL) ?: return ok
+        val contains = findMethodByArity(utilCls, Target.M_CONTAINS, 2) {
+            it.returnType == Boolean::class.javaPrimitiveType &&
+                it.parameterTypes[1] == Any::class.java
+        } ?: return ok
+        return try {
+            hook(contains)
+                .setId("material_contains")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val decision = try {
+                        MaterialGate.decide(chain.getArg(0), chain.getArg(1))
+                    } catch (t: Throwable) {
+                        L.e("event=material_decide_failed", t)
+                        null
+                    }
+                    decision ?: chain.proceed()
+                }
+            ok + 1
+        } catch (t: Throwable) {
+            L.e("event=hook_failed target=material_contains", t)
+            ok
+        }
+    }
+
+    /**
+     * 材质描述符应用入口 `xe.b.a(View, xe.e)`。
+     *
+     * 1) 观测：把描述符里的模糊参数 / 混合色打出来（采样限流），便于核对材质是否真的带上模糊。
+     * 2) 修正：描述符应用完后，补上离屏填充标记 —— 原厂因为
+     *    `persist.sys.advanced_visual_release` 只有 5 而跳过了这一步，
+     *    导致模糊采不到窗口背后的内容，看着是实色。这里直接补，拨开关即时生效。
+     */
+    private fun hookMaterialDiagnostics(cl: ClassLoader): Int {
+        MaterialDiag.logEnvironment(cl)
+        MaterialEnhancer.probe()
+        val cls = loadClass(cl, Target.CLS_MATERIAL_APPLIER) ?: return 0
+        val apply = findMethodByArity(cls, Target.M_APPLY_MATERIAL, 2) {
+            it.returnType == Void.TYPE && it.parameterTypes[0] == android.view.View::class.java
+        } ?: return 0
+        return try {
+            hook(apply)
+                .setId("material_apply_effect")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val view = chain.getArg(0) as? android.view.View
+                    val result = chain.proceed()
+                    L.sampled("material_desc", limit = 12) {
+                        "event=material_desc ${MaterialDiag.describe(chain.getArg(1))}"
+                    }
+                    if (view != null) {
+                        val cfg = ConfigLoader.snapshot()
+                        if (cfg.materialEnabled && cfg.materialForceOffscreen) {
+                            try {
+                                MaterialEnhancer.ensureOffscreenFill(view)
+                            } catch (t: Throwable) {
+                                L.e("event=offscreen_fill_failed", t)
+                            }
+                        }
+                    }
+                    result
+                }
+            1
+        } catch (t: Throwable) {
+            L.e("event=hook_failed target=material_apply_effect", t); 0
+        }
+    }
+
+    /**
+     * 修正「背景不透明」：`z7.a` 用 `persist.sys.advanced_visual_release >= 6`
+     * 判断设备是否支持离屏填充，为假时不调 `setMiBlurWinType`，模糊就没有内容可采样。
+     * 这里在该属性被读取时按配置上报 6。
+     *
+     * 只在「启用超级材质」且未关闭强制开关时生效；其余情况原样透传，
+     * 避免影响系统里其它读这个属性的代码。
+     */
+    private fun hookSystemPropertiesForMaterial(cl: ClassLoader): Int {
+        val cls = try {
+            Class.forName("android.os.SystemProperties", false, cl)
+        } catch (t: Throwable) {
+            L.w("event=sysprop_missing")
+            return 0
+        }
+        val get = try {
+            cls.getDeclaredMethod("get", String::class.java, String::class.java)
+                .also { it.isAccessible = true }
+        } catch (t: Throwable) {
+            L.e("event=hook_failed target=sysprop_get", t)
+            return 0
+        }
+        return try {
+            hook(get)
+                .setId("material_sysprop")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val key = chain.getArg(0) as? String
+                    if (key == MaterialDiag.PROP_ADVANCED_VISUAL) {
+                        val cfg = ConfigLoader.snapshot()
+                        if (cfg.materialEnabled && cfg.materialForceOffscreen) {
+                            L.sampled("sysprop_force", limit = 4) {
+                                "event=sysprop_force key=$key -> ${MaterialDiag.FORCED_ADVANCED_VISUAL}"
+                            }
+                            return@intercept MaterialDiag.FORCED_ADVANCED_VISUAL
+                        }
+                    }
+                    chain.proceed()
+                }
+            1
+        } catch (t: Throwable) {
+            L.e("event=hook_failed target=sysprop_get", t); 0
+        }
     }
 }
 

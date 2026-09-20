@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SplitKeyboardTuner"
+rootProject.name = "XiaoAiTypeMod"
 include(":app")

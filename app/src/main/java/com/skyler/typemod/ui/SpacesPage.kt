@@ -19,7 +19,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
  * 二级页「间距」：按键高度 / 键横向间距 / 行间距，横竖屏各一套。
  *
  * 关掉总开关时依赖项**变灰**（保持布局稳定）。全部走同一个尺寸覆写通道，改动实时生效。
- * 超过上限 6/10 时给出「可能破坏布局」的警告（卡片内文字 + 一次性 Snackbar）。
+ * 超过「该项上限的 6/10」时由 AppShell 统一弹出尺寸过大警告（与键盘间隙同一套判定与弹窗）。
  */
 @Composable
 fun SpacesPage(
@@ -27,14 +27,6 @@ fun SpacesPage(
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
-    // 卡片内的静态风险说明（具体数值由上层在跨阈值时弹窗提示）
-    val warnThreshold = PrefKeys.SPACE_MAX * SpaceWarning.THRESHOLD_RATIO
-    val tooLarge = uiState.spaceEnabled && listOf(
-        uiState.spaceKeyHLand, uiState.spaceKeyHPort,
-        uiState.spaceKeyHorizLand, uiState.spaceKeyHorizPort,
-        uiState.spaceRowLand, uiState.spaceRowPort,
-    ).any { it > warnThreshold }
-
     LazyColumn(
         modifier = Modifier.padding(padding),
         contentPadding = PaddingValues(
@@ -70,7 +62,7 @@ fun SpacesPage(
                             uiState.save { e -> e.putFloat(PrefKeys.SPACE_KEY_H_LAND, uiState.spaceKeyHLand) }
                         }
                     },
-                    valueRange = PrefKeys.SPACE_MIN..(PrefKeys.SPACE_MAX + 40f),
+                    valueRange = PrefKeys.SPACE_MIN..PrefKeys.SPACE_KEY_H_MAX,
                     keyPoints = listOf(PrefKeys.SPACE_KEY_H_LAND_DEFAULT),
                     showKeyPoints = true,
                     title = "按键高度",
@@ -126,7 +118,7 @@ fun SpacesPage(
                             uiState.save { e -> e.putFloat(PrefKeys.SPACE_KEY_H_PORT, uiState.spaceKeyHPort) }
                         }
                     },
-                    valueRange = PrefKeys.SPACE_MIN..(PrefKeys.SPACE_MAX + 40f),
+                    valueRange = PrefKeys.SPACE_MIN..PrefKeys.SPACE_KEY_H_MAX,
                     keyPoints = listOf(PrefKeys.SPACE_KEY_H_PORT_DEFAULT),
                     showKeyPoints = true,
                     title = "按键高度",

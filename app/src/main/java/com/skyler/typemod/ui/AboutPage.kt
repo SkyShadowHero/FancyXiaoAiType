@@ -1,7 +1,6 @@
 package com.skyler.typemod.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,10 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.skyler.typemod.PrefKeys
-import com.skyler.typemod.Target
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
@@ -21,7 +18,7 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 private const val REPO_URL = "https://github.com/SkyShadowHero/XiaoAiTypeMod"
 
 /**
- * 「关于」页：外观 + 目标应用信息 + 项目仓库。
+ * 「关于」页：外观 + 项目仓库。
  */
 @Composable
 fun AboutPage(
@@ -54,20 +51,6 @@ fun AboutPage(
                         uiState.save { editor -> editor.putInt(PrefKeys.THEME_MODE, index) }
                     },
                 )
-            }
-        }
-
-        item { SmallTitle("目标应用") }
-        item {
-            Card {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text("应用：超级小爱输入法")
-                    Text("包名：${Target.PACKAGE}")
-                    Text("适配版本：${Target.VERSION_NAME} (${Target.VERSION_CODE})")
-                }
             }
         }
 

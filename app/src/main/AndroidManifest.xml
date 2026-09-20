@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      「超级材质」页需要列出可启动的应用供用户勾选。
+      这里用 <queries> 声明可见性，而不是申请 QUERY_ALL_PACKAGES：
+      只需要「有启动入口的应用」，范围刚好够用，也不会拿到一堆无关的系统包。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TunerApp"
         android:allowBackup="false"

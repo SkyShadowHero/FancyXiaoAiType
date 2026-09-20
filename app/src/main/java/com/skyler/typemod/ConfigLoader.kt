@@ -70,6 +70,16 @@ object ConfigLoader {
                     .getOrDefault(PrefKeys.SPACE_ROW_LAND_DEFAULT),
                 spaceRowPort = p.runCatching { getFloat(PrefKeys.SPACE_ROW_PORT, PrefKeys.SPACE_ROW_PORT_DEFAULT) }
                     .getOrDefault(PrefKeys.SPACE_ROW_PORT_DEFAULT),
+                materialEnabled = p.runCatching { getBoolean(PrefKeys.MATERIAL_ENABLED, false) }
+                    .getOrDefault(false),
+                materialForceAll = p.runCatching { getBoolean(PrefKeys.MATERIAL_FORCE_ALL, false) }
+                    .getOrDefault(false),
+                materialPackages = p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }
+                    .getOrDefault("")
+                    .let(::splitPackages),
+                materialForceOffscreen = p.runCatching {
+                    getBoolean(PrefKeys.MATERIAL_FORCE_OFFSCREEN, true)
+                }.getOrDefault(true),
             ).also {
                 if (!legacy.isNaN()) L.sampled("legacy") { "event=legacy_gap_dp_seen value=$legacy" }
             }
@@ -100,9 +110,20 @@ object ConfigLoader {
         val spaceKeyHorizPort: Float,
         val spaceRowLand: Float,
         val spaceRowPort: Float,
+        // ---- 超级材质 ----
+        val materialEnabled: Boolean,
+        val materialForceAll: Boolean,
+        val materialPackages: Set<String>,
+        val materialForceOffscreen: Boolean,
     ) {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
+
+        /** 该前台应用是否应当放行超级材质 */
+        fun materialAllowedFor(pkg: String?): Boolean {
+            if (!materialEnabled || pkg.isNullOrEmpty()) return false
+            return materialForceAll || materialPackages.contains(pkg)
+        }
 
         companion object {
             val DEFAULT = Cfg(
@@ -119,6 +140,10 @@ object ConfigLoader {
                 spaceKeyHorizPort = PrefKeys.SPACE_KEY_HORIZ_PORT_DEFAULT,
                 spaceRowLand = PrefKeys.SPACE_ROW_LAND_DEFAULT,
                 spaceRowPort = PrefKeys.SPACE_ROW_PORT_DEFAULT,
+                materialEnabled = false,
+                materialForceAll = false,
+                materialPackages = emptySet(),
+                materialForceOffscreen = true,
             )
         }
     }

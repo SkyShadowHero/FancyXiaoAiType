@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">分离键盘调节</string>
-    <string name="module_description">调整超级小爱输入法分离键盘的宽度，并可让竖屏自动回落为普通键盘。</string>
+    <string name="app_name">超级小爱输入法增强</string>
+    <string name="module_description">调整超级小爱输入法分离键盘的宽度、按键圆角与间距，可让竖屏回落为普通键盘，并解锁毛玻璃键盘背景（超级材质）。</string>
 </resources>

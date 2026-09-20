@@ -36,6 +36,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Tune
@@ -45,6 +46,7 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 enum class AppPage(val label: String) {
     Settings("分离键盘"),
     Spaces("间距"),
+    Material("超级材质"),
     About("关于"),
 }
 
@@ -106,34 +108,40 @@ fun AppShell(
 
     val pages = AppPage.entries
 
-    // ---- 尺寸过大风险提示（间隙 + 间距统一处理）----
-    // 用「离开危险区才复位」的方式，保证跨阈值时只弹一次，不会反复打扰
-    val gapTooLarge = uiState.gapEnabled && SpaceWarning.exceeded(
-        maxOf(gapMaxLand, gapMaxPort),
-        listOf(uiState.gapLand, uiState.gapPort),
-    )
-    val spaceTooLarge = uiState.spaceEnabled && (
-        SpaceWarning.exceeded(gapMaxLand, listOf(uiState.spaceKeyHLand, uiState.spaceKeyHorizLand, uiState.spaceRowLand)) ||
-            SpaceWarning.exceeded(gapMaxPort, listOf(uiState.spaceKeyHPort, uiState.spaceKeyHorizPort, uiState.spaceRowPort))
-        )
+    // ---- 尺寸过大风险提示（间隙 + 按键间距统一处理）----
+    // 判定规则两者完全一致：任一项超过「该项上限的 6/10」即告警。
+    // 间隙的上限来自屏幕宽度（越大越可能顶出屏幕），按键间距的上限来自各自滑块的量程。
+    val oversized = buildList {
+        if (uiState.gapEnabled) {
+            add(SpaceWarning.Item("横屏中心间隙", uiState.gapLand, gapMaxLand))
+            add(SpaceWarning.Item("竖屏中心间隙", uiState.gapPort, gapMaxPort))
+        }
+        if (uiState.spaceEnabled) {
+            add(SpaceWarning.Item("横屏按键高度", uiState.spaceKeyHLand, PrefKeys.SPACE_KEY_H_MAX))
+            add(SpaceWarning.Item("横屏键横向间距", uiState.spaceKeyHorizLand, PrefKeys.SPACE_MAX))
+            add(SpaceWarning.Item("横屏行间距", uiState.spaceRowLand, PrefKeys.SPACE_MAX))
+            add(SpaceWarning.Item("竖屏按键高度", uiState.spaceKeyHPort, PrefKeys.SPACE_KEY_H_MAX))
+            add(SpaceWarning.Item("竖屏键横向间距", uiState.spaceKeyHorizPort, PrefKeys.SPACE_MAX))
+            add(SpaceWarning.Item("竖屏行间距", uiState.spaceRowPort, PrefKeys.SPACE_MAX))
+        }
+    }.let { SpaceWarning.exceeded(it) }
+
     var sizeWarningDismissed by remember { mutableStateOf(false) }
-    val sizeWarning = when {
-        gapTooLarge -> "键盘间隙" to SpaceWarning.threshold(maxOf(gapMaxLand, gapMaxPort))
-        spaceTooLarge -> "按键间距" to SpaceWarning.threshold(PrefKeys.SPACE_MAX)
-        else -> null
-    }
     // 回到安全范围后复位，这样下次再调大还会提醒
-    LaunchedEffect(sizeWarning == null) {
-        if (sizeWarning == null) sizeWarningDismissed = false
+    LaunchedEffect(oversized.isEmpty()) {
+        if (oversized.isEmpty()) sizeWarningDismissed = false
     }
 
-    // 尺寸过大：弹说明性对话框（不是一闪而过的提示）
+    // 尺寸过大：弹说明性对话框（不是一闪而过的提示），逐项列出超限值与安全阈值
     WindowDialog(
-        show = sizeWarning != null && !sizeWarningDismissed,
-        title = "⚠ ${sizeWarning?.first ?: ""}设置过大",
+        show = oversized.isNotEmpty() && !sizeWarningDismissed,
+        title = "⚠ 尺寸设置过大",
         summary = buildString {
-            append("当前「${sizeWarning?.first}」已超过安全范围（约 ${sizeWarning?.second?.toInt()}dp）。\n\n")
-            append("继续调大可能出现以下问题：\n")
+            append("以下设置已超过安全范围（各自上限的 6/10）：\n\n")
+            oversized.forEach {
+                append("• ${it.label}：${it.value.toInt()}dp，建议 ≤ ${it.limit.toInt()}dp\n")
+            }
+            append("\n继续调大可能出现以下问题：\n")
             append("• 按键被挤出屏幕，部分按键无法点到\n")
             append("• 按键相互重叠，或按键文字被裁切\n")
             append("• 键盘高度异常，遮挡输入区域\n\n")
@@ -246,6 +254,12 @@ private fun PageHost(
                 scaffoldPadding = contentPadding,
             )
 
+            AppPage.Material -> MaterialPage(
+                uiState = uiState,
+                padding = padding,
+                scaffoldPadding = contentPadding,
+            )
+
             AppPage.About -> AboutPage(
                 uiState = uiState,
                 padding = padding,
@@ -289,12 +303,14 @@ private fun PageHost(
 private fun AppPage.title(): String = when (this) {
     AppPage.Settings -> "分离键盘调节"
     AppPage.Spaces -> "间距"
+    AppPage.Material -> "超级材质"
     AppPage.About -> "关于"
 }
 
 private fun AppPage.icon() = when (this) {
     AppPage.Settings -> MiuixIcons.Tune
     AppPage.Spaces -> MiuixIcons.More
+    AppPage.Material -> MiuixIcons.Background
     AppPage.About -> MiuixIcons.Info
 }
 
