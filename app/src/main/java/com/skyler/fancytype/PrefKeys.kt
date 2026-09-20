@@ -30,10 +30,14 @@ object PrefKeys {
     const val CORNER_ENABLED = "corner_enabled"
     const val CORNER_DP = "corner_dp"
 
+    /** 按键预览气泡圆角（dip）。与按键圆角独立，原厂 14dp。 */
+    const val BUBBLE_CORNER_DP = "bubble_corner_dp"
+
     /** 圆角范围（dip） */
     const val CORNER_MIN = 0f
     const val CORNER_MAX = 48f
     const val CORNER_DEFAULT = 8f
+    const val BUBBLE_CORNER_DEFAULT = 14f
 
     // ---- 按键间距 / 键高（二级「间距」页，横竖屏各一套） ----
     const val SPACE_ENABLED = "space_enabled"

@@ -90,6 +90,7 @@ object Target {
         "keyboard_key_spacing_pad_portrait" to RES_KEY_SPACING_PORT,
         "pad_qwerty_landscape_row_spacing" to RES_ROW_SPACING_LAND,
         "keyboard_key_vertical_spacing_pad_portrait" to RES_ROW_SPACING_PORT,
+        "key_preview_bubble_corner_radius" to RES_BUBBLE_CORNER,
     )
 
     /** 各功能对应的资源名（供运行时解析） */
@@ -120,6 +121,14 @@ object Target {
     const val RES_QWERTY_LAND_KEY_CORNER = 0x7f0709fa // pad_qwerty_landscape_key_corner_radius = 8.0dip
     const val RES_T9_LAND_KEY_CORNER = 0x7f070a28   // pad_t9_landscape_key_corner_radius = 8.0dip
     const val RES_KB_CONTAINER_CORNER = 0x7f0701fc   // keyboard_container_corner_radius = 24.0dip（实测 61.95px）
+
+    /**
+     * 按键预览气泡（点击按键时弹出来的放大气泡）的圆角。
+     * 与按键圆角是两个独立参数：原厂键 8dp / 气泡 14dp。
+     */
+    const val RES_BUBBLE_CORNER = 0x7f0701e3        // key_preview_bubble_corner_radius = 14.0dip
+    const val NAME_BUBBLE_CORNER = "key_preview_bubble_corner_radius"
+    const val ORIGINAL_BUBBLE_CORNER_DP = 14f
 
     /**
      * 按键圆角资源集合（统一改，不分横竖屏、不按角区分）。

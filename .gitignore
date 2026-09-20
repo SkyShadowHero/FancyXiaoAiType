@@ -4,6 +4,10 @@ build/
 app/build/
 .kotlin/
 
+# AGP 9 会把构建产物写在模块根目录下的这两个目录里
+app/debug/
+app/release/
+
 # 本机 SDK 路径，不应提交
 local.properties
 
@@ -12,8 +16,9 @@ local.properties
 *.iml
 .DS_Store
 
-# 生成的 APK / 混淆映射
+# 生成的 APK / 混淆映射 / baseline profile
 *.apk
 *.ap_
 *.dex
+*.dm
 mapping.txt

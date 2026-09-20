@@ -1,6 +1,6 @@
-# XiaoAiTypeMod
+# FancyType
 
-超级小爱输入法（Xiaomi Hyper XiaoAi Keyboard）的 **LSPosed 模块**：调整分离键盘的宽度、按键圆角、按键间距，提供「竖屏强制普通键盘」开关，并解锁**超级材质**（毛玻璃键盘背景）的适用范围。
+超级小爱输入法（Xiaomi Hyper XiaoAi Keyboard）的 **LSPosed 模块**：调整分离键盘的宽度、按键与按键气泡的圆角、按键间距，提供「竖屏强制普通键盘」开关，并解锁**超级材质**（毛玻璃键盘背景）的适用范围。
 
 配置界面使用 [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 设计语言的 Compose 组件库）构建，支持底部菜单 / 平板侧栏自适应。
 
@@ -12,6 +12,7 @@
 |---|---|---|
 | **分离键盘宽度** | 横屏 / 竖屏**分别**设置中心间隙；上限按对应朝向的物理屏宽 × 9/10 动态计算 | ✅ |
 | **按键圆角** | 统一调整所有按键的圆角（0–48dp，默认 8dp） | ⚠️ 构建期参数，需重开键盘 |
+| **按键气泡圆角** | 点击按键弹出的放大气泡圆角（0–48dp，默认 14dp） | ⚠️ 构建期参数，需重开键盘 |
 | **按键间距** | 键高 / 键横向间距 / 行间距，横竖屏各一套；与间隙共用同一套「超过上限 6/10」过大警告 | ✅ |
 | **竖屏强制普通键盘** | 开启后：横屏保持分离，竖屏强制变为整块普通键盘 | ✅ |
 | **超级材质** | 解锁毛玻璃键盘背景：可**强制所有应用**或**手动勾选**一批应用；离屏填充随开关自动处理 | ✅ |
@@ -97,7 +98,7 @@ echo "sdk.dir=/path/to/Android/SDK" > local.properties
 ## 验证（logcat）
 
 ```bash
-adb logcat -s TypeMod:*
+adb logcat -s FancyType:*
 ```
 
 关键事件：
@@ -270,7 +271,7 @@ app/src/main/
   糊到的是「别的窗口」而不是当前宿主窗口。
   **模块能给的**：圆角 + 半透明叠加（描述符中的混合色为 `0x80FFFFFF`，50% 白），
   以及让原厂限定失效；**给不了的**：非白名单宿主的真实背景模糊。
-  诊断入口：`adb logcat -s TypeMod:* | grep pass_window_blur`。
+  诊断入口：`adb logcat -s FancyType:* | grep pass_window_blur`。
 - **超级材质仅 `0.2.910` 可用**（依赖的 `bb.b0->j()` 与 `pc.m->L0(Iterable,Object)` 在更早版本不存在）。
 - **超级材质依赖系统能力**：`persist.sys.background_blur_supported` 必须为 `true`，且
   `Settings.Secure["background_blur_enable"]` 必须为 `1`；不满足时原厂自己也不会启用材质。

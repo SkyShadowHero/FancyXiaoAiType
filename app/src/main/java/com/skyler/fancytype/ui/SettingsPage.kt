@@ -100,25 +100,44 @@ fun SettingsPage(
                         uiState.cornerEnabled = checked
                         uiState.save { editor -> editor.putBoolean(PrefKeys.CORNER_ENABLED, checked) }
                     },
-                    title = "启用按键圆角",
-                    summary = "统一调整按键圆角；关闭则保持原厂",
+                    title = "启用圆角调节",
+                    summary = "统一调整按键与按键气泡的圆角；关闭则保持原厂",
                 )
                 AnimatedVisibility(visible = uiState.cornerEnabled) {
-                    SliderPreference(
-                        value = uiState.cornerDp,
-                        onValueChange = { v -> uiState.cornerDp = v },
-                        onValueChangeFinished = {
-                            if (uiState.loaded) {
-                                uiState.save { editor -> editor.putFloat(PrefKeys.CORNER_DP, uiState.cornerDp) }
-                            }
-                        },
-                        valueRange = PrefKeys.CORNER_MIN..PrefKeys.CORNER_MAX,
-                        keyPoints = listOf(Target.ORIGINAL_KEY_CORNER_DP),
-                        showKeyPoints = true,
-                        title = "按键圆角",
-                        summary = "默认 ${Target.ORIGINAL_KEY_CORNER_DP.toInt()}dp",
-                        valueText = "${uiState.cornerDp.toInt()} dp",
-                    )
+                    Column {
+                        SliderPreference(
+                            value = uiState.cornerDp,
+                            onValueChange = { v -> uiState.cornerDp = v },
+                            onValueChangeFinished = {
+                                if (uiState.loaded) {
+                                    uiState.save { editor -> editor.putFloat(PrefKeys.CORNER_DP, uiState.cornerDp) }
+                                }
+                            },
+                            valueRange = PrefKeys.CORNER_MIN..PrefKeys.CORNER_MAX,
+                            keyPoints = listOf(Target.ORIGINAL_KEY_CORNER_DP),
+                            showKeyPoints = true,
+                            title = "按键圆角",
+                            summary = "默认 ${Target.ORIGINAL_KEY_CORNER_DP.toInt()}dp",
+                            valueText = "${uiState.cornerDp.toInt()} dp",
+                        )
+                        SliderPreference(
+                            value = uiState.bubbleCornerDp,
+                            onValueChange = { v -> uiState.bubbleCornerDp = v },
+                            onValueChangeFinished = {
+                                if (uiState.loaded) {
+                                    uiState.save { editor ->
+                                        editor.putFloat(PrefKeys.BUBBLE_CORNER_DP, uiState.bubbleCornerDp)
+                                    }
+                                }
+                            },
+                            valueRange = PrefKeys.CORNER_MIN..PrefKeys.CORNER_MAX,
+                            keyPoints = listOf(Target.ORIGINAL_BUBBLE_CORNER_DP),
+                            showKeyPoints = true,
+                            title = "按键气泡圆角",
+                            summary = "点击按键弹出的放大气泡；默认 ${Target.ORIGINAL_BUBBLE_CORNER_DP.toInt()}dp",
+                            valueText = "${uiState.bubbleCornerDp.toInt()} dp",
+                        )
+                    }
                 }
             }
         }

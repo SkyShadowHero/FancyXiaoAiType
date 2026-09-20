@@ -4,7 +4,7 @@ import android.util.Log
 
 /** 结构化日志：每条都带 event= 便于 logcat 过滤与链路核对。 */
 object L {
-    const val TAG = "TypeMod"
+    const val TAG = "FancyType"
 
     fun i(msg: String) = Log.i(TAG, msg)
     fun w(msg: String) = Log.w(TAG, msg)

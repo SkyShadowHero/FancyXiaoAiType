@@ -31,6 +31,7 @@ class AppUiState {
 
     var cornerEnabled by mutableStateOf(false)
     var cornerDp by mutableStateOf(8f)
+    var bubbleCornerDp by mutableStateOf(PrefKeys.BUBBLE_CORNER_DEFAULT)
 
     var spaceEnabled by mutableStateOf(false)
     var spaceKeyHLand by mutableStateOf(51.5f)
@@ -130,6 +131,9 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.cornerEnabled = p.runCatching { getBoolean(PrefKeys.CORNER_ENABLED, false) }.getOrDefault(false)
     uiState.cornerDp = p.runCatching { getFloat(PrefKeys.CORNER_DP, 0f) }.getOrDefault(0f)
         .takeIf { it > 0f } ?: PrefKeys.CORNER_DEFAULT
+    uiState.bubbleCornerDp = p.runCatching {
+        getFloat(PrefKeys.BUBBLE_CORNER_DP, PrefKeys.BUBBLE_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.BUBBLE_CORNER_DEFAULT)
 
     uiState.spaceEnabled = p.runCatching { getBoolean(PrefKeys.SPACE_ENABLED, false) }.getOrDefault(false)
     uiState.spaceKeyHLand = p.runCatching { getFloat(PrefKeys.SPACE_KEY_H_LAND, PrefKeys.SPACE_KEY_H_LAND_DEFAULT) }

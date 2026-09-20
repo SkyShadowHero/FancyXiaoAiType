@@ -55,6 +55,9 @@ object ConfigLoader {
                 cornerEnabled = p.runCatching { getBoolean(PrefKeys.CORNER_ENABLED, false) }.getOrDefault(false),
                 cornerDp = p.runCatching { getFloat(PrefKeys.CORNER_DP, PrefKeys.CORNER_DEFAULT) }
                     .getOrDefault(PrefKeys.CORNER_DEFAULT),
+                bubbleCornerDp = p.runCatching {
+                    getFloat(PrefKeys.BUBBLE_CORNER_DP, PrefKeys.BUBBLE_CORNER_DEFAULT)
+                }.getOrDefault(PrefKeys.BUBBLE_CORNER_DEFAULT),
                 spaceEnabled = p.runCatching { getBoolean(PrefKeys.SPACE_ENABLED, false) }.getOrDefault(false),
                 spaceKeyHLand = p.runCatching { getFloat(PrefKeys.SPACE_KEY_H_LAND, PrefKeys.SPACE_KEY_H_LAND_DEFAULT) }
                     .getOrDefault(PrefKeys.SPACE_KEY_H_LAND_DEFAULT),
@@ -99,6 +102,8 @@ object ConfigLoader {
         val portraitForceNormal: Boolean,
         val cornerEnabled: Boolean,
         val cornerDp: Float,
+        /** 按键预览气泡圆角（dip） */
+        val bubbleCornerDp: Float,
         // ---- 按键间距 / 键高（横竖屏各一套） ----
         val spaceEnabled: Boolean,
         val spaceKeyHLand: Float,
@@ -129,6 +134,7 @@ object ConfigLoader {
                 portraitForceNormal = false,
                 cornerEnabled = false,
                 cornerDp = PrefKeys.CORNER_DEFAULT,
+                bubbleCornerDp = PrefKeys.BUBBLE_CORNER_DEFAULT,
                 spaceEnabled = false,
                 spaceKeyHLand = PrefKeys.SPACE_KEY_H_LAND_DEFAULT,
                 spaceKeyHPort = PrefKeys.SPACE_KEY_H_PORT_DEFAULT,
