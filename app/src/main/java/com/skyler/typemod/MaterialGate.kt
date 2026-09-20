@@ -35,6 +35,13 @@ object MaterialGate {
     @Volatile
     var helperHooked: Boolean = false
 
+    /**
+     * 最近一次判定看到的前台应用包名（也就是键盘正服务的宿主）。
+     * `xe.b.a` 那个 Hook 拿不到它，但诊断「透过窗口模糊白名单」需要，所以在这里留存。
+     */
+    @Volatile
+    var lastHostPackage: String? = null
+
     /** `ThreadLocal.get()` 在 Kotlin 映射里是可空的，统一在这里兜底。 */
     private fun current(): Int = depth.get() ?: 0
 
@@ -63,6 +70,7 @@ object MaterialGate {
         val cfg = ConfigLoader.snapshot()
         if (!cfg.materialEnabled) return null
 
+        lastHostPackage = pkg
         val allowed = cfg.materialAllowedFor(pkg)
         L.sampled("material_gate", limit = 24) {
             "event=material_gate pkg=$pkg forceAll=${cfg.materialForceAll} " +

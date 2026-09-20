@@ -92,29 +92,59 @@ object MaterialEnhancer {
     }
 
     /**
-     * 实测框架的「透过窗口模糊」白名单。
+     * 实测框架的「透过窗口模糊」白名单，以及当前窗口形态。
      *
      * MIUI 自己的毛玻璃路径（`miuix/appcompat/widget/i.java`）在应用材质前会先问
      * `View.isPassWindowBlurWhitelisted(包名)`；目标应用的键盘路径不查，但框架内部
-     * 未必放行。把结果打出来，才能判断「糊不了」是不是卡在这张名单上。
+     * 未必放行 —— 这张名单在 system_server 侧，应用资源里查不到，只能运行时实测。
+     *
+     * 同时记录窗口形态：全屏 / 分屏 / 小窗，用于核对「换窗口形态才糊」的现象。
      */
     private fun probeWhitelist(view: View) {
-        val wl = method("isPassWindowBlurWhitelisted", String::class.java) ?: return
-        val pkgs = listOf(
-            "com.android.quicksearchbox",  // 原厂唯一放行的搜索
-            "com.skyler.typemod",
-            "com.tencent.mm",
-            "com.android.settings",
-            "com.xiaomi.type",             // 输入法自己
-        )
-        val detail = pkgs.joinToString(" ") { pkg ->
-            val r = try {
-                wl.invoke(view, pkg)?.toString() ?: "null"
-            } catch (t: Throwable) {
-                "err"
-            }
-            "$pkg=$r"
+        val host = MaterialGate.lastHostPackage ?: "-"
+        val wl = method("isPassWindowBlurWhitelisted", String::class.java)
+        val hostAllowed = try {
+            wl?.invoke(view, host)?.toString() ?: "no-api"
+        } catch (t: Throwable) {
+            "err"
         }
-        L.sampled("pass_blur_wl", limit = 2) { "event=pass_window_blur_whitelist $detail" }
+        val readBack = try {
+            method("getPassWindowBlurEnabled")?.invoke(view)?.toString() ?: "no-api"
+        } catch (t: Throwable) {
+            "err"
+        }
+        val mode = windowingMode(view)
+        L.sampled("pass_blur_wl", limit = 4) {
+            "event=pass_window_blur host=$host hostWhitelisted=$hostAllowed " +
+                "passWindowBlurEnabled=$readBack windowingMode=$mode(${windowingModeName(mode)})"
+        }
+    }
+
+    /**
+     * `Configuration.getWindowConfiguration().getWindowingMode()`：1 全屏 / 2 分屏主 / 3 分屏副 /
+     * 4 画中画 / 5 自由窗口。
+     *
+     * 这两个 API 在公开 SDK 里是 @hide，编译期用不了，运行时反射拿。
+     */
+    private fun windowingMode(view: View): Int = try {
+        val cfg = view.getContext()?.resources?.configuration
+        if (cfg == null) {
+            -1
+        } else {
+            val wc = cfg.javaClass.getMethod("getWindowConfiguration").invoke(cfg)
+            (wc?.javaClass?.getMethod("getWindowingMode")?.invoke(wc) as? Int) ?: -1
+        }
+    } catch (t: Throwable) {
+        -1
+    }
+
+    private fun windowingModeName(mode: Int): String = when (mode) {
+        1 -> "fullscreen"
+        2 -> "split-primary"
+        3 -> "split-secondary"
+        4 -> "pip"
+        5 -> "freeform"
+        6 -> "multi-window"
+        else -> "unknown"
     }
 }
