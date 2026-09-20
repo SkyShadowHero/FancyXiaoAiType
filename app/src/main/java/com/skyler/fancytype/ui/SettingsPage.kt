@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
@@ -10,9 +10,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.skyler.typemod.PrefKeys
-import com.skyler.typemod.RemoteConfig
-import com.skyler.typemod.Target
+import com.skyler.fancytype.PrefKeys
+import com.skyler.fancytype.RemoteConfig
+import com.skyler.fancytype.Target
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SliderPreference

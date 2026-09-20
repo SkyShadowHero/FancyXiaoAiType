@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable

@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
@@ -12,9 +12,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
-import com.skyler.typemod.MaterialPackages
-import com.skyler.typemod.PrefKeys
-import com.skyler.typemod.RemoteConfig
+import com.skyler.fancytype.MaterialPackages
+import com.skyler.fancytype.PrefKeys
+import com.skyler.fancytype.RemoteConfig
 import kotlinx.coroutines.delay
 
 /**
@@ -44,6 +44,8 @@ class AppUiState {
     var materialEnabled by mutableStateOf(false)
     var materialForceAll by mutableStateOf(false)
     var materialPackages by mutableStateOf<Set<String>>(emptySet())
+    var materialBlurDp by mutableStateOf(PrefKeys.MATERIAL_BLUR_DEFAULT)
+    var materialCornerDp by mutableStateOf(PrefKeys.MATERIAL_CORNER_DEFAULT)
 
     /**
      * 是否已从远端把配置读进来。
@@ -157,4 +159,10 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.materialPackages = MaterialPackages.decode(
         p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }.getOrDefault("")
     )
+    uiState.materialBlurDp = p.runCatching {
+        getFloat(PrefKeys.MATERIAL_BLUR_DP, PrefKeys.MATERIAL_BLUR_DEFAULT)
+    }.getOrDefault(PrefKeys.MATERIAL_BLUR_DEFAULT)
+    uiState.materialCornerDp = p.runCatching {
+        getFloat(PrefKeys.MATERIAL_CORNER_DP, PrefKeys.MATERIAL_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.MATERIAL_CORNER_DEFAULT)
 }

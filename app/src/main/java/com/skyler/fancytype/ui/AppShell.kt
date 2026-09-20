@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.skyler.typemod.L
-import com.skyler.typemod.PrefKeys
-import com.skyler.typemod.RemoteConfig
+import com.skyler.fancytype.L
+import com.skyler.fancytype.PrefKeys
+import com.skyler.fancytype.RemoteConfig
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar

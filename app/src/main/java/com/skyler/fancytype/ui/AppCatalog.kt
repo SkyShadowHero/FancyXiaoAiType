@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 import android.content.Context
 import android.content.Intent

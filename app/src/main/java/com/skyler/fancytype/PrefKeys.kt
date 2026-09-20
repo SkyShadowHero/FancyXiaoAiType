@@ -1,8 +1,8 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 /** 设置项键名（RemotePreferences 共用的 group 与 key） */
 object PrefKeys {
-    const val GROUP = "typemod"
+    const val GROUP = "fancytype"
 
     const val GAP_ENABLED = "gap_enabled"
 
@@ -90,4 +90,20 @@ object PrefKeys {
      * RemotePreferences 的集合类型在跨进程同步上更容易出意外，字符串最稳且便于日志排查。
      */
     const val MATERIAL_PACKAGES = "material_packages"
+
+    // ---- 超级材质：自建特效层的玻璃参数 ----
+
+    /** 背景模糊半径（dip）。SurfaceFlinger 上限 400px，按密度换算后 clamp。 */
+    const val MATERIAL_BLUR_DP = "material_blur_dp"
+
+    /** 键盘材质层圆角（dip）。 */
+    const val MATERIAL_CORNER_DP = "material_corner_dp"
+
+    const val MATERIAL_BLUR_MIN = 0f
+    const val MATERIAL_BLUR_MAX = 100f
+    const val MATERIAL_BLUR_DEFAULT = 50f
+
+    const val MATERIAL_CORNER_MIN = 0f
+    const val MATERIAL_CORNER_MAX = 48f
+    const val MATERIAL_CORNER_DEFAULT = 24f
 }

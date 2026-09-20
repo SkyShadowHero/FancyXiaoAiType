@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 /**
  * 「超级材质」手动选择的应用清单编解码。

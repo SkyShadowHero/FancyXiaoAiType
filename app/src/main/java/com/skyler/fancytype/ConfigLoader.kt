@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 import android.content.SharedPreferences
 
@@ -6,7 +6,7 @@ import android.content.SharedPreferences
  * Hook 进程内的配置读取。
  *
  * 走 libxposed 的 RemotePreferences（存在 LSPosed 数据库），
- * 由模块 App（[com.skyler.typemod.ui.SettingsPage]）写入。
+ * 由模块 App（[com.skyler.fancytype.ui.SettingsPage]）写入。
  */
 object ConfigLoader {
 
@@ -77,6 +77,12 @@ object ConfigLoader {
                 materialPackages = p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }
                     .getOrDefault("")
                     .let(::splitPackages),
+                materialBlurDp = p.runCatching {
+                    getFloat(PrefKeys.MATERIAL_BLUR_DP, PrefKeys.MATERIAL_BLUR_DEFAULT)
+                }.getOrDefault(PrefKeys.MATERIAL_BLUR_DEFAULT),
+                materialCornerDp = p.runCatching {
+                    getFloat(PrefKeys.MATERIAL_CORNER_DP, PrefKeys.MATERIAL_CORNER_DEFAULT)
+                }.getOrDefault(PrefKeys.MATERIAL_CORNER_DEFAULT),
             ).also {
                 if (!legacy.isNaN()) L.sampled("legacy") { "event=legacy_gap_dp_seen value=$legacy" }
             }
@@ -111,6 +117,9 @@ object ConfigLoader {
         val materialEnabled: Boolean,
         val materialForceAll: Boolean,
         val materialPackages: Set<String>,
+        /** 自建特效层的模糊半径 / 圆角（dip） */
+        val materialBlurDp: Float,
+        val materialCornerDp: Float,
     ) {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
@@ -139,6 +148,8 @@ object ConfigLoader {
                 materialEnabled = false,
                 materialForceAll = false,
                 materialPackages = emptySet(),
+                materialBlurDp = PrefKeys.MATERIAL_BLUR_DEFAULT,
+                materialCornerDp = PrefKeys.MATERIAL_CORNER_DEFAULT,
             )
         }
     }

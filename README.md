@@ -222,7 +222,7 @@ App 写入自增计数 → 输入法进程在生命周期点轮询 → 发现比
 
 ```
 app/src/main/
-├─ java/com/skyler/typemod/
+├─ java/com/skyler/fancytype/
 │  ├─ XposedEntry.kt        # 模块入口，装载全部 Hook
 │  ├─ Target.kt             # 目标包名 / 混淆类名 / 资源名与 ID
 │  ├─ ConfigLoader.kt       # Hook 侧配置读取

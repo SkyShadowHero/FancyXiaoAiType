@@ -4,14 +4,14 @@ plugins {
 }
 
 android {
-    namespace = "com.skyler.typemod"
+    namespace = "com.skyler.fancytype"
     // Miuix 0.9.4 / Compose 1.12 要求 compileSdk 37；
     // 本机 SDK 为次版本号式平台 android-37.0，故需同时指定 compileSdkMinor。
     compileSdk = 37
     compileSdkMinor = 0
 
     defaultConfig {
-        applicationId = "com.skyler.typemod"
+        applicationId = "com.skyler.fancytype"
         minSdk = 35
         targetSdk = 37
         versionCode = 1

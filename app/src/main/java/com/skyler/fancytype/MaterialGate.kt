@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 /**
  * 超级材质的放行判定，注入在 `pc.m.L0(Iterable, Object)` 上。

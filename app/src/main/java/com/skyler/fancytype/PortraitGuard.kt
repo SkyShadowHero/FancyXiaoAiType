@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 import android.content.Context
 import android.content.res.Configuration

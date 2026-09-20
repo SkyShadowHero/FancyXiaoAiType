@@ -1,10 +1,10 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.skyler.typemod.ui.App
+import com.skyler.fancytype.ui.App
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

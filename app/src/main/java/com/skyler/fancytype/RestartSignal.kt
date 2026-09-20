@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 import android.os.Process
 import java.util.concurrent.atomic.AtomicLong

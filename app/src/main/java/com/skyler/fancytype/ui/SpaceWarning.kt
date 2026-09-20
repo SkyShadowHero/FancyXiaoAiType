@@ -1,4 +1,4 @@
-package com.skyler.typemod.ui
+package com.skyler.fancytype.ui
 
 /**
  * 尺寸类设置（键盘间隙 / 按键间距）过大时的统一风险提示。

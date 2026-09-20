@@ -1,4 +1,4 @@
-package com.skyler.typemod
+package com.skyler.fancytype
 
 /**
  * 目标 App（超级小爱输入法 / Xiaomi Hyper XiaoAi Keyboard）专有常量。
@@ -175,6 +175,12 @@ object Target {
     /** 材质状态机的宿主，用于把拦截范围限制在它自己的判定里 */
     const val CLS_MATERIAL_HELPER = "bb.b0"
     const val M_MATERIAL_APPLY = "j"
+
+    /** `bb.b0.b(View)`：把材质应用到某个 View（键盘材质层），返回是否成功 */
+    const val M_MATERIAL_APPLY_VIEW = "b"
+
+    /** `bb.b0.e()`：拆除材质层——自建特效层要跟着一起收 */
+    const val M_MATERIAL_TEARDOWN = "e"
 
     /**
      * `pc.m.L0` 的第一个参数在材质判定里始终是 `bb.b0.j()` 内部
