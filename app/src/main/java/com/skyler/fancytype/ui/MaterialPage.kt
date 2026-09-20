@@ -32,7 +32,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
@@ -119,44 +118,6 @@ fun MaterialPage(
                     },
                     onClick = { showPicker = true },
                     enabled = manualEnabled,
-                )
-            }
-        }
-
-        item { SmallTitle("玻璃参数") }
-        item {
-            Card {
-                SliderPreference(
-                    value = uiState.materialBlurDp,
-                    onValueChange = { v -> uiState.materialBlurDp = v },
-                    onValueChangeFinished = {
-                        if (uiState.loaded) {
-                            uiState.save { e -> e.putFloat(PrefKeys.MATERIAL_BLUR_DP, uiState.materialBlurDp) }
-                        }
-                    },
-                    valueRange = PrefKeys.MATERIAL_BLUR_MIN..PrefKeys.MATERIAL_BLUR_MAX,
-                    keyPoints = listOf(PrefKeys.MATERIAL_BLUR_DEFAULT),
-                    showKeyPoints = true,
-                    title = "背景模糊半径",
-                    summary = "由合成器直接模糊键盘背后的内容；0 表示不模糊",
-                    valueText = "${uiState.materialBlurDp.toInt()} dp",
-                    enabled = uiState.materialEnabled,
-                )
-                SliderPreference(
-                    value = uiState.materialCornerDp,
-                    onValueChange = { v -> uiState.materialCornerDp = v },
-                    onValueChangeFinished = {
-                        if (uiState.loaded) {
-                            uiState.save { e -> e.putFloat(PrefKeys.MATERIAL_CORNER_DP, uiState.materialCornerDp) }
-                        }
-                    },
-                    valueRange = PrefKeys.MATERIAL_CORNER_MIN..PrefKeys.MATERIAL_CORNER_MAX,
-                    keyPoints = listOf(PrefKeys.MATERIAL_CORNER_DEFAULT),
-                    showKeyPoints = true,
-                    title = "键盘圆角",
-                    summary = "模糊层的圆角；停靠时只圆上方两角",
-                    valueText = "${uiState.materialCornerDp.toInt()} dp",
-                    enabled = uiState.materialEnabled,
                 )
             }
         }

@@ -176,12 +176,6 @@ object Target {
     const val CLS_MATERIAL_HELPER = "bb.b0"
     const val M_MATERIAL_APPLY = "j"
 
-    /** `bb.b0.b(View)`：把材质应用到某个 View（键盘材质层），返回是否成功 */
-    const val M_MATERIAL_APPLY_VIEW = "b"
-
-    /** `bb.b0.e()`：拆除材质层——自建特效层要跟着一起收 */
-    const val M_MATERIAL_TEARDOWN = "e"
-
     /**
      * `pc.m.L0` 的第一个参数在材质判定里始终是 `bb.b0.j()` 内部
      * `new LinkedHashMap()` 的 keySet，jar 里的类名就是这个（稳定，不含混淆编号）。

@@ -55,7 +55,6 @@ class XposedEntry : XposedModule() {
         // 一旦在 Hook 之前触发，离屏填充门就被永久算成 false 了。
         ok += hookSystemPropertiesForMaterial(cl)
         ok += hookMaterialDiagnostics(cl)
-        ok += hookGlassLayer(cl)
         L.i("event=install_done hooks=$ok process=$processName")
         if (ok == 0) installed.set(false)
     }
@@ -469,77 +468,6 @@ class XposedEntry : XposedModule() {
         } catch (t: Throwable) {
             L.e("event=hook_failed target=sysprop_get", t); 0
         }
-    }
-
-    /**
-     * 自建 SurfaceFlinger 特效层，做真正的键盘背景模糊。
-     *
-     * MIUI 的「透过窗口模糊」被 system_server 的云端名单卡住（非白名单宿主一律不糊），
-     * 所以不再走它的材质通道，而是在输入法窗口的 SurfaceControl 下挂一个 effect layer，
-     * 用 `Transaction.setBackgroundBlurRadius()` 直接让合成器糊背后的内容 —— 跨窗口，
-     * 不经过那张名单。
-     *
-     * 挂点选 `bb.b0.b(View)`：这个 View 就是键盘材质层本身，身份确定，不会误伤别处。
-     */
-    private fun hookGlassLayer(cl: ClassLoader): Int {
-        val cls = loadClass(cl, Target.CLS_MATERIAL_HELPER) ?: return 0
-        var ok = 0
-
-        val applyView = findMethodByArity(cls, Target.M_MATERIAL_APPLY_VIEW, 1) {
-            it.returnType == Boolean::class.javaPrimitiveType &&
-                it.parameterTypes[0] == android.view.View::class.java
-        }
-        if (applyView != null) {
-            try {
-                hook(applyView)
-                    .setId("glass_layer_apply")
-                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                    .intercept { chain ->
-                        val applied = (chain.proceed() as? Boolean) ?: false
-                        val view = chain.getArg(0) as? android.view.View
-                        if (applied && view != null) {
-                            val cfg = ConfigLoader.snapshot()
-                            if (cfg.materialEnabled) {
-                                try {
-                                    GlassLayer.sync(view, cfg.materialBlurDp, cfg.materialCornerDp)
-                                } catch (t: Throwable) {
-                                    L.e("event=glass_layer_sync_failed", t)
-                                }
-                            } else {
-                                GlassLayer.detach("material_off")
-                            }
-                        }
-                        applied
-                    }
-                ok++
-            } catch (t: Throwable) {
-                L.e("event=hook_failed target=glass_layer_apply", t)
-            }
-        }
-
-        val teardown = findMethodByArity(cls, Target.M_MATERIAL_TEARDOWN, 0) {
-            it.returnType == Void.TYPE
-        }
-        if (teardown != null) {
-            try {
-                hook(teardown)
-                    .setId("glass_layer_teardown")
-                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                    .intercept { chain ->
-                        val r = chain.proceed()
-                        try {
-                            GlassLayer.detach("material_teardown")
-                        } catch (t: Throwable) {
-                            L.e("event=glass_layer_detach_failed", t)
-                        }
-                        r
-                    }
-                ok++
-            } catch (t: Throwable) {
-                L.e("event=hook_failed target=glass_layer_teardown", t)
-            }
-        }
-        return ok
     }
 }
 
