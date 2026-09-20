@@ -56,6 +56,15 @@ object RemoteConfig {
 
     val isReady: Boolean get() = service != null
 
+    /**
+     * 供「重试连接」使用：清掉已缓存的服务引用，让下次检测重新走绑定流程。
+     * 框架服务偶发绑定较慢或被系统回收，用户手动重试比让用户重启应用体验更好。
+     */
+    fun reset() {
+        service = null
+        L.i("event=service_reset")
+    }
+
     /** 统一写入口，异常不外抛。 */
     fun edit(block: (SharedPreferences.Editor) -> Unit): Boolean = try {
         val p = prefs()

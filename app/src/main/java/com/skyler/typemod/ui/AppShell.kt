@@ -56,7 +56,39 @@ enum class AppPage(val label: String) {
 fun AppShell(
     uiState: AppUiState,
     padding: PaddingValues,
+    serviceMissing: Boolean = false,
+    onRetryService: () -> Unit = {},
 ) {
+    // 未连上 LSPosed：启动即弹窗警告（不阻断界面，但明确告知改动不会保存/生效）
+    var serviceWarningDismissed by remember { mutableStateOf(false) }
+    WindowDialog(
+        show = serviceMissing && !serviceWarningDismissed,
+        title = "未连接到 LSPosed",
+        summary = "本模块依赖 LSPosed 框架才能生效，当前未能连接到框架服务。\n\n" +
+            "请检查：\n" +
+            "1. 已在 LSPosed 管理器中启用本模块\n" +
+            "2. 作用域已勾选 com.xiaomi.type\n" +
+            "3. 启用后已重启输入法进程\n\n" +
+            "在框架就绪前，此处的改动不会被保存，也不会生效。",
+        onDismissRequest = { },
+        content = {
+            Row(horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(
+                    text = "重试连接",
+                    onClick = { onRetryService() },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(20.dp))
+                TextButton(
+                    text = "我知道了",
+                    onClick = { serviceWarningDismissed = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        },
+    )
+
     val configuration = LocalConfiguration.current
     val useRail = configuration.screenWidthDp >= RAIL_BREAKPOINT_DP
 
@@ -73,6 +105,52 @@ fun AppShell(
     val gapMaxPort = (screenShortDp * PrefKeys.GAP_MAX_RATIO).coerceAtLeast(PrefKeys.GAP_MAX_FALLBACK)
 
     val pages = AppPage.entries
+
+    // ---- 尺寸过大风险提示（间隙 + 间距统一处理）----
+    // 用「离开危险区才复位」的方式，保证跨阈值时只弹一次，不会反复打扰
+    val gapTooLarge = uiState.gapEnabled && SpaceWarning.exceeded(
+        maxOf(gapMaxLand, gapMaxPort),
+        listOf(uiState.gapLand, uiState.gapPort),
+    )
+    val spaceTooLarge = uiState.spaceEnabled && (
+        SpaceWarning.exceeded(gapMaxLand, listOf(uiState.spaceKeyHLand, uiState.spaceKeyHorizLand, uiState.spaceRowLand)) ||
+            SpaceWarning.exceeded(gapMaxPort, listOf(uiState.spaceKeyHPort, uiState.spaceKeyHorizPort, uiState.spaceRowPort))
+        )
+    var sizeWarningDismissed by remember { mutableStateOf(false) }
+    val sizeWarning = when {
+        gapTooLarge -> "键盘间隙" to SpaceWarning.threshold(maxOf(gapMaxLand, gapMaxPort))
+        spaceTooLarge -> "按键间距" to SpaceWarning.threshold(PrefKeys.SPACE_MAX)
+        else -> null
+    }
+    // 回到安全范围后复位，这样下次再调大还会提醒
+    LaunchedEffect(sizeWarning == null) {
+        if (sizeWarning == null) sizeWarningDismissed = false
+    }
+
+    // 尺寸过大：弹说明性对话框（不是一闪而过的提示）
+    WindowDialog(
+        show = sizeWarning != null && !sizeWarningDismissed,
+        title = "⚠ ${sizeWarning?.first ?: ""}设置过大",
+        summary = buildString {
+            append("当前「${sizeWarning?.first}」已超过安全范围（约 ${sizeWarning?.second?.toInt()}dp）。\n\n")
+            append("继续调大可能出现以下问题：\n")
+            append("• 按键被挤出屏幕，部分按键无法点到\n")
+            append("• 按键相互重叠，或按键文字被裁切\n")
+            append("• 键盘高度异常，遮挡输入区域\n\n")
+            append("建议回调到安全范围内。若布局已异常，可关闭对应的总开关立即还原。")
+        },
+        onDismissRequest = { },
+        content = {
+            Row(horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(
+                    text = "我知道了",
+                    onClick = { sizeWarningDismissed = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        },
+    )
 
     if (useRail) {
         Row(modifier = Modifier.fillMaxSize()) {

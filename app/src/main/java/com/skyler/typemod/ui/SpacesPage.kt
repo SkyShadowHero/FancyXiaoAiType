@@ -19,7 +19,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
  * 二级页「间距」：按键高度 / 键横向间距 / 行间距，横竖屏各一套。
  *
  * 关掉总开关时依赖项**变灰**（保持布局稳定）。全部走同一个尺寸覆写通道，改动实时生效。
- * 超过上限 6/10 时给出「可能破坏布局」的警告。
+ * 超过上限 6/10 时给出「可能破坏布局」的警告（卡片内文字 + 一次性 Snackbar）。
  */
 @Composable
 fun SpacesPage(
@@ -27,8 +27,8 @@ fun SpacesPage(
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
-    // 超过上限的 6/10 就警告：过大的间距会把按键挤出屏幕、破坏布局
-    val warnThreshold = PrefKeys.SPACE_MAX * 0.6f
+    // 卡片内的静态风险说明（具体数值由上层在跨阈值时弹窗提示）
+    val warnThreshold = PrefKeys.SPACE_MAX * SpaceWarning.THRESHOLD_RATIO
     val tooLarge = uiState.spaceEnabled && listOf(
         uiState.spaceKeyHLand, uiState.spaceKeyHPort,
         uiState.spaceKeyHorizLand, uiState.spaceKeyHorizPort,
@@ -56,13 +56,6 @@ fun SpacesPage(
                     title = "启用间距调节",
                     summary = "关闭则全部保持原厂",
                 )
-                if (tooLarge) {
-                    Text(
-                        "⚠ 间距过大（超过 ${warnThreshold.toInt()}dp）可能会破坏键盘布局，" +
-                            "导致按键被挤出屏幕或互相重叠，请谨慎调整。",
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                    )
-                }
             }
         }
 

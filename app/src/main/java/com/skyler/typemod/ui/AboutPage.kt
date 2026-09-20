@@ -7,16 +7,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.skyler.typemod.PrefKeys
 import com.skyler.typemod.Target
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
+/** 项目仓库地址 */
+private const val REPO_URL = "https://github.com/SkyShadowHero/XiaoAiTypeMod"
+
 /**
- * 「关于」页：外观 + 目标应用信息。
+ * 「关于」页：外观 + 目标应用信息 + 项目仓库。
  */
 @Composable
 fun AboutPage(
@@ -24,6 +29,8 @@ fun AboutPage(
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
+    val uriHandler = LocalUriHandler.current
+
     LazyColumn(
         modifier = Modifier.padding(padding),
         contentPadding = PaddingValues(
@@ -61,6 +68,19 @@ fun AboutPage(
                     Text("包名：${Target.PACKAGE}")
                     Text("适配版本：${Target.VERSION_NAME} (${Target.VERSION_CODE})")
                 }
+            }
+        }
+
+        item { SmallTitle("项目") }
+        item {
+            Card {
+                ArrowPreference(
+                    title = "GitHub 仓库",
+                    summary = REPO_URL,
+                    onClick = {
+                        runCatching { uriHandler.openUri(REPO_URL) }
+                    },
+                )
             }
         }
     }

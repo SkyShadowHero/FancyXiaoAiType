@@ -59,6 +59,7 @@ class AppUiState {
  * 应用根：主题 + 导航事件宿主 + 后台装载配置 + 页面外壳。
  *
  * 页面立即渲染（不插加载页），配置在后台读入；装载前禁止写入，因此不会覆盖已保存设置。
+ * 未连上 LSPosed 时弹出警告窗口并禁用写入（否则改动的设置无处保存）。
  * 必须提供 `LocalNavigationEventDispatcherOwner`：Miuix 弹层内部注册 NavigationBackHandler，
  * 缺少宿主会抛异常。作为根组件需显式传 parent = null。
  */
@@ -66,24 +67,45 @@ class AppUiState {
 fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     val uiState = remember { AppUiState() }
     val navigationEventOwner = rememberNavigationEventDispatcherOwner(parent = null)
+    // null = 尚未判定；true/false = 判定结果
+    var serviceReady by remember { mutableStateOf<Boolean?>(null) }
+    // 供「重试」按钮触发重新绑定检测
+    var retryTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        // 等框架完成 Binder 绑定（通常很快），再读配置
+    LaunchedEffect(retryTick) {
+        serviceReady = null
+        // 等框架完成 Binder 绑定。首次冷启动时绑定可能耗时较久，这里给足 15 秒；
+        // 过早判定会误报「未连接」，同时导致配置读不进来。
         var waited = 0
-        while (!RemoteConfig.isReady && waited < 5000) {
+        while (!RemoteConfig.isReady && waited < 15000) {
             delay(100)
             waited += 100
         }
-        loadConfigInto(uiState)
-        // 即便服务没就绪也要置位：否则用户永远改不了设置
-        uiState.loaded = true
+        if (!RemoteConfig.isReady) {
+            // 再多等一轮，绑定偶发较慢
+            delay(1000)
+        }
+        val ready = RemoteConfig.isReady
+        serviceReady = ready
+        if (ready) {
+            loadConfigInto(uiState)
+            uiState.loaded = true
+        }
     }
 
     CompositionLocalProvider(
         LocalNavigationEventDispatcherOwner provides navigationEventOwner,
     ) {
         AppTheme(colorMode = uiState.themeMode) {
-            AppShell(uiState = uiState, padding = padding)
+            AppShell(
+                uiState = uiState,
+                padding = padding,
+                serviceMissing = serviceReady == false,
+                onRetryService = {
+                    RemoteConfig.reset()
+                    retryTick++
+                },
+            )
         }
     }
 }
