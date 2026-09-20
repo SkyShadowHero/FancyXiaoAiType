@@ -15,7 +15,7 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 /** 项目仓库地址 */
-private const val REPO_URL = "https://github.com/SkyShadowHero/XiaoAiTypeMod"
+private const val REPO_URL = "https://github.com/SkyShadowHero/FancyXiaoAiType"
 
 /**
  * 「关于」页：外观 + 项目仓库。

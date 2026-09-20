@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "XiaoAiTypeMod"
+rootProject.name = "FancyXiaoAiType"
 include(":app")

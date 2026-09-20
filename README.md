@@ -2,6 +2,8 @@
 
 超级小爱输入法（Xiaomi Hyper XiaoAi Keyboard）的 **LSPosed 模块**：调整分离键盘的宽度、按键与按键气泡的圆角、按键间距，提供「竖屏强制普通键盘」开关，并解锁**超级材质**（毛玻璃键盘背景）的适用范围。
 
+仓库：<https://github.com/SkyShadowHero/FancyXiaoAiType>
+
 配置界面使用 [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 设计语言的 Compose 组件库）构建，支持底部菜单 / 平板侧栏自适应。
 
 ---
