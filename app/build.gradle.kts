@@ -14,8 +14,9 @@ android {
         applicationId = "com.skyler.fancytype"
         minSdk = 35
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode 用 major*10000 + minor*100 + patch，便于后续按语义递增
+        versionCode = 10200
+        versionName = "1.2.0"
     }
 
     buildTypes {

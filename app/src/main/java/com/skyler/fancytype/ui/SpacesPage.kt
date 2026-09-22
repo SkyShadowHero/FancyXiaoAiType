@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.skyler.fancytype.PrefKeys
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SliderPreference
@@ -70,7 +71,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "横屏·按键高度",
                             summary = "默认 ${PrefKeys.SPACE_KEY_H_LAND_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceKeyHLand.toInt()} dp",
+                            valueText = "${uiState.spaceKeyHLand.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.spaceKeyHorizLand,
@@ -87,7 +88,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "横屏·键横间距",
                             summary = "默认 ${PrefKeys.SPACE_KEY_HORIZ_LAND_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceKeyHorizLand.toInt()} dp",
+                            valueText = "${uiState.spaceKeyHorizLand.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.spaceRowLand,
@@ -102,7 +103,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "横屏·键行间距",
                             summary = "默认 ${PrefKeys.SPACE_ROW_LAND_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceRowLand.toInt()} dp",
+                            valueText = "${uiState.spaceRowLand.roundToInt()} dp",
                         )
 
                         // ---- 竖屏 ----
@@ -119,7 +120,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "竖屏·按键高度",
                             summary = "默认 ${PrefKeys.SPACE_KEY_H_PORT_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceKeyHPort.toInt()} dp",
+                            valueText = "${uiState.spaceKeyHPort.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.spaceKeyHorizPort,
@@ -136,7 +137,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "竖屏·键横间距",
                             summary = "默认 ${PrefKeys.SPACE_KEY_HORIZ_PORT_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceKeyHorizPort.toInt()} dp",
+                            valueText = "${uiState.spaceKeyHorizPort.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.spaceRowPort,
@@ -151,7 +152,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "竖屏·键行间距",
                             summary = "默认 ${PrefKeys.SPACE_ROW_PORT_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.spaceRowPort.toInt()} dp",
+                            valueText = "${uiState.spaceRowPort.roundToInt()} dp",
                         )
                     }
                 }
@@ -187,7 +188,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "左右边距",
                             summary = "离屏幕左、右边缘的距离；默认约 ${PrefKeys.MARGIN_HORIZONTAL_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.marginHorizontalDp.toInt()} dp",
+                            valueText = "${uiState.marginHorizontalDp.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.marginBottomDp,
@@ -202,7 +203,7 @@ fun SpacesPage(
                             showKeyPoints = true,
                             title = "下边距",
                             summary = "离屏幕底部的距离；默认约 ${PrefKeys.MARGIN_BOTTOM_DEFAULT.toInt()}dp",
-                            valueText = "${uiState.marginBottomDp.toInt()} dp",
+                            valueText = "${uiState.marginBottomDp.roundToInt()} dp",
                         )
                     }
                 }

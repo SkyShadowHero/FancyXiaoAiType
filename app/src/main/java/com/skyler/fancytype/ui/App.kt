@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import com.skyler.fancytype.L
 import com.skyler.fancytype.MaterialPackages
 import com.skyler.fancytype.PrefKeys
 import com.skyler.fancytype.RemoteConfig
@@ -68,6 +69,12 @@ class AppUiState {
 }
 
 /**
+ * 服务绑定的缓冲时间。绑定在 Application.onCreate 里发起，通常进入 UI 时已经完成；
+ * 这点缓冲只用于兜住偶发的慢绑定，超过就按「未连接」提示，之后一旦绑上会自动收起。
+ */
+private const val BIND_GRACE_MS = 1200L
+
+/**
  * 应用根：主题 + 导航事件宿主 + 后台装载配置 + 页面外壳。
  *
  * 页面立即渲染（不插加载页），配置在后台读入；装载前禁止写入，因此不会覆盖已保存设置。
@@ -79,29 +86,40 @@ class AppUiState {
 fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     val uiState = remember { AppUiState() }
     val navigationEventOwner = rememberNavigationEventDispatcherOwner(parent = null)
-    // null = 尚未判定；true/false = 判定结果
-    var serviceReady by remember { mutableStateOf<Boolean?>(null) }
+    // 进入应用时先直接取当前状态：RemoteConfig.init() 在 Application.onCreate 里就已经
+    // 发起绑定，通常到这一帧已经绑好了，那就不必等。
+    var serviceReady by remember { mutableStateOf<Boolean?>(RemoteConfig.isReady) }
     // 供「重试」按钮触发重新绑定检测
     var retryTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(retryTick) {
-        serviceReady = null
-        // 等框架完成 Binder 绑定。首次冷启动时绑定可能耗时较久，这里给足 15 秒；
-        // 过早判定会误报「未连接」，同时导致配置读不进来。
-        var waited = 0
-        while (!RemoteConfig.isReady && waited < 15000) {
-            delay(100)
-            waited += 100
-        }
+        // 还没绑上时给一小段缓冲（绑定是异步的），但不再像以前那样盲等 15 秒才出结论
         if (!RemoteConfig.isReady) {
-            // 再多等一轮，绑定偶发较慢
-            delay(1000)
+            var waited = 0
+            while (!RemoteConfig.isReady && waited < BIND_GRACE_MS) {
+                delay(100)
+                waited += 100
+            }
         }
-        val ready = RemoteConfig.isReady
-        serviceReady = ready
-        if (ready) {
+        serviceReady = RemoteConfig.isReady
+        if (RemoteConfig.isReady) {
             loadConfigInto(uiState)
             uiState.loaded = true
+        }
+
+        // 持续跟随：绑定可能稍后才完成，也可能中途断开（onServiceDied）。
+        // 只读一个 volatile 标志，不走 binder，开销可忽略。
+        while (true) {
+            delay(400)
+            val ready = RemoteConfig.isReady
+            if (ready != serviceReady) {
+                serviceReady = ready
+                L.i("event=service_state_changed ready=$ready")
+                if (ready) {
+                    loadConfigInto(uiState)
+                    uiState.loaded = true
+                }
+            }
         }
     }
 

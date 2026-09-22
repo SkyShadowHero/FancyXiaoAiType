@@ -48,7 +48,7 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 
 /** 导航项 */
 enum class AppPage(val label: String) {
-    Settings("分离键盘"),
+    Settings("外观"),
     Spaces("间距"),
     Material("超级材质"),
     About("关于"),
@@ -287,7 +287,7 @@ private fun PageHost(
     WindowDialog(
         show = showRestartDialog,
         title = "重启超级小爱输入法？",
-        summary = "需要 root 授权；授权后立即从系统层面关闭该进程。",
+        summary = null,
         onDismissRequest = { showRestartDialog = false },
         content = {
             Row(horizontalArrangement = Arrangement.SpaceBetween) {
@@ -312,7 +312,7 @@ private fun PageHost(
 }
 
 private fun AppPage.title(): String = when (this) {
-    AppPage.Settings -> "分离键盘调节"
+    AppPage.Settings -> "外观"
     AppPage.Spaces -> "间距"
     AppPage.Material -> "超级材质"
     AppPage.About -> "关于"

@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.skyler.fancytype.PrefKeys
+import kotlin.math.roundToInt
 import com.skyler.fancytype.RemoteConfig
 import com.skyler.fancytype.Target
 import top.yukonga.miuix.kmp.basic.Card
@@ -69,7 +70,7 @@ fun SettingsPage(
                             showKeyPoints = true,
                             title = "横屏中心间隙",
                             summary = "默认 ${Target.ORIGINAL_GAP_LAND_DP.toInt()}dp",
-                            valueText = "${uiState.gapLand.toInt()} dp",
+                            valueText = "${uiState.gapLand.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.gapPort,
@@ -84,7 +85,7 @@ fun SettingsPage(
                             showKeyPoints = true,
                             title = "竖屏中心间隙",
                             summary = "默认 ${Target.ORIGINAL_GAP_PORT_DP.toInt()}dp",
-                            valueText = "${uiState.gapPort.toInt()} dp",
+                            valueText = "${uiState.gapPort.roundToInt()} dp",
                         )
                     }
                 }
@@ -118,7 +119,7 @@ fun SettingsPage(
                             showKeyPoints = true,
                             title = "按键圆角",
                             summary = "默认 ${Target.ORIGINAL_KEY_CORNER_DP.toInt()}dp",
-                            valueText = "${uiState.cornerDp.toInt()} dp",
+                            valueText = "${uiState.cornerDp.roundToInt()} dp",
                         )
                         SliderPreference(
                             value = uiState.bubbleCornerDp,
@@ -135,7 +136,7 @@ fun SettingsPage(
                             showKeyPoints = true,
                             title = "按键气泡圆角",
                             summary = "点击按键弹出的放大气泡；默认 ${Target.ORIGINAL_BUBBLE_CORNER_DP.toInt()}dp",
-                            valueText = "${uiState.bubbleCornerDp.toInt()} dp",
+                            valueText = "${uiState.bubbleCornerDp.roundToInt()} dp",
                         )
                     }
                 }
