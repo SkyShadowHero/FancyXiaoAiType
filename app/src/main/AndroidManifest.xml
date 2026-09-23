@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 「检查更新」要访问 GitHub API 读取最新 tag -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!--
       「超级材质」页需要列出可启动的应用供用户勾选。
       这里用 <queries> 声明可见性，而不是申请 QUERY_ALL_PACKAGES：

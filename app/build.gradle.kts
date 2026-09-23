@@ -36,6 +36,8 @@ android {
 
     buildFeatures {
         compose = true
+        // 「检查更新」要读 BuildConfig.VERSION_NAME 跟 GitHub tag 比对
+        buildConfig = true
     }
 
     packaging {
