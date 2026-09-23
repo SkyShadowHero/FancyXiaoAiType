@@ -18,7 +18,7 @@
 | 间距调节 | 按键高度 / 键横间距 / 键行间距，横竖屏各一套 |
 | 边距调节 | 键盘离屏幕左/右/下的距离 |
 | 竖屏强制普通键盘 | 横屏保持分离，竖屏回落为整块键盘 |
-| 超级材质 | 解锁毛玻璃键盘背景：可强制所有应用，或手动勾选一批应用 |
+| 超级材质 | 暂时只支持解锁圆角 |
 
 ## 适用环境
 
@@ -29,18 +29,13 @@
 | 框架 | LSPosed（libxposed API 102），已在 `2.2.0-it (7873)` 验证 |
 | 测试设备 | 小米平板 7（2410CRP4CC / Android 17 / 2136×3200 @440dpi） |
 | 最低 Android | 15（minSdk 35） |
-| root | 仅「重启输入法」需要（KernelSU / Magisk） |
 
 ## 安装
 
 1. 安装 APK
 2. LSPosed 管理器 → 模块 → 启用 **FancyType**
 3. 作用域勾选 `com.xiaomi.type`
-4. **重启输入法进程**（重装模块后必做，否则新代码不会注入）
-
-```bash
-adb shell su -c "am force-stop com.xiaomi.type"
-```
+4. **重启输入法**
 
 ## 构建
 
@@ -67,19 +62,8 @@ echo "sdk.dir=/path/to/Android/SDK" > local.properties
 - **超级材质仅 `0.2.910` 可用**（依赖的混淆方法在更早版本不存在）；材质还要求系统
   `background_blur_enabled` 已开启，否则默认也不会启用。
 - **按键圆角 / 气泡圆角是构建期参数**，改后需重开键盘；间隙、间距、边距在布局期读取，实时生效。
-- **无法单独设置个别按键的圆角**（如左下「符」键）：应用对按键只暴露一个统一圆角参数。
-- **`0.2.596` 不支持分离键盘宽度**（该版本无对应资源）。
-- 混淆类名与资源名基于 `0.2.910`，输入法升级后可能需要重新适配。
-
-## 日志
-
-```bash
-adb logcat -s FancyType:*
-```
-
-关键事件：`module_loaded` / `install_done hooks=N` / `resid_resolved by_name=N/N` /
-`dimen_override`（尺寸覆写命中）/ `split_gate`（竖屏门禁）/ `material_gate`（材质放行）。
 
 ## 许可
 
 仅供个人学习与设备定制使用。
+如有侵权请联系删除。
