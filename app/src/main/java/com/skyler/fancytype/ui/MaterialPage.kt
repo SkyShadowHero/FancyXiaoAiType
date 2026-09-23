@@ -90,7 +90,7 @@ fun MaterialPage(
                         uiState.save { editor -> editor.putBoolean(PrefKeys.MATERIAL_ENABLED, checked) }
                     },
                     title = "启用超级材质",
-                    summary = "让键盘背景使用系统毛玻璃材质（默认仅系统搜索可用）",
+                    summary = "让键盘背景使用超级材质(目前仅实现了调用圆角，背景高级材质暂未实现)",
                 )
             }
         }

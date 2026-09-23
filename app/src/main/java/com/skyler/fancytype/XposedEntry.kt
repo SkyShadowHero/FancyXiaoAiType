@@ -101,6 +101,38 @@ class XposedEntry : XposedModule() {
         return ok
     }
 
+    /**
+     * 定位 `pc.m` 里的「集合包含」判定方法。
+     *
+     * **不能按名字找**：0.2.910 叫 `L0`，0.2.974 改成了 `x0`（0.2.974 上按 `L0` 找会落空，
+     * 表现就是超级材质整个失效）。签名 `(Iterable, Object) -> boolean` 在这些版本里
+     * 都是该类中唯一的一个，所以按签名定位，改名也不受影响。
+     */
+    private fun findIterableContains(cls: Class<*>?): Method? {
+        if (cls == null) return null
+        val picked = try {
+            cls.declaredMethods.firstOrNull {
+                it.parameterCount == 2 &&
+                    it.returnType == Boolean::class.javaPrimitiveType &&
+                    it.parameterTypes[0] == Iterable::class.java &&
+                    it.parameterTypes[1] == Any::class.java
+            }
+        } catch (t: Throwable) {
+            L.w("event=methods_scan_failed class=${cls.name}")
+            return null
+        }
+        if (picked == null) {
+            L.w("event=method_missing class=${cls.name} signature=(Iterable,Object)->boolean")
+            return null
+        }
+        picked.isAccessible = true
+        L.i(
+            "event=method_resolved class=${cls.name} method=${picked.name}" +
+                "(java.lang.Iterable,java.lang.Object) -> boolean (按签名匹配)"
+        )
+        return picked
+    }
+
     /** 资源名 -> ID（运行时解析，缓存）。ID 随版本变化，名字稳定。 */
     private val nameToId = HashMap<String, Int>()
     private var namesResolved = false
@@ -342,12 +374,9 @@ class XposedEntry : XposedModule() {
             }
         }
 
-        // 2) 判定入口：pc.m.L0(Iterable, Object)
+        // 2) 判定入口：pc.m 里的 (Iterable, Object) -> boolean
         val utilCls = loadClass(cl, Target.CLS_COLLECTIONS_UTIL) ?: return ok
-        val contains = findMethodByArity(utilCls, Target.M_CONTAINS, 2) {
-            it.returnType == Boolean::class.javaPrimitiveType &&
-                it.parameterTypes[1] == Any::class.java
-        } ?: return ok
+        val contains = findIterableContains(utilCls) ?: return ok
         return try {
             hook(contains)
                 .setId("material_contains")

@@ -191,11 +191,17 @@ object Target {
     //
     // 设备实测 prefs 里只有 com.android.quicksearchbox 在白名单，且
     // hyper_material_package_versions **不存在**，因此 map 由 allowed_packages 推导。
-    // Hook 选择「判定入口」pc.m.L0 而不是改 prefs：这样无论云端后续如何覆写
+    // Hook 选择「判定入口」pc.m 的集合包含方法而不是改 prefs：这样无论云端后续如何覆写
     // allowed_packages / package_versions，放行结果都由本模块决定。
 
-    /** 集合包含判定的工具类：public static boolean L0(Iterable, Object) */
+    /** 集合包含判定的工具类 */
     const val CLS_COLLECTIONS_UTIL = "pc.m"
+
+    /**
+     * 该方法的名字**随版本变化**：`0.2.910` 是 `L0`，`0.2.974` 改成了 `x0`。
+     * 但签名 `(Iterable, Object) -> boolean` 在两类版本里都唯一且稳定，
+     * 所以实际定位按签名匹配（见 XposedEntry.findIterableContains），这个名字只用于日志。
+     */
     const val M_CONTAINS = "L0"
 
     /** 材质状态机的宿主，用于把拦截范围限制在它自己的判定里 */
@@ -203,7 +209,7 @@ object Target {
     const val M_MATERIAL_APPLY = "j"
 
     /**
-     * `pc.m.L0` 的第一个参数在材质判定里始终是 `bb.b0.j()` 内部
+     * 材质判定里该方法的第一个参数始终是 `bb.b0.j()` 内部
      * `new LinkedHashMap()` 的 keySet，jar 里的类名就是这个（稳定，不含混淆编号）。
      */
     const val MATERIAL_GATE_SET_CLASS = "java.util.LinkedHashMap\$LinkedKeySet"
