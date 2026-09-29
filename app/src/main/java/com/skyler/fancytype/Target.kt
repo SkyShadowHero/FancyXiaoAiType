@@ -3,14 +3,18 @@ package com.skyler.fancytype
 /**
  * 目标 App（超级小爱输入法 / Xiaomi Hyper XiaoAi Keyboard）专有常量。
  *
- * 全部基于样本 0.2.910.ba19145a (versionCode 20910)。
- * R8 混淆类名与资源 ID 均随版本变化，升级 APK 后必须重新核对。
+ * 这里只放**与输入法版本无关**的东西：包名、prefs 键名、资源名、以及各尺寸项的默认 dp 值。
+ * 它们按「名字」定位，因此跨版本通用。
+ *
+ * 「按混淆类名定位」的目标不在这里 —— R8 每次发版都会重命名混淆类，
+ * 那些按输入法版本分档记录在 [AppTargets] / [TargetCatalog] 里，运行时自动挑档。
+ *
+ * 注意其中**资源 ID** 仍会随版本漂移（实测 0.2.974 → 0.2.1053 整体偏移 +11），
+ * 所以运行时一律按资源**名**用 `getIdentifier` 解析，不直接使用下面的数字 ID。
  */
 object Target {
 
     const val PACKAGE = "com.xiaomi.type"
-    const val VERSION_NAME = "0.2.910.ba19145a"
-    const val VERSION_CODE = 20910
 
     // ---- 分离键盘几何 / 开关 ----
     // 这里的常量都**与输入法版本无关**：包名、prefs 键、资源名、默认 dp 值。
