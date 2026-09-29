@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,7 @@ import com.skyler.fancytype.PrefKeys
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
@@ -44,6 +48,7 @@ import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Tune
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /** 导航项 */
@@ -210,6 +215,17 @@ private fun PageHost(
     padding: PaddingValues,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
+
+    // 顶部渐进模糊。backdrop 需要内容层注册进去（见下面的 layerBackdrop），
+    // 顶栏的模糊层才能采样到滚动经过的内容。
+    val backdrop = rememberTopBlurBackdrop()
+    // 只在滚动后才让模糊层出现。这里用 derivedStateOf 让这个布尔量只在
+    // 「有/无偏移」翻转时触发重组，而不是每帧重组顶栏 —— 滚动偏移本身
+    // 在 BlurredTopBar 的 graphicsLayer 里按帧读取，不进组合。
+    val blurActive by remember(backdrop) {
+        derivedStateOf { backdrop != null && scrollBehavior.state.contentOffset < 0f }
+    }
+
     var showRestartDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     // 用 composition 作用域而不是 LaunchedEffect(key)：
@@ -237,13 +253,22 @@ private fun PageHost(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = pages[uiState.page.coerceIn(0, pages.size - 1)].title(),
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    DropdownActionMenu { showRestartDialog = true }
-                },
-            )
+            BlurredTopBar(
+                backdrop = backdrop,
+                active = blurActive,
+                scrollOffsetPx = { -scrollBehavior.state.contentOffset },
+            ) {
+                TopAppBar(
+                    title = pages[uiState.page.coerceIn(0, pages.size - 1)].title(),
+                    scrollBehavior = scrollBehavior,
+                    // 模糊层在顶栏下面；顶栏自己必须透明，否则会盖住模糊。
+                    // 没滚动时不需要模糊，用回主题色，避免透出下面的内容。
+                    color = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    actions = {
+                        DropdownActionMenu { showRestartDialog = true }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
@@ -251,32 +276,20 @@ private fun PageHost(
             top = innerPadding.calculateTopPadding(),
             bottom = innerPadding.calculateBottomPadding(),
         )
-        when (pages[uiState.page.coerceIn(0, pages.size - 1)]) {
-            AppPage.VirtualKeyboard -> VirtualKeyboardPage(
-                uiState = uiState,
-                gapMaxLand = gapMaxLand,
-                gapMaxPort = gapMaxPort,
-                padding = padding,
-                scaffoldPadding = contentPadding,
-            )
-
-            AppPage.FloatingKeyboard -> FloatingKeyboardPage(
-                uiState = uiState,
-                padding = padding,
-                scaffoldPadding = contentPadding,
-            )
-
-            AppPage.Material -> MaterialPage(
-                uiState = uiState,
-                padding = padding,
-                scaffoldPadding = contentPadding,
-            )
-
-            AppPage.About -> AboutPage(
-                uiState = uiState,
-                padding = padding,
-                scaffoldPadding = contentPadding,
-            )
+        // 页面内容注册进 backdrop，供顶栏的模糊层采样；
+        // 同时把顶栏的 nestedScrollConnection 挂到这一层。
+        //
+        // 这个 nestedScroll 是必须的：Miuix 文档写明 nestedScrollConnection
+        // 「should be attached to a Modifier.nestedScroll in order to keep track of
+        // the scroll events」。之前全模块一处都没挂，scrollBehavior.state.contentOffset
+        // 恒为 0 —— 顶栏既不收起，渐进模糊也永远不出现（实测「完全没效果」就是这个原因）。
+        // 挂在这一层而不是各页的 LazyColumn 上，四个页面一次性全覆盖。
+        Box(
+            modifier = Modifier
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+        ) {
+            PageContent(uiState, pages, gapMaxLand, gapMaxPort, padding, contentPadding)
         }
     }
 
@@ -309,6 +322,45 @@ private fun PageHost(
             }
         },
     )
+}
+
+/** 按当前页分发内容。抽出来是为了让 [PageHost] 能把整块内容包进 backdrop。 */
+@Composable
+private fun PageContent(
+    uiState: AppUiState,
+    pages: List<AppPage>,
+    gapMaxLand: Float,
+    gapMaxPort: Float,
+    padding: PaddingValues,
+    contentPadding: PaddingValues,
+) {
+    when (pages[uiState.page.coerceIn(0, pages.size - 1)]) {
+        AppPage.VirtualKeyboard -> VirtualKeyboardPage(
+            uiState = uiState,
+            gapMaxLand = gapMaxLand,
+            gapMaxPort = gapMaxPort,
+            padding = padding,
+            scaffoldPadding = contentPadding,
+        )
+
+        AppPage.FloatingKeyboard -> FloatingKeyboardPage(
+            uiState = uiState,
+            padding = padding,
+            scaffoldPadding = contentPadding,
+        )
+
+        AppPage.Material -> MaterialPage(
+            uiState = uiState,
+            padding = padding,
+            scaffoldPadding = contentPadding,
+        )
+
+        AppPage.About -> AboutPage(
+            uiState = uiState,
+            padding = padding,
+            scaffoldPadding = contentPadding,
+        )
+    }
 }
 
 private fun AppPage.title(): String = when (this) {
