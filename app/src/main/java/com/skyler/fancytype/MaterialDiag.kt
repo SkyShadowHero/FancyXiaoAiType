@@ -8,10 +8,10 @@ import java.lang.reflect.Modifier
  *
  * 现象：圆角有了、但键盘背景仍是不透明的实色。
  *
- * 原因：`bb.b0` 的材质应用受离屏填充能力门控制（jadx 里叫 `z7.a.f18746a`），
+ * 原因：材质的应用受离屏填充能力门控制（门类的静态字段名由 [AppTargets.fOffscreenFill] 给出），
  * 它等于 `SystemProperties["persist.sys.advanced_visual_release"] >= 6`。
  * 本机该属性为 5，于是：
- *   - `bb.b0` 只在门为真时才调 `xe.h.x(view, 65536)`（`setMiBlurWinType`），
+ *   - 材质应用入口只在门为真时才调 `setMiBlurWinType(view, 65536)`，
  *     把窗口标记为可离屏填充；少了这一步，后设的模糊半径采不到背后内容，
  *     看起来就是实心；
  *   - 门为假时还会先刷一层实色背景（20ms 后才清）。
@@ -27,7 +27,7 @@ import java.lang.reflect.Modifier
  */
 object MaterialDiag {
 
-    /** `z7.a` 读取的系统属性名 */
+    /** 离屏填充门（[AppTargets.advancedVisualGate]）读取的系统属性名 */
     const val PROP_ADVANCED_VISUAL = "persist.sys.advanced_visual_release"
 
     /** 强制上报的版本号：>= 6 才能让离屏填充门为真 */
@@ -102,8 +102,14 @@ object MaterialDiag {
                 "err"
             }
             L.i("event=material_env prop_$PROP_ADVANCED_VISUAL=$prop plus6=${(prop?.toIntOrNull() ?: -1) >= 6}")
-            L.i("event=material_env_gate ${dumpStaticFields(cl, Target.CLS_ADVANCED_VISUAL_GATE)}")
-            L.i("event=material_env_blur ${dumpStaticFields(cl, Target.CLS_BLUR_GATE)}")
+            val t = TargetCatalog.resolve(cl)
+            if (t == null) {
+                L.i("event=material_env_gate skipped=unknown_app_version")
+                L.i("event=material_env_blur skipped=unknown_app_version")
+            } else {
+                L.i("event=material_env_gate ${dumpStaticFields(cl, t.advancedVisualGate)}")
+                L.i("event=material_env_blur ${dumpStaticFields(cl, t.blurGate)}")
+            }
         } catch (t: Throwable) {
             L.e("event=material_env_failed", t)
         }

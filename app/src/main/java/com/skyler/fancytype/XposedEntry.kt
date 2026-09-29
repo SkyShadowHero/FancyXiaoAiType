@@ -44,17 +44,30 @@ class XposedEntry : XposedModule() {
             return
         }
         var ok = 0
+
+        // 1) 与输入法版本无关的两类 Hook，先装：
+        //    - 资源尺寸覆写：按资源名解析，不碰混淆类名
+        //    - SystemProperties.get 强制离屏填充属性
+        //    顺序要紧：属性 Hook 必须早于诊断 —— 诊断会读离屏填充门的静态字段，
+        //    那一步会触发它的 <clinit>，一旦在 Hook 之前触发，那个门就被永久算成 false 了。
         ok += hookResourcesDimension(cl)
-        ok += hookPadSplitDims(cl)
-        ok += hookSplitEnabledGetter(cl)
-        ok += hookPrefBool(cl)
-        ok += hookMaterial(cl)
-        // 顺序要紧：先把属性 Hook 装好，再做诊断。
-        // 诊断会读 z7.a 的静态字段，那一步会触发它的 <clinit>，
-        // 一旦在 Hook 之前触发，离屏填充门就被永久算成 false 了。
         ok += hookSystemPropertiesForMaterial(cl)
-        ok += hookMaterialDiagnostics(cl)
-        L.i("event=install_done hooks=$ok process=$processName")
+
+        // 2) 按混淆类名定位的部分：先从分档表挑出匹配当前输入法版本的一档。
+        //    未记录的新版本会返回 null —— 此时只有上面两类 Hook 生效，
+        //    资源类功能（圆角 / 间距 / 宽度 / 边距等）照常工作，日志里会明确提示。
+        val t = TargetCatalog.resolve(cl)
+        if (t == null) {
+            L.w("event=hooks_degraded reason=unknown_app_version 材质与分离键盘开关等按类名定位的功能不可用")
+        } else {
+            ok += hookPadSplitDims(cl, t)
+            ok += hookSplitEnabledGetter(cl, t)
+            ok += hookPrefBool(cl, t)
+            ok += hookMaterial(cl, t)
+            ok += hookMaterialDiagnostics(cl, t)
+        }
+
+        L.i("event=install_done hooks=$ok process=$processName appVersion=${t?.label ?: "unknown"}")
         if (ok == 0) installed.set(false)
     }
 
@@ -118,7 +131,7 @@ class XposedEntry : XposedModule() {
 
 
     /**
-     * 定位 `pc.m` 里的「集合包含」判定方法。
+     * 定位集合工具类里的「集合包含」判定方法（签名 `(Iterable, Object) -> boolean`）。
      *
      * **不能按名字找**：0.2.910 叫 `L0`，0.2.974 改成了 `x0`（0.2.974 上按 `L0` 找会落空，
      * 表现就是超级材质整个失效）。签名 `(Iterable, Object) -> boolean` 在这些版本里
@@ -456,9 +469,9 @@ class XposedEntry : XposedModule() {
         return picked
     }
 
-    /** la.n = PadSplitQwertyDims：构造时打印分离键盘几何，用于核对间隙是否真的生效。 */
-    private fun hookPadSplitDims(cl: ClassLoader): Int {
-        val cls = loadClass(cl, Target.CLS_PAD_SPLIT_DIMS) ?: return 0
+    /** PadSplitQwertyDims（[AppTargets.padSplitDims]）：构造时打印分离键盘几何，用于核对间隙是否真的生效。 */
+    private fun hookPadSplitDims(cl: ClassLoader, target: AppTargets): Int {
+        val cls = loadClass(cl, target.padSplitDims) ?: return 0
         val ctor = try {
             cls.declaredConstructors.firstOrNull { it.parameterCount == 13 }?.also { it.isAccessible = true }
         } catch (t: Throwable) {
@@ -482,10 +495,10 @@ class XposedEntry : XposedModule() {
         }
     }
 
-    /** 功能 2 的读取入口：n9.e.o()。 */
-    private fun hookSplitEnabledGetter(cl: ClassLoader): Int {
-        val cls = loadClass(cl, Target.CLS_PREF_FACADE) ?: return 0
-        val m = findMethodByArity(cls, Target.M_SPLIT_ENABLED_GETTER, 0) {
+    /** 功能 2 的读取入口：prefs 门面里的 0 参 boolean 方法（分离键盘开关）。 */
+    private fun hookSplitEnabledGetter(cl: ClassLoader, target: AppTargets): Int {
+        val cls = loadClass(cl, target.prefFacade) ?: return 0
+        val m = findMethodByArity(cls, target.mSplitGetter, 0) {
             it.returnType == Boolean::class.javaPrimitiveType
         } ?: return 0
         return try {
@@ -506,10 +519,10 @@ class XposedEntry : XposedModule() {
         }
     }
 
-    /** 覆盖走通用入口 n9.e.a(String,boolean) 读取 split_keyboard_enabled 的调用点。 */
-    private fun hookPrefBool(cl: ClassLoader): Int {
-        val cls = loadClass(cl, Target.CLS_PREF_FACADE) ?: return 0
-        val m = findMethodByArity(cls, Target.M_PREF_BOOL, 2) {
+    /** 覆盖走通用入口 `(String, boolean)` 读取 split_keyboard_enabled 的调用点。 */
+    private fun hookPrefBool(cl: ClassLoader, target: AppTargets): Int {
+        val cls = loadClass(cl, target.prefFacade) ?: return 0
+        val m = findMethodByArity(cls, target.mPrefBool, 2) {
             it.returnType == Boolean::class.javaPrimitiveType &&
                 it.parameterTypes[0] == String::class.java &&
                 it.parameterTypes[1] == Boolean::class.javaPrimitiveType
@@ -532,16 +545,18 @@ class XposedEntry : XposedModule() {
     /**
      * 超级材质：把「哪些应用能用毛玻璃键盘背景」的判定接管过来。
      *
-     * 先挂 `bb.b0.j()`（只为把拦截范围收紧到它内部，不改它的行为），
-     * 再挂 `pc.m.L0(Iterable, Object)` 做真正的放行判定。
-     * 即使 `bb.b0.j()` 挂不上，判定仍靠集合类名生效，只是范围略宽 —— 会降级但不会失效。
+     * 先挂材质状态机里的 0 参方法（只为把拦截范围收紧到它内部，不改它的行为），
+     * 再挂集合工具的 `(Iterable, Object) -> boolean` 做真正的放行判定。
+     * 即使前者挂不上，判定仍靠集合类名生效，只是范围略宽 —— 会降级但不会失效。
+     *
+     * 具体类名/方法名来自 [AppTargets]，按输入法版本分档，不再写死。
      */
-    private fun hookMaterial(cl: ClassLoader): Int {
+    private fun hookMaterial(cl: ClassLoader, target: AppTargets): Int {
         var ok = 0
 
-        // 1) 范围锚点：bb.b0.j()
-        val helperCls = loadClass(cl, Target.CLS_MATERIAL_HELPER)
-        val applyMethod = findMethodByArity(helperCls, Target.M_MATERIAL_APPLY, 0) {
+        // 1) 范围锚点：材质状态机里的 0 参方法
+        val helperCls = loadClass(cl, target.materialHelper)
+        val applyMethod = findMethodByArity(helperCls, target.mMaterialApply, 0) {
             it.returnType == Void.TYPE
         }
         if (applyMethod != null) {
@@ -564,8 +579,8 @@ class XposedEntry : XposedModule() {
             }
         }
 
-        // 2) 判定入口：pc.m 里的 (Iterable, Object) -> boolean
-        val utilCls = loadClass(cl, Target.CLS_COLLECTIONS_UTIL) ?: return ok
+        // 2) 判定入口：集合工具类里的 (Iterable, Object) -> boolean
+        val utilCls = loadClass(cl, target.collectionsUtil) ?: return ok
         val contains = findIterableContains(utilCls) ?: return ok
         return try {
             hook(contains)
@@ -588,18 +603,18 @@ class XposedEntry : XposedModule() {
     }
 
     /**
-     * 材质描述符应用入口 `xe.b.a(View, xe.e)`。
+     * 材质描述符应用入口 `(View, 描述符) -> void`。
      *
      * 1) 观测：把描述符里的模糊参数 / 混合色打出来（采样限流），便于核对材质是否真的带上模糊。
      * 2) 修正：描述符应用完后，补上离屏填充标记 —— 默认因为
      *    `persist.sys.advanced_visual_release` 只有 5 而跳过了这一步，
      *    导致模糊采不到窗口背后的内容，看着是实色。这里直接补，拨开关即时生效。
      */
-    private fun hookMaterialDiagnostics(cl: ClassLoader): Int {
+    private fun hookMaterialDiagnostics(cl: ClassLoader, target: AppTargets): Int {
         MaterialDiag.logEnvironment(cl)
         MaterialEnhancer.probe()
-        val cls = loadClass(cl, Target.CLS_MATERIAL_APPLIER) ?: return 0
-        val apply = findMethodByArity(cls, Target.M_APPLY_MATERIAL, 2) {
+        val cls = loadClass(cl, target.materialApplier) ?: return 0
+        val apply = findMethodByArity(cls, target.mApplyMaterial, 2) {
             it.returnType == Void.TYPE && it.parameterTypes[0] == android.view.View::class.java
         } ?: return 0
         return try {
@@ -631,7 +646,8 @@ class XposedEntry : XposedModule() {
     }
 
     /**
-     * 修正「背景不透明」：`z7.a` 用 `persist.sys.advanced_visual_release >= 6`
+     * 修正「背景不透明」：离屏填充门（[AppTargets.advancedVisualGate]）用
+     * `persist.sys.advanced_visual_release >= 6`
      * 判断设备是否支持离屏填充，为假时不调 `setMiBlurWinType`，模糊就没有内容可采样。
      * 这里在该属性被读取时按配置上报 6。
      *

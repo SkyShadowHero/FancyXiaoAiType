@@ -13,10 +13,9 @@ object Target {
     const val VERSION_CODE = 20910
 
     // ---- 分离键盘几何 / 开关 ----
-    const val CLS_PAD_SPLIT_DIMS = "la.n"      // PadSplitQwertyDims（用于观测真实几何）
-    const val CLS_PREF_FACADE = "n9.e"         // SharedPreferences 门面（带 ConcurrentHashMap 缓存）
-    const val M_PREF_BOOL = "a"                // static boolean a(String key, boolean def)
-    const val M_SPLIT_ENABLED_GETTER = "o"     // static boolean o() -> split_keyboard_enabled
+    // 这里的常量都**与输入法版本无关**：包名、prefs 键、资源名、默认 dp 值。
+    // 「按混淆类名定位」的目标不放在这里 —— R8 每次发版都会改名，
+    // 那些按输入法版本分档记录在 AppTargets / TargetCatalog 里。
     const val KEY_SPLIT_ENABLED = "split_keyboard_enabled"
 
     // ---- 分离键盘中心间隙资源 ----
@@ -175,81 +174,7 @@ object Target {
     )
 
     // ---- 超级材质（Hyper Material / 毛玻璃键盘背景）----
-    //
-    // 默认逻辑（bb.b0.j()）：
-    //     map        = 解析 prefs["hyper_material_package_versions"]（缺失时由 allowed_packages 推导，值均为 1）
-    //     linkedMap  = map 里 value <= 2 的项
-    //     z10        = b0.s && pc.m.L0(linkedMap.keySet(), 当前前台包名)
-    //     enable     = z10
-    //     dark       = force_dark 命中包名（或内部标志）
-    //     light      = !dark && z10 && force_light 命中包名
-    //
-    // 其中 b0.s = xe.b.c() && xe.b.b(service)：
-    //     c() = SystemProperties["persist.sys.background_blur_supported"]
-    //     b() = Secure["background_blur_enable"] == 1
-    // 本机两者均为 true，所以唯一的门就是 pc.m.L0(...)。
-    //
-    // 设备实测 prefs 里只有 com.android.quicksearchbox 在白名单，且
-    // hyper_material_package_versions **不存在**，因此 map 由 allowed_packages 推导。
-    // Hook 选择「判定入口」pc.m 的集合包含方法而不是改 prefs：这样无论云端后续如何覆写
-    // allowed_packages / package_versions，放行结果都由本模块决定。
-
-    /** 集合包含判定的工具类 */
-    const val CLS_COLLECTIONS_UTIL = "pc.m"
-
-    /**
-     * 该方法的名字**随版本变化**：`0.2.910` 是 `L0`，`0.2.974` 改成了 `x0`。
-     * 但签名 `(Iterable, Object) -> boolean` 在两类版本里都唯一且稳定，
-     * 所以实际定位按签名匹配（见 XposedEntry.findIterableContains），这个名字只用于日志。
-     */
-    const val M_CONTAINS = "L0"
-
-    /** 材质状态机的宿主，用于把拦截范围限制在它自己的判定里 */
-    const val CLS_MATERIAL_HELPER = "bb.b0"
-    const val M_MATERIAL_APPLY = "j"
-
-    /**
-     * 材质判定里该方法的第一个参数始终是 `bb.b0.j()` 内部
-     * `new LinkedHashMap()` 的 keySet，jar 里的类名就是这个（稳定，不含混淆编号）。
-     */
     const val MATERIAL_GATE_SET_CLASS = "java.util.LinkedHashMap\$LinkedKeySet"
-
-    // 目标应用自身的材质配置键（只读，用于诊断日志）
-    const val KEY_MATERIAL_ALLOWED = "hyper_material_allowed_packages"
-    const val KEY_MATERIAL_FORCE_DARK = "hyper_material_force_dark"
-    const val KEY_MATERIAL_FORCE_LIGHT = "hyper_material_force_light"
-    const val KEY_MATERIAL_VERSIONS = "hyper_material_package_versions"
-
-    // ---- 材质「透明度」链路（诊断 + 修正）----
-
-    /**
-     * 离屏填充能力门：`z7.a.f18746a`。
-     * 为 false 时 `bb.b0` 不会调 `setMiBlurWinType`，模糊拿不到背后的内容 → 背景看着是实心。
-     */
-    const val CLS_ADVANCED_VISUAL_GATE = "z7.a"
-    const val F_SUPPORTS_OFFSCREEN_FILL = "f18746a"
-
-    /** 模糊能力位所在类 `xe.b` 的静态字段 */
-    const val CLS_BLUR_GATE = "xe.b"
-    const val F_BLUR_SUPPORTED = "f18279a"       // persist.sys.background_blur_supported
-    const val F_BLUR_VERSION = "f18281d"         // persist.sys.advanced_visual_release / background_blur_version
-    const val F_BLUR_STATUS_DEFAULT = "f18280c"  // persist.sys.background_blur_status_default
-    const val F_BIONIC_MATERIAL = "b"            // persist.sys.bionic_material_supported
-
-    /** 材质描述符 `xe.e` 的字段 */
-    const val F_DESC_BLEND = "f18303a"   // w5.i 混合色
-    const val F_DESC_BLUR = "f18304c"    // d 模糊参数
-    const val F_DESC_INNER = "f18305d"   // i3.h 内阴影
-    const val F_DESC_CORNER = "f18306e"  // c 描边/圆角
-
-    /** `d` 模糊参数里的字段 */
-    const val F_BLUR_MODE = "f18298a"
-    const val F_BLUR_RADIUS = "f18300d"
-    const val F_BLUR_TYPE = "f18299c"
-
-    /** 材质描述符应用入口：`xe.b.a(View, xe.e)` */
-    const val CLS_MATERIAL_APPLIER = "xe.b"
-    const val M_APPLY_MATERIAL = "a"
 
     // ==================================================================
     // 触屏候选词 / 悬浮键盘的工具栏与候选窗口（0.2.974 实测资源名）
