@@ -1,7 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// 签名信息：优先读根目录 keystore.properties（不进版本库），
+// 其次读命令行 -P 参数（ANDROID_SIGNING_*），两者都没有则出未签名包。
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val signStorePath = keystoreProps.getProperty("storeFile")
+    ?: (findProperty("ANDROID_SIGNING_STORE_FILE") as String?)
+val signStorePassword = keystoreProps.getProperty("storePassword")
+    ?: (findProperty("ANDROID_SIGNING_STORE_PASSWORD") as String?)
+val signKeyAlias = keystoreProps.getProperty("keyAlias")
+    ?: (findProperty("ANDROID_SIGNING_KEY_ALIAS") as String?)
+val signKeyPassword = keystoreProps.getProperty("keyPassword")
+    ?: (findProperty("ANDROID_SIGNING_KEY_PASSWORD") as String?)
 
 android {
     namespace = "com.skyler.fancytype"
@@ -15,14 +32,27 @@ android {
         minSdk = 35
         targetSdk = 37
         // versionCode 用 major*10000 + minor*100 + patch，便于后续按语义递增
-        versionCode = 10300
-        versionName = "1.3.0"
+        versionCode = 10301
+        versionName = "1.3.1"
+    }
+
+    signingConfigs {
+        if (!signStorePath.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(signStorePath)
+                storePassword = signStorePassword
+                keyAlias = signKeyAlias
+                keyPassword = signKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
+            // 未提供签名信息时为 null，仍可正常产出 unsigned 包
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
             isMinifyEnabled = false

@@ -22,3 +22,8 @@ local.properties
 *.dex
 *.dm
 mapping.txt
+
+# 签名口令，绝不提交
+keystore.properties
+*.jks
+*.keystore
