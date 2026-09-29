@@ -7,7 +7,7 @@ import java.lang.reflect.Method
  * 把「离屏填充 / 窗口模糊」这几个框架接口直接打到键盘背景上。
  *
  * 背景：目标应用把 `persist.sys.advanced_visual_release >= 6` 当作「支持离屏填充」的门
- * （jadx 里的 `z7.a.f18746a`）。本机该属性为 5，于是 `bb.b0` 从不调用
+ * （门类的静态字段名见 [AppTargets.fOffscreenFill]）。本机该属性为 5，于是材质应用入口从不调用
  * `setMiBlurWinType`，模糊采样不到窗口背后的内容，看起来就是一块实色。
  *
  * 这里不改系统属性（那会污染整个进程，且静态字段每进程只算一次、拨开关不重启就没反应），
@@ -64,7 +64,7 @@ object MaterialEnhancer {
 
     /**
      * 在材质描述符已应用之后补上离屏填充标记。
-     * 与 `bb.b0.b()` 在门为真时走的序列一致：先 65536，500ms 后 1。
+     * 与门为真时描述符应用走的序列一致：先 65536，500ms 后 1。
      */
     fun ensureOffscreenFill(view: View) {
         probeWhitelist(view)
@@ -77,7 +77,7 @@ object MaterialEnhancer {
             }
             return
         }
-        // 同时确保「透过窗口模糊」是开着的（默认门为假时 bb.b0 也不会走到这一步）
+        // 同时确保「透过窗口模糊」是开着的（默认门为假时材质应用入口也不会走到这一步）
         runCatching {
             method("setPassWindowBlurEnabled", Boolean::class.javaPrimitiveType!!)?.invoke(view, true)
         }
