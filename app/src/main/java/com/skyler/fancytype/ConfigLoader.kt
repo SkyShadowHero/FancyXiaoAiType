@@ -147,6 +147,18 @@ object ConfigLoader {
                 candWinRowPaddingDp = p.runCatching {
                     getFloat(PrefKeys.CAND_WIN_ROW_PADDING_DP, PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
                 }.getOrDefault(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT),
+                candWinCandFontDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_CAND_FONT_DP, PrefKeys.CAND_WIN_CAND_FONT_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_CAND_FONT_DEFAULT),
+                // ---- 悬浮候选窗口：字号覆盖（独立开关）----
+                candFontEnabled = p.runCatching { getBoolean(PrefKeys.CAND_FONT_ENABLED, false) }
+                    .getOrDefault(false),
+                candWinNumberFontDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_NUMBER_FONT_DP, PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT),
+                candWinPinyinFontDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_PINYIN_FONT_DP, PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT),
                 // ---- 悬浮键盘：描边宽度 ----
                 toolbarBorderWidthDp = p.runCatching {
                     getFloat(PrefKeys.TOOLBAR_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
@@ -218,6 +230,14 @@ object ConfigLoader {
         val candWinShadowDp: Float,
         val candWinSpacingDp: Float,
         val candWinRowPaddingDp: Float,
+        /** 悬浮候选窗口的候选词字号（dip），行高按比例联动 */
+        val candWinCandFontDp: Float,
+        // ---- 悬浮候选窗口：字号覆盖（独立于「启用悬浮键盘调节」）----
+        val candFontEnabled: Boolean,
+        /** 候选词序号字号（dip） */
+        val candWinNumberFontDp: Float,
+        /** 拼音字号（dip） */
+        val candWinPinyinFontDp: Float,
         // ---- 悬浮键盘：描边宽度 ----
         val toolbarBorderWidthDp: Float,
         val candWinBorderWidthDp: Float,
@@ -271,6 +291,10 @@ object ConfigLoader {
                 candWinShadowDp = PrefKeys.CAND_WIN_SHADOW_DEFAULT,
                 candWinSpacingDp = PrefKeys.CAND_WIN_SPACING_DEFAULT,
                 candWinRowPaddingDp = PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT,
+                candWinCandFontDp = PrefKeys.CAND_WIN_CAND_FONT_DEFAULT,
+                candFontEnabled = false,
+                candWinNumberFontDp = PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT,
+                candWinPinyinFontDp = PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT,
                 toolbarBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
                 candWinBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
             )

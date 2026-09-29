@@ -77,6 +77,12 @@ class AppUiState {
     var candWinShadowDp by mutableStateOf(PrefKeys.CAND_WIN_SHADOW_DEFAULT)
     var candWinSpacingDp by mutableStateOf(PrefKeys.CAND_WIN_SPACING_DEFAULT)
     var candWinRowPaddingDp by mutableStateOf(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+    var candWinCandFontDp by mutableStateOf(PrefKeys.CAND_WIN_CAND_FONT_DEFAULT)
+
+    // ---- 悬浮候选窗口：字号覆盖（独立开关）----
+    var candFontEnabled by mutableStateOf(false)
+    var candWinNumberFontDp by mutableStateOf(PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT)
+    var candWinPinyinFontDp by mutableStateOf(PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT)
 
     // ---- 悬浮键盘：描边宽度 ----
     var toolbarBorderWidthDp by mutableStateOf(PrefKeys.BORDER_WIDTH_DEFAULT)
@@ -284,6 +290,19 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.candWinRowPaddingDp = p.runCatching {
         getFloat(PrefKeys.CAND_WIN_ROW_PADDING_DP, PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
     }.getOrDefault(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+    uiState.candWinCandFontDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_CAND_FONT_DP, PrefKeys.CAND_WIN_CAND_FONT_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_CAND_FONT_DEFAULT)
+
+    // ---- 悬浮候选窗口：字号覆盖（独立开关）----
+    uiState.candFontEnabled = p.runCatching { getBoolean(PrefKeys.CAND_FONT_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.candWinNumberFontDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_NUMBER_FONT_DP, PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT)
+    uiState.candWinPinyinFontDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_PINYIN_FONT_DP, PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT)
 
     // ---- 悬浮键盘：描边宽度 ----
     uiState.toolbarBorderWidthDp = p.runCatching {

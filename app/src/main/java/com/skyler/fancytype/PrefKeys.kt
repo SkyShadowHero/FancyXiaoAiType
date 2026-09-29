@@ -203,6 +203,38 @@ object PrefKeys {
     /** 候选词行的上下内边距（dip），上下默认都是 12dp */
     const val CAND_WIN_ROW_PADDING_DP = "candwin_row_padding_dp"
 
+    // ==================================================================
+    // 悬浮候选窗口 · 字号覆盖（独立开关，三个字号）
+    //
+    // 输入法自带的「候选词大小」设置是虚拟键盘与悬浮候选窗口共用的，
+    // 这里覆盖的是悬浮窗口专属的三个基准字号资源，因此只影响悬浮窗口。
+    // 三个行高按各自字号等比联动，不单独设。
+    // ==================================================================
+
+    /** 「覆盖候选窗口字体大小」独立开关；不开启时完全不碰字号资源 */
+    const val CAND_FONT_ENABLED = "cand_font_enabled"
+
+    /** 候选词字号（dip），默认 22dp */
+    const val CAND_WIN_CAND_FONT_DP = "candwin_cand_font_dp"
+
+    /** 候选词序号字号（dip），默认 16dp */
+    const val CAND_WIN_NUMBER_FONT_DP = "candwin_number_font_dp"
+
+    /** 拼音字号（dip），默认 17dp */
+    const val CAND_WIN_PINYIN_FONT_DP = "candwin_pinyin_font_dp"
+
+    const val CAND_WIN_CAND_FONT_MIN = 10f
+    const val CAND_WIN_CAND_FONT_MAX = 48f
+    const val CAND_WIN_CAND_FONT_DEFAULT = 22f
+
+    const val CAND_WIN_NUMBER_FONT_MIN = 8f
+    const val CAND_WIN_NUMBER_FONT_MAX = 40f
+    const val CAND_WIN_NUMBER_FONT_DEFAULT = 16f
+
+    const val CAND_WIN_PINYIN_FONT_MIN = 8f
+    const val CAND_WIN_PINYIN_FONT_MAX = 40f
+    const val CAND_WIN_PINYIN_FONT_DEFAULT = 17f
+
     const val CAND_WIN_MAX_WIDTH_MIN = 100f
     const val CAND_WIN_MAX_WIDTH_MAX = 1000f
     const val CAND_WIN_MAX_WIDTH_DEFAULT = 560f

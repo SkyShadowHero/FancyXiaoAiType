@@ -257,6 +257,17 @@ class XposedEntry : XposedModule() {
      * 现在「竖条左边距」只作用于展开态。
      */
     private fun resolveScale(cfg: ConfigLoader.Cfg, resId: Int): Float? = when {
+        // ---- 悬浮候选窗口的三个行高：跟着各自字号等比走 ----
+        // 独立开关，放在最前面，因此不受「启用悬浮键盘调节」影响。
+        // 只放大字号而不动行高，字的上下边缘会被行高裁掉；这里按
+        // 「用户字号 / 原字号」的比例缩放**任一版本里的原行高**，不写死目标值。
+        resId == nameToId[Target.NAME_CAND_WIN_CAND_LINE_HEIGHT] ->
+            if (cfg.candFontEnabled) cfg.candWinCandFontDp / Target.ORIGINAL_CAND_FONT_DP else null
+        resId == nameToId[Target.NAME_CAND_WIN_NUMBER_LINE_HEIGHT] ->
+            if (cfg.candFontEnabled) cfg.candWinNumberFontDp / Target.ORIGINAL_NUMBER_FONT_DP else null
+        resId == nameToId[Target.NAME_CAND_WIN_PINYIN_LINE_HEIGHT] ->
+            if (cfg.candFontEnabled) cfg.candWinPinyinFontDp / Target.ORIGINAL_PINYIN_FONT_DP else null
+
         !cfg.floatBarEnabled -> null
         idIn(resId, Target.FLOATBAR_MINI_SCALED_NAMES) ->
             toolbarHeightDp(cfg) / Target.ORIGINAL_TOOLBAR_HEIGHT_DP
@@ -273,6 +284,16 @@ class XposedEntry : XposedModule() {
      * 返回 null 表示「不改」。
      */
     private fun resolveOverride(cfg: ConfigLoader.Cfg, resId: Int): Float? = when {
+        // ---- 悬浮候选窗口字号覆盖：独立开关 ----
+        // 放在最前面（when 按顺序求值），所以即使「启用悬浮键盘调节」关着也能单独生效。
+        // 这三个资源实测都是悬浮候选窗口专属，虚拟键盘那边不受影响。
+        resId == nameToId[Target.NAME_CAND_WIN_CAND_FONT] ->
+            if (cfg.candFontEnabled) cfg.candWinCandFontDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_NUMBER_FONT] ->
+            if (cfg.candFontEnabled) cfg.candWinNumberFontDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_PINYIN_FONT] ->
+            if (cfg.candFontEnabled) cfg.candWinPinyinFontDp else null
+
         idIn(resId, Target.GAP_LAND_NAMES) -> if (cfg.gapEnabled) cfg.gapLand else null
         idIn(resId, Target.GAP_PORT_NAMES) -> if (cfg.gapEnabled) cfg.gapPort else null
         idIn(resId, Target.CORNER_NAMES) -> if (cfg.cornerEnabled) cfg.cornerDp else null
@@ -344,6 +365,8 @@ class XposedEntry : XposedModule() {
             if (cfg.floatBarEnabled) cfg.candWinShadowDp else null
         resId == nameToId[Target.NAME_CAND_WIN_SPACING] ->
             if (cfg.floatBarEnabled) cfg.candWinSpacingDp else null
+        // 悬浮候选窗口的候选词字号（行高由 resolveScale 按同比例联动，无需单独设）
+        // —— 这三个已移到 when 的最前面，见 resolveOverride 开头
         resId == nameToId[Target.NAME_CAND_WIN_BORDER_WIDTH] ->
             if (cfg.floatBarEnabled) cfg.candWinBorderWidthDp else null
         idIn(resId, Target.CAND_WIN_ROW_PADDING_NAMES) ->

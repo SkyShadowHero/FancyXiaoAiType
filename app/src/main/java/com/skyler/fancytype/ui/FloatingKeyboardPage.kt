@@ -1,6 +1,8 @@
 package com.skyler.fancytype.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,6 +53,64 @@ fun FloatingKeyboardPage(
                     title = "启用悬浮键盘调节",
                     summary = "关闭则全部保持默认",
                 )
+                // 字号覆盖是**独立开关**（放在总开关后面）：输入法自带的「候选词大小」
+                // 是虚拟键盘与悬浮候选窗口共用的，这里覆盖的是悬浮窗口专属的资源，
+                // 所以只想改字号时不必打开上面的总开关。
+                SwitchPreference(
+                    checked = uiState.candFontEnabled,
+                    onCheckedChange = { checked ->
+                        uiState.candFontEnabled = checked
+                        uiState.save { editor -> editor.putBoolean(PrefKeys.CAND_FONT_ENABLED, checked) }
+                    },
+                    title = "覆盖候选窗口字体大小",
+                    summary = "只影响悬浮候选窗口",
+                )
+                AnimatedVisibility(visible = uiState.candFontEnabled) {
+                    Column {
+                        DpSlider(
+                            title = "候选词字号",
+                            summary = "默认 ${PrefKeys.CAND_WIN_CAND_FONT_DEFAULT.toInt()}dp",
+                            value = uiState.candWinCandFontDp,
+                            range = PrefKeys.CAND_WIN_CAND_FONT_MIN..PrefKeys.CAND_WIN_CAND_FONT_MAX,
+                            keyPoint = PrefKeys.CAND_WIN_CAND_FONT_DEFAULT,
+                            onValueChange = { v -> uiState.candWinCandFontDp = v },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(PrefKeys.CAND_WIN_CAND_FONT_DP, uiState.candWinCandFontDp)
+                                }
+                            },
+                            commitGuard = { uiState.loaded },
+                        )
+                        DpSlider(
+                            title = "序号字号",
+                            summary = "默认 ${PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT.toInt()}dp",
+                            value = uiState.candWinNumberFontDp,
+                            range = PrefKeys.CAND_WIN_NUMBER_FONT_MIN..PrefKeys.CAND_WIN_NUMBER_FONT_MAX,
+                            keyPoint = PrefKeys.CAND_WIN_NUMBER_FONT_DEFAULT,
+                            onValueChange = { v -> uiState.candWinNumberFontDp = v },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(PrefKeys.CAND_WIN_NUMBER_FONT_DP, uiState.candWinNumberFontDp)
+                                }
+                            },
+                            commitGuard = { uiState.loaded },
+                        )
+                        DpSlider(
+                            title = "拼音字号",
+                            summary = "默认 ${PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT.toInt()}dp",
+                            value = uiState.candWinPinyinFontDp,
+                            range = PrefKeys.CAND_WIN_PINYIN_FONT_MIN..PrefKeys.CAND_WIN_PINYIN_FONT_MAX,
+                            keyPoint = PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT,
+                            onValueChange = { v -> uiState.candWinPinyinFontDp = v },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(PrefKeys.CAND_WIN_PINYIN_FONT_DP, uiState.candWinPinyinFontDp)
+                                }
+                            },
+                            commitGuard = { uiState.loaded },
+                        )
+                    }
+                }
             }
         }
 

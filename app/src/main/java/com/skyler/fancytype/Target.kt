@@ -456,6 +456,46 @@ object Target {
     /** 候选窗口描边宽度（默认 0.5dp） */
     const val NAME_CAND_WIN_BORDER_WIDTH = "floating_bar_border_width"
 
+    // ---- 悬浮候选窗口 · 字号覆盖（独立开关，三个字号）----
+    //
+    // 为什么需要单独覆盖：输入法自带的「候选词大小」设置（prefs 键
+    // `candidate_text_size_level`）是虚拟键盘与悬浮候选窗口**共用**的 ——
+    // 它先算出一个缩放系数（`MiInputMethodService` 里
+    // `scale = 字号表[级别] / 19`，而 19 正是 `candidate_text_size`），
+    // 再乘到各自的基准值上（`fa/l.java:137` / `rh/k.java` 里 `有效字号 = scale × 本资源`）。
+    //
+    // 所以调这三个**基准值**只影响悬浮候选窗口，虚拟键盘那边完全不变。
+    // 实测归属（均为悬浮窗口专属，与虚拟键盘的候选栏独立）：
+    //   候选词字号 22dp + 行高 21.69dp  -> fa/l.java
+    //   序号字号   16dp + 行高 15.91dp  -> fa/l.java
+    //   拼音字号   17dp + 行高 15.91dp  -> rh/k.java
+    //
+    // 三个行高都不给滑块，而是**按各自字号等比联动**（只放大字号不动行高，
+    // 字的上下边缘会被行高裁掉）。见 `XposedEntry.resolveScale`。
+
+    /** 候选词字号（默认 22dp） */
+    const val NAME_CAND_WIN_CAND_FONT = "floating_bar_candidate_font_size"
+
+    /** 候选词行高（默认 21.69dp），按候选词字号等比联动 */
+    const val NAME_CAND_WIN_CAND_LINE_HEIGHT = "floating_bar_candidate_line_height"
+
+    /** 候选词序号字号（默认 16dp） */
+    const val NAME_CAND_WIN_NUMBER_FONT = "floating_bar_number_font_size"
+
+    /** 序号行高（默认 15.91dp），按序号字号等比联动 */
+    const val NAME_CAND_WIN_NUMBER_LINE_HEIGHT = "floating_bar_number_line_height"
+
+    /** 拼音字号（默认 17dp） */
+    const val NAME_CAND_WIN_PINYIN_FONT = "floating_bar_pinyin_font_size"
+
+    /** 拼音行高（默认 15.91dp），按拼音字号等比联动 */
+    const val NAME_CAND_WIN_PINYIN_LINE_HEIGHT = "floating_bar_pinyin_line_height"
+
+    /** 三个字号的原值（dip）—— 0.2.974 实测，用于算各自行高的联动比例 */
+    const val ORIGINAL_CAND_FONT_DP = 22f
+    const val ORIGINAL_NUMBER_FONT_DP = 16f
+    const val ORIGINAL_PINYIN_FONT_DP = 17f
+
     /** 候选窗口内候选词行的上下内边距（上、下默认都是 12dp） */
     val CAND_WIN_ROW_PADDING_NAMES = arrayOf(
         "floating_bar_candidate_row_top_padding",
@@ -470,6 +510,12 @@ object Target {
         NAME_CAND_WIN_PINYIN_BOTTOM,
         NAME_CAND_WIN_SHADOW,
         NAME_CAND_WIN_SPACING,
+        NAME_CAND_WIN_CAND_FONT,
+        NAME_CAND_WIN_CAND_LINE_HEIGHT,
+        NAME_CAND_WIN_NUMBER_FONT,
+        NAME_CAND_WIN_NUMBER_LINE_HEIGHT,
+        NAME_CAND_WIN_PINYIN_FONT,
+        NAME_CAND_WIN_PINYIN_LINE_HEIGHT,
         NAME_CAND_WIN_BORDER_WIDTH,
     ) + CAND_WIN_ROW_PADDING_NAMES
 
