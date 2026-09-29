@@ -42,14 +42,14 @@ import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /** 导航项 */
 enum class AppPage(val label: String) {
-    Settings("外观"),
-    Spaces("间距"),
+    VirtualKeyboard("虚拟键盘"),
+    FloatingKeyboard("悬浮键盘"),
     Material("超级材质"),
     About("关于"),
 }
@@ -252,7 +252,7 @@ private fun PageHost(
             bottom = innerPadding.calculateBottomPadding(),
         )
         when (pages[uiState.page.coerceIn(0, pages.size - 1)]) {
-            AppPage.Settings -> SettingsPage(
+            AppPage.VirtualKeyboard -> VirtualKeyboardPage(
                 uiState = uiState,
                 gapMaxLand = gapMaxLand,
                 gapMaxPort = gapMaxPort,
@@ -260,7 +260,7 @@ private fun PageHost(
                 scaffoldPadding = contentPadding,
             )
 
-            AppPage.Spaces -> SpacesPage(
+            AppPage.FloatingKeyboard -> FloatingKeyboardPage(
                 uiState = uiState,
                 padding = padding,
                 scaffoldPadding = contentPadding,
@@ -312,15 +312,15 @@ private fun PageHost(
 }
 
 private fun AppPage.title(): String = when (this) {
-    AppPage.Settings -> "外观"
-    AppPage.Spaces -> "间距"
+    AppPage.VirtualKeyboard -> "虚拟键盘"
+    AppPage.FloatingKeyboard -> "悬浮键盘"
     AppPage.Material -> "超级材质"
     AppPage.About -> "关于"
 }
 
 private fun AppPage.icon() = when (this) {
-    AppPage.Settings -> MiuixIcons.Tune
-    AppPage.Spaces -> MiuixIcons.More
+    AppPage.VirtualKeyboard -> MiuixIcons.Tune
+    AppPage.FloatingKeyboard -> MiuixIcons.Layers
     AppPage.Material -> MiuixIcons.Background
     AppPage.About -> MiuixIcons.Info
 }

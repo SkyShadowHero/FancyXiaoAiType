@@ -250,4 +250,249 @@ object Target {
     /** 材质描述符应用入口：`xe.b.a(View, xe.e)` */
     const val CLS_MATERIAL_APPLIER = "xe.b"
     const val M_APPLY_MATERIAL = "a"
+
+    // ==================================================================
+    // 触屏候选词 / 悬浮键盘的工具栏与候选窗口（0.2.974 实测资源名）
+    // ==================================================================
+    //
+    // 术语对照（App 内部类名与资源前缀都没混淆，但叫法和界面上不一致）：
+    //   界面「工具栏」    <- App 内部 movable_bar_*   可拖动的输入法栏本体
+    //   界面「候选窗口」  <- App 内部 floating_bar_*  悬浮键盘上的候选词窗口
+    //   界面「候选词」    <- App 内部 candidate_*     触屏虚拟键盘上方的候选栏
+    //
+    // 「工具栏」「候选窗口」同属悬浮键盘（在「悬浮键盘」页里分两组），
+    // 「候选词」属于触屏虚拟键盘（在「虚拟键盘」页里），三者互不共用资源。
+    //
+    // 三者都由 Compose 渲染，**样式全部来自 dimen 资源**（没有 XML 布局），
+    // 所以直接复用已有的尺寸覆写通道（Resources.getDimension*），不需要 Hook
+    // Compose 函数（Compose 函数也无法可靠 Hook）。
+    //
+    // 涉及的类（供定位）：
+    //   候选词      aa/ca.java（候选渲染）、na/u.java
+    //   工具栏      a/a.java + hb/n1.java（栏本体）、z7/s.java（mini 收起态）、
+    //              hb/g.java（阴影）
+    //   候选窗口    fa/l.java + rh/k.java（候选窗口本体与它的候选行）
+    //
+    // 分组纪律：只有「语义相同且默认值一致」的资源才登记进同一个滑块，
+    // 否则会出现「拉一个滑块顺带改掉另一个默认值不同项」的意外。
+    // 因此默认值不同的（工具栏左右内边距 32/18、工具栏阴影 8 与候选窗口阴影 3）各自单列。
+    //
+    // 注意：触屏「候选词」**没有独立的阴影 dimen**。`popup_selector_shadow_elevation`
+    // 看着像，实测它属于「按键预览气泡的字符选择弹窗」（aa/ca.java 的 s0 方法内与
+    // key_preview_bubble_shadow_* 一起使用）。所以「候选词」这一组不提供阴影项。
+
+    // ---- 触屏虚拟键盘的候选词 ----
+
+    /** 候选项圆角（默认 8dp） */
+    const val NAME_CANDIDATE_CORNER = "candidate_item_corner_radius"
+
+    /** 候选项之间的横向间距（默认 5dp） */
+    const val NAME_CANDIDATE_SPACING = "candidate_item_spacing"
+
+    /**
+     * 触屏候选词相关资源名。
+     *
+     * 注意这里**没有** `candidate_item_horizontal_padding`：实测在真机上覆写了但界面无变化，
+     * 且日志里该资源 ID 从未触发过 `dimen_override`（相邻的圆角与间距都触发了），
+     * 说明它没走被 hook 的读取路径，属于改不动的项，故不提供设置。
+     */
+    val CANDIDATE_NAMES = arrayOf(
+        NAME_CANDIDATE_CORNER,
+        NAME_CANDIDATE_SPACING,
+    )
+
+    // ---- 悬浮键盘 · 圆角（工具栏与候选窗口共用）----
+
+    /**
+     * 圆角：工具栏本体、工具栏收起态（mini）、候选窗口三处默认都是 16dp。
+     *
+     * 三处刻意共用同一组滑块，不拆开：圆角在观感上属于这一整块悬浮 UI，
+     * 拆成两个滑块很容易调出工具栏与候选窗口圆角不一致的割裂效果。
+     * 因此它在界面上单独成组（「圆角」），不归到工具栏或候选窗口任一侧。
+     */
+    val FLOATBAR_CORNER_NAMES = arrayOf(
+        "movable_bar_corner_radius",
+        "floating_bar_corner_radius",
+        "movable_bar_mini_corner_radius",
+    )
+
+    // ---- 悬浮键盘 · 工具栏（App 内部 movable_bar_*）----
+
+    /** 工具栏阴影（默认 8dp） */
+    const val NAME_TOOLBAR_SHADOW = "movable_bar_shadow_elevation"
+
+    /** 工具栏上按钮之间的间距（默认 20dp） */
+    const val NAME_TOOLBAR_BUTTON_SPACING = "movable_bar_button_spacing"
+
+    /** 工具栏内行上下内边距（默认 11dp） */
+    const val NAME_TOOLBAR_VPADDING = "movable_bar_row_padding_vertical"
+
+    /**
+     * 工具栏总高度（默认 52dp）。
+     *
+     * **必须跟着 [NAME_TOOLBAR_VPADDING] 一起变**，否则界面会出错：
+     * 反编译显示布局是
+     *     Modifier.height(<内容>, movable_bar_height)        // 外层固定高度
+     *       └ Modifier.padding(vertical = row_padding_vertical)  // 内层 padding
+     * 外层的 52dp 是写死的，而上下 padding 加在它内部。只调 padding 不动高度，
+     * 内容就会被固定高度裁掉 —— 表现是「只看到上边距，下面一片空」。
+     * 所以覆写时保持「内容可用高度」不变：height = 52 + 2 × (padding − 11)。
+     */
+    const val NAME_TOOLBAR_HEIGHT = "movable_bar_height"
+
+    /** 工具栏默认高度（dip），用于与上下内边距联动计算 */
+    const val ORIGINAL_TOOLBAR_HEIGHT_DP = 52f
+
+    /**
+     * 左侧拖拽竖条（DragHandle）的高度与顶部偏移（默认 20dp / 16dp）。
+     *
+     * 反编译显示它是**固定尺寸 + 固定偏移**画的：
+     *     Modifier.offset(start = 14dp, top = 16dp) → size(3dp × 20dp)
+     * 默认 16dp 的顶偏移刚好等于 (52 − 20) / 2，也就是垂直居中。
+     * 但工具栏变高之后偏移不会自己变，竖条就会偏上、显得又短又歪。
+     * 所以这两个值必须跟着 [NAME_TOOLBAR_HEIGHT] 一起算：
+     * 竖条按高度等比缩放，再垂直居中。
+     */
+    const val NAME_TOOLBAR_HANDLE_HEIGHT = "movable_bar_drag_handle_height"
+
+    /** 竖条默认高度（dip） */
+    const val ORIGINAL_TOOLBAR_HANDLE_HEIGHT_DP = 20f
+
+    /** 竖条距顶部的偏移（默认 16dp = 居中值） */
+    const val NAME_TOOLBAR_HANDLE_OFFSET_TOP = "movable_bar_drag_handle_offset_top"
+
+    /** 竖条距左侧的偏移（默认 14dp），即竖条的左边距 */
+    const val NAME_TOOLBAR_HANDLE_OFFSET_START = "movable_bar_drag_handle_offset_start"
+
+    /** 工具栏左内边距（默认 32dp） */
+    const val NAME_TOOLBAR_PADDING_START = "movable_bar_padding_start"
+
+    /** 工具栏右内边距（默认 18dp，与左不同，故单独一项） */
+    const val NAME_TOOLBAR_PADDING_END = "movable_bar_padding_end"
+
+    /** 工具栏描边宽度（默认 0.5dp） */
+    const val NAME_TOOLBAR_BORDER_WIDTH = "movable_bar_border_width"
+
+    /** 工具栏相关资源名 */
+    val FLOATBAR_TOOLBAR_NAMES = arrayOf(
+        NAME_TOOLBAR_SHADOW,
+        NAME_TOOLBAR_BUTTON_SPACING,
+        NAME_TOOLBAR_VPADDING,
+        NAME_TOOLBAR_HEIGHT,
+        NAME_TOOLBAR_HANDLE_HEIGHT,
+        NAME_TOOLBAR_HANDLE_OFFSET_TOP,
+        NAME_TOOLBAR_HANDLE_OFFSET_START,
+        NAME_TOOLBAR_PADDING_START,
+        NAME_TOOLBAR_PADDING_END,
+        NAME_TOOLBAR_BORDER_WIDTH,
+    )
+
+    // ---- 悬浮键盘 · 收缩态（mini）----
+
+    /**
+     * 收缩态（mini）的整体几何：**按展开态高度等比缩放**。
+     *
+     * App 里这些资源都是固定值，与展开态没有任何联动。但展开态被调高之后，
+     * 收起状态还是原来的小尺寸，两个形态看起来不像同一个东西，所以这里让收缩态
+     * 跟着展开态一起缩放。
+     *
+     * 实现上是**缩放原始值**而不是写死新值（见 XposedEntry.resolveScale）：
+     *     factor = 展开态高度 / 52
+     * 这样即使 App 某版本调整了这些默认值，缩放依然跟着走，不会写死失配。
+     * 默认设置下 factor = 1，收缩态与原生完全一致。
+     *
+     * 不含 `movable_bar_mini_corner_radius`（已在共用的圆角组里）
+     * 与 `movable_bar_mini_exit_threshold`（拖拽阈值，属于行为不是外观）。
+     *
+     * 收缩态**不跟随**「竖条左边距」：曾试过用 `movable_bar_mini_h_padding` 驱动，
+     * 但那是左右对称的 padding 且收缩态宽度固定（63dp），会连带挤到内容、
+     * 还得为此补偿宽度，牵动过大，已撤销。该滑块只作用于展开态。
+     */
+    val FLOATBAR_MINI_SCALED_NAMES = arrayOf(
+        "movable_bar_mini_height",
+        "movable_bar_mini_width",
+        "movable_bar_mini_h_padding",
+        "movable_bar_mini_v_padding",
+        "movable_bar_mini_input_icon_size",
+        "movable_bar_mini_handle_width",
+        "movable_bar_mini_gap",
+    )
+
+    // ---- 悬浮键盘 · 候选窗口（App 内部 floating_bar_*）----
+
+    /**
+     * 候选窗口最大宽度（默认 560dp）。
+     *
+     * 反编译（fa/l.java:119）里的宽度算法：
+     *     maxW = floating_bar_max_width
+     *     if (constraints.maxWidth < maxW) maxW = constraints.maxWidth   // 与可用宽度取小
+     *     contentW = maxW − 2 × floating_bar_horizontal_padding
+     *                     − (floating_bar_expand_button_spacer + floating_bar_expand_button_size)
+     * 即「窗口宽 = min(本资源, 可用宽度)」，展开按钮固定占 29dp（7+22）。
+     * 所以调大超过可用宽度没有意义，调小才会真正收窄窗口。
+     */
+    const val NAME_CAND_WIN_MAX_WIDTH = "floating_bar_max_width"
+
+    /**
+     * 候选窗口左右内边距（默认 16dp）。
+     *
+     * 同时用在两处（rh/k.java:23272 拼音行、fa/l.java:120 候选行）：
+     * 既是拼音行与候选行的左右留白，也参与上面那条宽度公式。
+     */
+    const val NAME_CAND_WIN_H_PADDING = "floating_bar_horizontal_padding"
+
+    /** 拼音行上边距（默认 12dp） */
+    const val NAME_CAND_WIN_PINYIN_TOP = "floating_bar_pinyin_top_padding"
+
+    /** 拼音行下边距（默认 8dp，与上不同，故单独一项） */
+    const val NAME_CAND_WIN_PINYIN_BOTTOM = "floating_bar_pinyin_bottom_padding"
+
+    /** 候选窗口阴影（默认 3dp，与工具栏阴影不同，故单独一项） */
+    const val NAME_CAND_WIN_SHADOW = "floating_bar_shadow_elevation"
+
+    /** 候选窗口内候选词之间的间距（默认 22dp） */
+    const val NAME_CAND_WIN_SPACING = "floating_bar_candidate_item_spacing"
+
+    /** 候选窗口描边宽度（默认 0.5dp） */
+    const val NAME_CAND_WIN_BORDER_WIDTH = "floating_bar_border_width"
+
+    /** 候选窗口内候选词行的上下内边距（上、下默认都是 12dp） */
+    val CAND_WIN_ROW_PADDING_NAMES = arrayOf(
+        "floating_bar_candidate_row_top_padding",
+        "floating_bar_candidate_row_bottom_padding",
+    )
+
+    /** 候选窗口相关资源名 */
+    val FLOATBAR_CAND_NAMES = arrayOf(
+        NAME_CAND_WIN_MAX_WIDTH,
+        NAME_CAND_WIN_H_PADDING,
+        NAME_CAND_WIN_PINYIN_TOP,
+        NAME_CAND_WIN_PINYIN_BOTTOM,
+        NAME_CAND_WIN_SHADOW,
+        NAME_CAND_WIN_SPACING,
+        NAME_CAND_WIN_BORDER_WIDTH,
+    ) + CAND_WIN_ROW_PADDING_NAMES
+
+    // ---- 悬浮键盘 · 颜色：已全部移除 ----
+    //
+    // 两个窗口的背景色与描边色**不是资源**，是运行时 Compose Color，装在两个主题
+    // 数据类里（工具栏 `na.y` 12 参构造、候选窗口 `na.g` 4 参构造，
+    // 两套配色都在 na/x.java 里 new 出来；字段真实名都是 a = 背景、b = 描边）。
+    //
+    // 所以只能 hook 构造函数改写参数，而**实测这条路会把悬浮 UI 搞挂**：
+    // 改背景色后打不开，只改描边色同样打不开；第二次尝试已加了 runCatching
+    // 降级保护（改写失败即用原始参数继续、proceed 只调用一次）仍然复现。
+    // 说明问题不在「改写代码抛异常」，而在改写主题构造参数这个机制本身，
+    // 或 App 对颜色值有额外依赖。
+    //
+    // 因此颜色功能（hook、配置、界面）已全部删除，不再保留相关常量。
+    // 若将来还要做：不要再走构造函数改写，改考虑 hook 绘制调用点 ——
+    // 工具栏 a/a.java:198、候选窗口 fa/l.java:335 的 Modifier.background / Modifier.border。
+
+    /** 悬浮键盘相关资源名（圆角 + 工具栏 + 收缩态 + 候选窗口） */
+    val FLOATBAR_NAMES = FLOATBAR_CORNER_NAMES + FLOATBAR_TOOLBAR_NAMES +
+        FLOATBAR_MINI_SCALED_NAMES + FLOATBAR_CAND_NAMES
+
+    /** 本功能新增的全部资源名（供运行时统一登记） */
+    val FLOATING_NAMES = CANDIDATE_NAMES + FLOATBAR_NAMES
 }

@@ -95,11 +95,27 @@ class XposedEntry : XposedModule() {
                     overrideDimension(chain.getThisObject() as? android.content.res.Resources, resId, original, true)
                 }
             ok++
+
+            // getDimensionPixelOffset 与应用里 28 处调用点有关（截断取整与 getDimensionPixelSize 不同），
+            // 悬浮栏/候选词的 Compose 尺寸也可能走这条路，一并接管以保证覆写没有漏网。
+            val getDimensionPixelOffset =
+                resourcesCls.getDeclaredMethod("getDimensionPixelOffset", Int::class.javaPrimitiveType)
+                    .also { it.isAccessible = true }
+            hook(getDimensionPixelOffset)
+                .setId("res_getDimensionPixelOffset")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val resId = chain.getArg(0) as? Int ?: return@intercept chain.proceed()
+                    val original = chain.proceed()
+                    overrideDimension(chain.getThisObject() as? android.content.res.Resources, resId, original, true)
+                }
+            ok++
         } catch (t: Throwable) {
             L.e("event=hook_failed target=resources_dimension", t)
         }
         return ok
     }
+
 
     /**
      * 定位 `pc.m` 里的「集合包含」判定方法。
@@ -171,6 +187,21 @@ class XposedEntry : XposedModule() {
             if (id != 0) marginOk++
         }
         L.i("event=margin_resolved by_name=$marginOk/${Target.MARGIN_NAMES.size}")
+
+        // 悬浮候选词窗口 / 悬浮输入法栏的资源名同样按名登记。
+        // 一律不写硬编码兜底：这些 ID 在 0.2.974 上相对 0.2.910 已整体 +22，
+        // 兜底值只会误导；解析不到就留 0，而资源 ID 不可能是 0，所以不会误命中。
+        var floatingOk = 0
+        for (name in Target.FLOATING_NAMES) {
+            val id = try {
+                res.getIdentifier(name, "dimen", Target.PACKAGE)
+            } catch (t: Throwable) {
+                0
+            }
+            nameToId[name] = id
+            if (id != 0) floatingOk++
+        }
+        L.i("event=floating_resolved by_name=$floatingOk/${Target.FLOATING_NAMES.size}")
     }
 
     /** 该资源 ID 是否属于某个名字集合 */
@@ -178,10 +209,67 @@ class XposedEntry : XposedModule() {
         names.any { nameToId[it] == resId }
 
     /**
-     * 按资源 ID 覆写尺寸（dp -> px），数据驱动。支持三类：
+     * 工具栏展开态的实际高度（dip）。
+     *
+     * 外层高度是写死的 `movable_bar_height`，而上下 padding 加在它**内部**，
+     * 所以高度必须跟着 padding 一起变，否则内容会被固定高度裁掉
+     * （表现：只看到上边距、下面一片空）。
+     *
+     *     height = 默认 52 + 2 × (上下内边距 − 默认 11)
+     *
+     * 上下内边距回默认 11dp 时，高度正好回到 52dp。
+     */
+    private fun toolbarHeightDp(cfg: ConfigLoader.Cfg): Float =
+        (
+            Target.ORIGINAL_TOOLBAR_HEIGHT_DP +
+                2f * (cfg.toolbarVPaddingDp - PrefKeys.TOOLBAR_VPADDING_DEFAULT)
+            ).coerceAtLeast(8f)
+
+    /**
+     * 左侧拖拽竖条的高度：按工具栏高度等比缩放。
+     *
+     * 默认比例 20 / 52，工具栏变高时竖条一起变长，观感才协调。
+     */
+    private fun toolbarHandleHeightDp(cfg: ConfigLoader.Cfg): Float =
+        Target.ORIGINAL_TOOLBAR_HANDLE_HEIGHT_DP *
+            (toolbarHeightDp(cfg) / Target.ORIGINAL_TOOLBAR_HEIGHT_DP)
+
+    /**
+     * 拖拽竖条的顶部偏移：`(工具栏高度 − 竖条高度) / 2`，即垂直居中。
+     *
+     * 默认值 16dp 正好等于 (52 − 20) / 2，说明原布局就是居中设计的；
+     * 这里把这个关系显式写出来，工具栏变高时竖条才不会偏上。
+     */
+    private fun toolbarHandleOffsetTopDp(cfg: ConfigLoader.Cfg): Float =
+        (toolbarHeightDp(cfg) - toolbarHandleHeightDp(cfg)) / 2f
+
+    /**
+     * 缩放型覆写：返回一个倍率，由调用方乘到资源的**原始值**上（而不是写死新值）。
+     *
+     * 目前只有收缩态（mini）用：整套几何按展开态高度等比缩放，
+     *     factor = 展开态高度 / 52
+     * 这样 App 若在某版本改了这些默认值，缩放依然跟着走，不会失配。
+     * 默认设置下 factor = 1，直接返回值就是原样透传。
+     *
+     * 注意：收缩态**不跟随**「竖条左边距」。曾试过用
+     * `movable_bar_mini_h_padding` 去驱动，但那是左右对称的 padding 且收缩态宽度固定，
+     * 会连带把内容挤扁、还得为此改宽度，牵动太大，已撤销。
+     * 现在「竖条左边距」只作用于展开态。
+     */
+    private fun resolveScale(cfg: ConfigLoader.Cfg, resId: Int): Float? = when {
+        !cfg.floatBarEnabled -> null
+        idIn(resId, Target.FLOATBAR_MINI_SCALED_NAMES) ->
+            toolbarHeightDp(cfg) / Target.ORIGINAL_TOOLBAR_HEIGHT_DP
+        else -> null
+    }
+
+    /**
+     * 按资源 ID 覆写尺寸（dp -> px），数据驱动。支持五类：
      *  - 中心间隙（横屏 / 竖屏各一套）
      *  - 按键圆角（不分横竖屏）
      *  - 按键间距 / 键高（横竖屏各一套）
+     *  - 悬浮候选词窗口（触屏键盘的候选栏：圆角 / 候选间距）
+     *  - 悬浮键盘（圆角共用；工具栏阴影与内边距；候选窗口阴影与间距）
      * 返回 null 表示「不改」。
      */
     private fun resolveOverride(cfg: ConfigLoader.Cfg, resId: Int): Float? = when {
@@ -200,6 +288,67 @@ class XposedEntry : XposedModule() {
         resId == nameToId[Target.NAME_ROW_SPACING_LAND] -> if (cfg.spaceEnabled) cfg.spaceRowLand else null
         resId == nameToId[Target.NAME_ROW_SPACING_PORT] -> if (cfg.spaceEnabled) cfg.spaceRowPort else null
 
+        // ---- 悬浮候选词窗口 ----
+        resId == nameToId[Target.NAME_CANDIDATE_CORNER] ->
+            if (cfg.candidateEnabled) cfg.candidateCornerDp else null
+        resId == nameToId[Target.NAME_CANDIDATE_SPACING] ->
+            if (cfg.candidateEnabled) cfg.candidateSpacingDp else null
+
+        // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
+        idIn(resId, Target.FLOATBAR_CORNER_NAMES) ->
+            if (cfg.floatBarEnabled) cfg.floatBarCornerDp else null
+
+        // ---- 悬浮键盘：工具栏 ----
+        resId == nameToId[Target.NAME_TOOLBAR_SHADOW] ->
+            if (cfg.floatBarEnabled) cfg.toolbarShadowDp else null
+        resId == nameToId[Target.NAME_TOOLBAR_BUTTON_SPACING] ->
+            if (cfg.floatBarEnabled) cfg.toolbarButtonSpacingDp else null
+        resId == nameToId[Target.NAME_TOOLBAR_VPADDING] ->
+            if (cfg.floatBarEnabled) cfg.toolbarVPaddingDp else null
+
+        // 工具栏高度必须跟着上下内边距同步，保持「内容可用高度」恒定：
+        // 外层高度是固定的 movable_bar_height，而上下 padding 加在它**内部**，
+        // 只加大 padding 会被固定高度裁掉 —— 表现就是「只看到上边距，下面一片空」。
+        resId == nameToId[Target.NAME_TOOLBAR_HEIGHT] ->
+            if (cfg.floatBarEnabled) toolbarHeightDp(cfg) else null
+
+        // 拖拽竖条跟着工具栏高度等比缩放并保持垂直居中，
+        // 否则工具栏变高后竖条仍停在固定 16dp 偏移处，看着又短又偏。
+        resId == nameToId[Target.NAME_TOOLBAR_HANDLE_HEIGHT] ->
+            if (cfg.floatBarEnabled) toolbarHandleHeightDp(cfg) else null
+        resId == nameToId[Target.NAME_TOOLBAR_HANDLE_OFFSET_TOP] ->
+            if (cfg.floatBarEnabled) toolbarHandleOffsetTopDp(cfg) else null
+        // 拖拽竖条的左边距，独立于工具栏内容的左右内边距
+        resId == nameToId[Target.NAME_TOOLBAR_HANDLE_OFFSET_START] ->
+            if (cfg.floatBarEnabled) cfg.toolbarHandleOffsetStartDp else null
+
+        resId == nameToId[Target.NAME_TOOLBAR_PADDING_START] ->
+            if (cfg.floatBarEnabled) cfg.toolbarPaddingStartDp else null
+        resId == nameToId[Target.NAME_TOOLBAR_PADDING_END] ->
+            if (cfg.floatBarEnabled) cfg.toolbarPaddingEndDp else null
+        resId == nameToId[Target.NAME_TOOLBAR_BORDER_WIDTH] ->
+            if (cfg.floatBarEnabled) cfg.toolbarBorderWidthDp else null
+
+        // ---- 悬浮键盘：候选窗口 ----
+        // 宽度：实际窗口宽 = min(该资源, 可用宽度)，展开按钮另占 29dp
+        resId == nameToId[Target.NAME_CAND_WIN_MAX_WIDTH] ->
+            if (cfg.floatBarEnabled) cfg.candWinMaxWidthDp else null
+        // 左右内边距：拼音行与候选行共用，并参与上面的宽度计算
+        resId == nameToId[Target.NAME_CAND_WIN_H_PADDING] ->
+            if (cfg.floatBarEnabled) cfg.candWinHPaddingDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_PINYIN_TOP] ->
+            if (cfg.floatBarEnabled) cfg.candWinPinyinTopDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_PINYIN_BOTTOM] ->
+            if (cfg.floatBarEnabled) cfg.candWinPinyinBottomDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_SHADOW] ->
+            if (cfg.floatBarEnabled) cfg.candWinShadowDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_SPACING] ->
+            if (cfg.floatBarEnabled) cfg.candWinSpacingDp else null
+        resId == nameToId[Target.NAME_CAND_WIN_BORDER_WIDTH] ->
+            if (cfg.floatBarEnabled) cfg.candWinBorderWidthDp else null
+        idIn(resId, Target.CAND_WIN_ROW_PADDING_NAMES) ->
+            if (cfg.floatBarEnabled) cfg.candWinRowPaddingDp else null
+
         else -> null
     }
 
@@ -210,7 +359,25 @@ class XposedEntry : XposedModule() {
         asInt: Boolean,
     ): Any? {
         resolveNames(resources)
-        val targetDp = resolveOverride(ConfigLoader.snapshot(), resId)
+        val cfg = ConfigLoader.snapshot()
+
+        // 1) 比例缩放（收缩态几何）：乘在**原始值**上，不写死新值。
+        //    默认设置下 factor = 1，直接跳过，等于原样透传。
+        val factor = resolveScale(cfg, resId)
+        if (factor != null && factor != 1f) {
+            val origPx = (original as? Number)?.toFloat()
+            if (origPx != null) {
+                val scaled = (origPx * factor).coerceAtLeast(0f)
+                L.sampled("mini_scale", limit = 12) {
+                    "event=mini_scale resId=0x${resId.toString(16)} " +
+                        "orig=$original factor=$factor -> $scaled"
+                }
+                return if (asInt) scaled.toInt() else scaled
+            }
+        }
+
+        // 2) 绝对值覆写（dp × density）
+        val targetDp = resolveOverride(cfg, resId)
         if (targetDp == null) {
             L.sampled("dimcall", limit = 8) {
                 "event=dimen_call resId=0x${resId.toString(16)} value=$original (passthrough)"

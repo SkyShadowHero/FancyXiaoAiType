@@ -88,6 +88,73 @@ object ConfigLoader {
                 materialPackages = p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }
                     .getOrDefault("")
                     .let(::splitPackages),
+                // ---- 悬浮候选词窗口 ----
+                candidateEnabled = p.runCatching { getBoolean(PrefKeys.CANDIDATE_ENABLED, false) }
+                    .getOrDefault(false),
+                candidateCornerDp = p.runCatching {
+                    getFloat(PrefKeys.CANDIDATE_CORNER_DP, PrefKeys.CANDIDATE_CORNER_DEFAULT)
+                }.getOrDefault(PrefKeys.CANDIDATE_CORNER_DEFAULT),
+                candidateSpacingDp = p.runCatching {
+                    getFloat(PrefKeys.CANDIDATE_SPACING_DP, PrefKeys.CANDIDATE_SPACING_DEFAULT)
+                }.getOrDefault(PrefKeys.CANDIDATE_SPACING_DEFAULT),
+                // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
+                floatBarEnabled = p.runCatching { getBoolean(PrefKeys.FLOATBAR_ENABLED, false) }
+                    .getOrDefault(false),
+                floatBarCornerDp = p.runCatching {
+                    getFloat(PrefKeys.FLOATBAR_CORNER_DP, PrefKeys.FLOATBAR_CORNER_DEFAULT)
+                }.getOrDefault(PrefKeys.FLOATBAR_CORNER_DEFAULT),
+                // ---- 悬浮键盘：工具栏 ----
+                toolbarShadowDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_SHADOW_DP, PrefKeys.TOOLBAR_SHADOW_DEFAULT)
+                }.getOrDefault(PrefKeys.TOOLBAR_SHADOW_DEFAULT),
+                toolbarButtonSpacingDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_BUTTON_SPACING_DP, PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT)
+                }.getOrDefault(PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT),
+                toolbarVPaddingDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_VPADDING_DP, PrefKeys.TOOLBAR_VPADDING_DEFAULT)
+                }.getOrDefault(PrefKeys.TOOLBAR_VPADDING_DEFAULT),
+                toolbarPaddingStartDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_PADDING_START_DP, PrefKeys.TOOLBAR_PADDING_START_DEFAULT)
+                }.getOrDefault(PrefKeys.TOOLBAR_PADDING_START_DEFAULT),
+                toolbarPaddingEndDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_PADDING_END_DP, PrefKeys.TOOLBAR_PADDING_END_DEFAULT)
+                }.getOrDefault(PrefKeys.TOOLBAR_PADDING_END_DEFAULT),
+                toolbarHandleOffsetStartDp = p.runCatching {
+                    getFloat(
+                        PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DP,
+                        PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT,
+                    )
+                }.getOrDefault(PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT),
+                // ---- 悬浮键盘：候选窗口 ----
+                candWinMaxWidthDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_MAX_WIDTH_DP, PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT),
+                candWinHPaddingDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_H_PADDING_DP, PrefKeys.CAND_WIN_H_PADDING_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_H_PADDING_DEFAULT),
+                candWinPinyinTopDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_PINYIN_TOP_DP, PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT),
+                candWinPinyinBottomDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_PINYIN_BOTTOM_DP, PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT),
+                candWinShadowDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_SHADOW_DP, PrefKeys.CAND_WIN_SHADOW_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_SHADOW_DEFAULT),
+                candWinSpacingDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_SPACING_DP, PrefKeys.CAND_WIN_SPACING_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_SPACING_DEFAULT),
+                candWinRowPaddingDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_ROW_PADDING_DP, PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+                }.getOrDefault(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT),
+                // ---- 悬浮键盘：描边宽度 ----
+                toolbarBorderWidthDp = p.runCatching {
+                    getFloat(PrefKeys.TOOLBAR_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
+                }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT),
+                candWinBorderWidthDp = p.runCatching {
+                    getFloat(PrefKeys.CAND_WIN_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
+                }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT),
+                // 颜色相关配置已全部移除，见 PrefKeys 末尾的说明
             ).also {
                 if (!legacy.isNaN()) L.sampled("legacy") { "event=legacy_gap_dp_seen value=$legacy" }
             }
@@ -128,6 +195,32 @@ object ConfigLoader {
         val materialEnabled: Boolean,
         val materialForceAll: Boolean,
         val materialPackages: Set<String>,
+        // ---- 悬浮候选词窗口（圆角 / 间距）----
+        val candidateEnabled: Boolean,
+        val candidateCornerDp: Float,
+        val candidateSpacingDp: Float,
+        // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
+        val floatBarEnabled: Boolean,
+        val floatBarCornerDp: Float,
+        // ---- 悬浮键盘：工具栏 ----
+        val toolbarShadowDp: Float,
+        val toolbarButtonSpacingDp: Float,
+        val toolbarVPaddingDp: Float,
+        val toolbarPaddingStartDp: Float,
+        val toolbarPaddingEndDp: Float,
+        /** 拖拽竖条的左边距（dip） */
+        val toolbarHandleOffsetStartDp: Float,
+        // ---- 悬浮键盘：候选窗口 ----
+        val candWinMaxWidthDp: Float,
+        val candWinHPaddingDp: Float,
+        val candWinPinyinTopDp: Float,
+        val candWinPinyinBottomDp: Float,
+        val candWinShadowDp: Float,
+        val candWinSpacingDp: Float,
+        val candWinRowPaddingDp: Float,
+        // ---- 悬浮键盘：描边宽度 ----
+        val toolbarBorderWidthDp: Float,
+        val candWinBorderWidthDp: Float,
     ) {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
@@ -160,6 +253,26 @@ object ConfigLoader {
                 materialEnabled = false,
                 materialForceAll = false,
                 materialPackages = emptySet(),
+                candidateEnabled = false,
+                candidateCornerDp = PrefKeys.CANDIDATE_CORNER_DEFAULT,
+                candidateSpacingDp = PrefKeys.CANDIDATE_SPACING_DEFAULT,
+                floatBarEnabled = false,
+                floatBarCornerDp = PrefKeys.FLOATBAR_CORNER_DEFAULT,
+                toolbarShadowDp = PrefKeys.TOOLBAR_SHADOW_DEFAULT,
+                toolbarButtonSpacingDp = PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT,
+                toolbarVPaddingDp = PrefKeys.TOOLBAR_VPADDING_DEFAULT,
+                toolbarPaddingStartDp = PrefKeys.TOOLBAR_PADDING_START_DEFAULT,
+                toolbarPaddingEndDp = PrefKeys.TOOLBAR_PADDING_END_DEFAULT,
+                toolbarHandleOffsetStartDp = PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT,
+                candWinMaxWidthDp = PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT,
+                candWinHPaddingDp = PrefKeys.CAND_WIN_H_PADDING_DEFAULT,
+                candWinPinyinTopDp = PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT,
+                candWinPinyinBottomDp = PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT,
+                candWinShadowDp = PrefKeys.CAND_WIN_SHADOW_DEFAULT,
+                candWinSpacingDp = PrefKeys.CAND_WIN_SPACING_DEFAULT,
+                candWinRowPaddingDp = PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT,
+                toolbarBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
+                candWinBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
             )
         }
     }

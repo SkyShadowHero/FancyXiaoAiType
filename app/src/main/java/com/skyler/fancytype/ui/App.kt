@@ -52,6 +52,36 @@ class AppUiState {
     var materialForceAll by mutableStateOf(false)
     var materialPackages by mutableStateOf<Set<String>>(emptySet())
 
+    // ---- 悬浮候选词窗口 ----
+    var candidateEnabled by mutableStateOf(false)
+    var candidateCornerDp by mutableStateOf(PrefKeys.CANDIDATE_CORNER_DEFAULT)
+    var candidateSpacingDp by mutableStateOf(PrefKeys.CANDIDATE_SPACING_DEFAULT)
+
+    // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
+    var floatBarEnabled by mutableStateOf(false)
+    var floatBarCornerDp by mutableStateOf(PrefKeys.FLOATBAR_CORNER_DEFAULT)
+
+    // ---- 悬浮键盘：工具栏 ----
+    var toolbarShadowDp by mutableStateOf(PrefKeys.TOOLBAR_SHADOW_DEFAULT)
+    var toolbarButtonSpacingDp by mutableStateOf(PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT)
+    var toolbarVPaddingDp by mutableStateOf(PrefKeys.TOOLBAR_VPADDING_DEFAULT)
+    var toolbarPaddingStartDp by mutableStateOf(PrefKeys.TOOLBAR_PADDING_START_DEFAULT)
+    var toolbarPaddingEndDp by mutableStateOf(PrefKeys.TOOLBAR_PADDING_END_DEFAULT)
+    var toolbarHandleOffsetStartDp by mutableStateOf(PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT)
+
+    // ---- 悬浮键盘：候选窗口 ----
+    var candWinMaxWidthDp by mutableStateOf(PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT)
+    var candWinHPaddingDp by mutableStateOf(PrefKeys.CAND_WIN_H_PADDING_DEFAULT)
+    var candWinPinyinTopDp by mutableStateOf(PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT)
+    var candWinPinyinBottomDp by mutableStateOf(PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT)
+    var candWinShadowDp by mutableStateOf(PrefKeys.CAND_WIN_SHADOW_DEFAULT)
+    var candWinSpacingDp by mutableStateOf(PrefKeys.CAND_WIN_SPACING_DEFAULT)
+    var candWinRowPaddingDp by mutableStateOf(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+
+    // ---- 悬浮键盘：描边宽度 ----
+    var toolbarBorderWidthDp by mutableStateOf(PrefKeys.BORDER_WIDTH_DEFAULT)
+    var candWinBorderWidthDp by mutableStateOf(PrefKeys.BORDER_WIDTH_DEFAULT)
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -191,4 +221,75 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.materialPackages = MaterialPackages.decode(
         p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }.getOrDefault("")
     )
+
+    // ---- 悬浮候选词窗口 ----
+    uiState.candidateEnabled = p.runCatching { getBoolean(PrefKeys.CANDIDATE_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.candidateCornerDp = p.runCatching {
+        getFloat(PrefKeys.CANDIDATE_CORNER_DP, PrefKeys.CANDIDATE_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.CANDIDATE_CORNER_DEFAULT)
+    uiState.candidateSpacingDp = p.runCatching {
+        getFloat(PrefKeys.CANDIDATE_SPACING_DP, PrefKeys.CANDIDATE_SPACING_DEFAULT)
+    }.getOrDefault(PrefKeys.CANDIDATE_SPACING_DEFAULT)
+
+    // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
+    uiState.floatBarEnabled = p.runCatching { getBoolean(PrefKeys.FLOATBAR_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.floatBarCornerDp = p.runCatching {
+        getFloat(PrefKeys.FLOATBAR_CORNER_DP, PrefKeys.FLOATBAR_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.FLOATBAR_CORNER_DEFAULT)
+
+    // ---- 悬浮键盘：工具栏 ----
+    uiState.toolbarShadowDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_SHADOW_DP, PrefKeys.TOOLBAR_SHADOW_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_SHADOW_DEFAULT)
+    uiState.toolbarButtonSpacingDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_BUTTON_SPACING_DP, PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_BUTTON_SPACING_DEFAULT)
+    uiState.toolbarVPaddingDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_VPADDING_DP, PrefKeys.TOOLBAR_VPADDING_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_VPADDING_DEFAULT)
+    uiState.toolbarPaddingStartDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_PADDING_START_DP, PrefKeys.TOOLBAR_PADDING_START_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_PADDING_START_DEFAULT)
+    uiState.toolbarPaddingEndDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_PADDING_END_DP, PrefKeys.TOOLBAR_PADDING_END_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_PADDING_END_DEFAULT)
+    uiState.toolbarHandleOffsetStartDp = p.runCatching {
+        getFloat(
+            PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DP,
+            PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT,
+        )
+    }.getOrDefault(PrefKeys.TOOLBAR_HANDLE_OFFSET_START_DEFAULT)
+
+    // ---- 悬浮键盘：候选窗口 ----
+    uiState.candWinMaxWidthDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_MAX_WIDTH_DP, PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_MAX_WIDTH_DEFAULT)
+    uiState.candWinHPaddingDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_H_PADDING_DP, PrefKeys.CAND_WIN_H_PADDING_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_H_PADDING_DEFAULT)
+    uiState.candWinPinyinTopDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_PINYIN_TOP_DP, PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_TOP_DEFAULT)
+    uiState.candWinPinyinBottomDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_PINYIN_BOTTOM_DP, PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_PINYIN_BOTTOM_DEFAULT)
+    uiState.candWinShadowDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_SHADOW_DP, PrefKeys.CAND_WIN_SHADOW_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_SHADOW_DEFAULT)
+    uiState.candWinSpacingDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_SPACING_DP, PrefKeys.CAND_WIN_SPACING_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_SPACING_DEFAULT)
+    uiState.candWinRowPaddingDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_ROW_PADDING_DP, PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+    }.getOrDefault(PrefKeys.CAND_WIN_ROW_PADDING_DEFAULT)
+
+    // ---- 悬浮键盘：描边宽度 ----
+    uiState.toolbarBorderWidthDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
+    }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT)
+    uiState.candWinBorderWidthDp = p.runCatching {
+        getFloat(PrefKeys.CAND_WIN_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
+    }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT)
 }

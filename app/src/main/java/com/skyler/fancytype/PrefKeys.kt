@@ -100,4 +100,161 @@ object PrefKeys {
      * RemotePreferences 的集合类型在跨进程同步上更容易出意外，字符串最稳且便于日志排查。
      */
     const val MATERIAL_PACKAGES = "material_packages"
+
+    // ==================================================================
+    // 悬浮候选词窗口（圆角 / 间距）
+    // ==================================================================
+
+    const val CANDIDATE_ENABLED = "candidate_enabled"
+
+    /** 候选项圆角（dip），默认 8dp */
+    const val CANDIDATE_CORNER_DP = "candidate_corner_dp"
+
+    /** 候选项横向间距（dip），默认 5dp */
+    const val CANDIDATE_SPACING_DP = "candidate_spacing_dp"
+
+    const val CANDIDATE_CORNER_MIN = 0f
+    const val CANDIDATE_CORNER_MAX = 48f
+    const val CANDIDATE_CORNER_DEFAULT = 8f
+
+    const val CANDIDATE_SPACING_MIN = 0f
+    const val CANDIDATE_SPACING_MAX = 40f
+    const val CANDIDATE_SPACING_DEFAULT = 5f
+
+    // ==================================================================
+    // 悬浮键盘（工具栏 + 候选窗口）
+    //
+    // 术语：界面上把 App 内部的 movable_bar_* 叫「工具栏」，
+    //       floating_bar_* 叫「候选窗口」。
+    // 圆角是两者**共用**的，所以只有一组键。
+    // ==================================================================
+
+    /** 整页总开关 */
+    const val FLOATBAR_ENABLED = "floatbar_enabled"
+
+    /** 圆角（dip）：工具栏本体 + 工具栏收起态 + 候选窗口，三处共用，默认 16dp */
+    const val FLOATBAR_CORNER_DP = "floatbar_corner_dp"
+
+    const val FLOATBAR_CORNER_MIN = 0f
+    const val FLOATBAR_CORNER_MAX = 48f
+    const val FLOATBAR_CORNER_DEFAULT = 16f
+
+    // ---- 工具栏 ----
+
+    /** 工具栏阴影（dip），默认 8dp */
+    const val TOOLBAR_SHADOW_DP = "toolbar_shadow_dp"
+
+    /** 按钮间距（dip），默认 20dp */
+    const val TOOLBAR_BUTTON_SPACING_DP = "toolbar_button_spacing_dp"
+
+    /** 行上下内边距（dip），默认 11dp */
+    const val TOOLBAR_VPADDING_DP = "toolbar_vpadding_dp"
+
+    /** 左内边距（dip），默认 32dp */
+    const val TOOLBAR_PADDING_START_DP = "toolbar_padding_start_dp"
+
+    /** 右内边距（dip），默认 18dp */
+    const val TOOLBAR_PADDING_END_DP = "toolbar_padding_end_dp"
+
+    /** 拖拽竖条的左边距（dip），默认 14dp */
+    const val TOOLBAR_HANDLE_OFFSET_START_DP = "toolbar_handle_offset_start_dp"
+
+    const val TOOLBAR_SHADOW_MIN = 0f
+    const val TOOLBAR_SHADOW_MAX = 32f
+    const val TOOLBAR_SHADOW_DEFAULT = 8f
+
+    const val TOOLBAR_BUTTON_SPACING_MIN = 0f
+    const val TOOLBAR_BUTTON_SPACING_MAX = 48f
+    const val TOOLBAR_BUTTON_SPACING_DEFAULT = 20f
+
+    const val TOOLBAR_VPADDING_MIN = 0f
+    const val TOOLBAR_VPADDING_MAX = 48f
+    const val TOOLBAR_VPADDING_DEFAULT = 11f
+
+    const val TOOLBAR_SIDE_PADDING_MIN = 0f
+    const val TOOLBAR_SIDE_PADDING_MAX = 64f
+    const val TOOLBAR_PADDING_START_DEFAULT = 32f
+    const val TOOLBAR_PADDING_END_DEFAULT = 18f
+
+    const val TOOLBAR_HANDLE_OFFSET_START_MIN = 0f
+    const val TOOLBAR_HANDLE_OFFSET_START_MAX = 64f
+    const val TOOLBAR_HANDLE_OFFSET_START_DEFAULT = 14f
+
+    // ---- 候选窗口 ----
+
+    /** 候选窗口最大宽度（dip），默认 560dp。实际宽度还会与可用宽度取小，见 Target.NAME_CAND_WIN_MAX_WIDTH */
+    const val CAND_WIN_MAX_WIDTH_DP = "candwin_max_width_dp"
+
+    /** 候选窗口左右内边距（dip），默认 16dp。拼音行与候选行共用，且参与宽度计算 */
+    const val CAND_WIN_H_PADDING_DP = "candwin_h_padding_dp"
+
+    /** 拼音行上边距（dip），默认 12dp */
+    const val CAND_WIN_PINYIN_TOP_DP = "candwin_pinyin_top_dp"
+
+    /** 拼音行下边距（dip），默认 8dp */
+    const val CAND_WIN_PINYIN_BOTTOM_DP = "candwin_pinyin_bottom_dp"
+
+    /** 候选窗口阴影（dip），默认 3dp */
+    const val CAND_WIN_SHADOW_DP = "candwin_shadow_dp"
+
+    /** 候选词之间的间距（dip），默认 22dp */
+    const val CAND_WIN_SPACING_DP = "candwin_spacing_dp"
+
+    /** 候选词行的上下内边距（dip），上下默认都是 12dp */
+    const val CAND_WIN_ROW_PADDING_DP = "candwin_row_padding_dp"
+
+    const val CAND_WIN_MAX_WIDTH_MIN = 100f
+    const val CAND_WIN_MAX_WIDTH_MAX = 1000f
+    const val CAND_WIN_MAX_WIDTH_DEFAULT = 560f
+
+    const val CAND_WIN_H_PADDING_MIN = 0f
+    const val CAND_WIN_H_PADDING_MAX = 64f
+    const val CAND_WIN_H_PADDING_DEFAULT = 16f
+
+    const val CAND_WIN_PINYIN_TOP_DEFAULT = 12f
+    const val CAND_WIN_PINYIN_BOTTOM_DEFAULT = 8f
+
+    /** 拼音行边距范围（dip），上下共用 */
+    const val CAND_WIN_PINYIN_MIN = 0f
+    const val CAND_WIN_PINYIN_MAX = 48f
+
+    const val CAND_WIN_SHADOW_DEFAULT = 3f
+
+    const val CAND_WIN_SPACING_MIN = 0f
+    const val CAND_WIN_SPACING_MAX = 48f
+    const val CAND_WIN_SPACING_DEFAULT = 22f
+
+    const val CAND_WIN_ROW_PADDING_DEFAULT = 12f
+
+    // ==================================================================
+    // 悬浮键盘 · 描边宽度
+    //
+    // 描边**宽度**是 dimen 资源，走和其它尺寸一样的资源覆写通道。
+    //
+    // 注意：描边**颜色**不在这里 —— 见文件末尾的说明。
+    // ==================================================================
+
+    const val TOOLBAR_BORDER_WIDTH_DP = "toolbar_border_width_dp"
+    const val CAND_WIN_BORDER_WIDTH_DP = "candwin_border_width_dp"
+
+    const val BORDER_WIDTH_MIN = 0f
+    const val BORDER_WIDTH_MAX = 8f
+    const val BORDER_WIDTH_DEFAULT = 0.5f
+
+    // ==================================================================
+    // 颜色功能已全部移除（背景色与描边色）
+    //
+    // 两个窗口的背景色与描边色**不是资源**，是运行时 Compose Color，
+    // 装在两个主题数据类里（工具栏 na.y、候选窗口 na.g），
+    // 因此只能 hook 它们的构造函数、用 Chain.proceed(newArgs) 改写参数。
+    //
+    // **实测这条路会把悬浮 UI 搞挂**：改背景色后打不开；只改描边色同样打不开。
+    // 第二次尝试已经加了 runCatching 降级保护（改写失败就用原始参数继续，
+    // proceed 只调用一次），仍然复现 —— 说明问题不在「我的代码抛异常」，
+    // 而在「改写主题构造参数」这个机制本身，或 App 对颜色值有额外依赖。
+    //
+    // 所以颜色相关功能（键、配置字段、界面项、hook）已**全部删除**。
+    // 若将来还要做，不要再走构造函数改写这条路，考虑改 hook 绘制调用点
+    // （例如 a/a.java:198 与 fa/l.java:335 的 Modifier.background / Modifier.border）。
+    // ==================================================================
 }
