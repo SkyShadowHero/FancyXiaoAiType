@@ -16,12 +16,14 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /**
- * 「虚拟键盘」页：触屏虚拟键盘的全部样式调节，三段合成一页。
+ * 「虚拟键盘」页：触屏虚拟键盘的全部样式调节，四段合成一页。
  *
  * 原先的「外观」「间距」两页，加上新增的「候选词」段合并到这里 ——
  * 三者调的是同一套 UI：触屏虚拟键盘本体、它的按键，以及它上面的候选词窗口。
+ * 末段「悬浮键盘大小」也归在这里：它调的同样是触屏键盘，只是切换到了
+ * 平板上那种可以拖动、缩放的悬浮形态。
  *
- * 悬浮键盘（可拖动的输入法栏）是另一套独立 UI，放在「悬浮键盘」页。
+ * 悬浮键盘（可拖动的输入法栏）的样式是另一套独立 UI，放在「悬浮键盘」页。
  */
 @Composable
 fun VirtualKeyboardPage(
@@ -44,6 +46,50 @@ fun VirtualKeyboardPage(
         appearanceSection(uiState, gapMaxLand, gapMaxPort)
         spacingSection(uiState)
         candidateSection(uiState)
+        floatingSizeSection(uiState)
+    }
+}
+
+/**
+ * 「虚拟键盘」页的第四段：悬浮键盘最大尺寸。
+ *
+ * 输入法自己把悬浮键盘的尺寸钉死在「自然宽度的 0.65 ~ 1.1 倍」，
+ * 平板上放到最大也还是很小。这一段把上限交回给用户。
+ */
+private fun LazyListScope.floatingSizeSection(uiState: AppUiState) {
+    item { SmallTitle("悬浮键盘大小") }
+    item {
+        Card {
+            SwitchPreference(
+                checked = uiState.floatKbUnlock,
+                onCheckedChange = { checked ->
+                    uiState.floatKbUnlock = checked
+                    uiState.save { editor -> editor.putBoolean(PrefKeys.FLOAT_KB_UNLOCK, checked) }
+                },
+                title = "解锁最大尺寸",
+                summary = "放开悬浮键盘 ${PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE} 倍的放大上限",
+            )
+            AnimatedVisibility(visible = uiState.floatKbUnlock) {
+                Column {
+                    DpSlider(
+                        title = "最大放大",
+                        summary = "默认 ${PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE} 倍",
+                        value = uiState.floatKbMaxScale,
+                        range = PrefKeys.FLOAT_KB_MAX_SCALE_MIN..PrefKeys.FLOAT_KB_MAX_SCALE_MAX,
+                        keyPoint = PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE,
+                        unit = "倍",
+                        stepDp = 0.1f,
+                        onValueChange = { v -> uiState.floatKbMaxScale = v },
+                        onCommit = {
+                            uiState.save { e ->
+                                e.putFloat(PrefKeys.FLOAT_KB_MAX_SCALE, uiState.floatKbMaxScale)
+                            }
+                        },
+                        commitGuard = { uiState.loaded },
+                    )
+                }
+            }
+        }
     }
 }
 

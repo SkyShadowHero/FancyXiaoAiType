@@ -41,6 +41,8 @@ data class AppTargets(
     val advancedVisualGate: String,
     /** 模糊能力位所在类 */
     val blurGate: String,
+    /** 夹取工具（Kotlin `coerceIn` 的实现）所在类 */
+    val clampUtil: String,
 
     // ---- 方法名 ----
     /** `static boolean (String, boolean)` */
@@ -51,6 +53,10 @@ data class AppTargets(
     val mMaterialApply: String,
     /** 材质应用入口的方法（`(View, …) -> void`） */
     val mApplyMaterial: String,
+    /** 夹取工具里 `(float, float, float) -> float` */
+    val mClampFloat: String,
+    /** 夹取工具里 `(int, int, int) -> int` */
+    val mClampInt: String,
 
     // ---- 诊断字段名 ----
     val fOffscreenFill: String,
@@ -61,7 +67,7 @@ data class AppTargets(
 ) {
 
     /**
-     * 用结构特征给本档打分（0..7）。分数最高且大于 0 的档位即为当前输入法版本。
+     * 用结构特征给本档打分（0..8）。分数最高且大于 0 的档位即为当前输入法版本。
      *
      * 每一项都校验「形状」而不是「名字」：
      * 例如判定工具类必须真的有一个 `(Iterable, Object) -> boolean` 的静态方法，
@@ -76,6 +82,7 @@ data class AppTargets(
         if (hasStaticBooleanField(cl, advancedVisualGate)) s++
         if (hasStaticBooleanField(cl, blurGate)) s++
         if (hasViewArgVoidMethod(cl, materialApplier)) s++
+        if (hasClampShape(cl, clampUtil)) s++
         return s
     }
 }
@@ -171,6 +178,30 @@ private fun hasViewArgVoidMethod(cl: ClassLoader, name: String): Boolean {
 }
 
 /**
+ * 夹取工具的形状：同时有 `(float, float, float) -> float` 与 `(int, int, int) -> int`。
+ *
+ * 这两个是 Kotlin `coerceIn` 的实现，成对出现，别的地方不会有这种组合。
+ */
+private fun hasClampShape(cl: ClassLoader, name: String): Boolean {
+    val c = loadOrNull(cl, name) ?: return false
+    return try {
+        val f = c.declaredMethods.any {
+            it.parameterCount == 3 &&
+                it.returnType == Float::class.javaPrimitiveType &&
+                it.parameterTypes.all { p -> p == Float::class.javaPrimitiveType }
+        }
+        val i = c.declaredMethods.any {
+            it.parameterCount == 3 &&
+                it.returnType == Int::class.javaPrimitiveType &&
+                it.parameterTypes.all { p -> p == Int::class.javaPrimitiveType }
+        }
+        f && i
+    } catch (t: Throwable) {
+        false
+    }
+}
+
+/**
  * 已知版本的混淆目标表。
  *
  * **每记录一个新版本就在前面加一档**（新的放最前也无所谓，打分决定结果）。
@@ -188,10 +219,13 @@ object TargetCatalog {
         materialApplier = "xe.b",
         advancedVisualGate = "z7.a",
         blurGate = "xe.b",
+        clampUtil = "z7.s",
         mPrefBool = "a",
         mSplitGetter = "o",
         mMaterialApply = "j",
         mApplyMaterial = "a",
+        mClampFloat = "t",
+        mClampInt = "u",
         fOffscreenFill = "f18746a",
         fBlurSupported = "f18279a",
         fBlurVersion = "f18281d",
@@ -209,10 +243,13 @@ object TargetCatalog {
         materialApplier = "we.h",
         advancedVisualGate = "y7.a",
         blurGate = "we.b",
+        clampUtil = "ed.a",
         mPrefBool = "a",
         mSplitGetter = "q",
         mMaterialApply = "k",
         mApplyMaterial = "x",
+        mClampFloat = "j",
+        mClampInt = "k",
         fOffscreenFill = "f17073a",
         fBlurSupported = "f16477a",
         fBlurVersion = "f16479d",
@@ -222,7 +259,7 @@ object TargetCatalog {
 
     val known: List<AppTargets> = listOf(V1053, V910_974)
 
-    private const val MAX_SCORE = 7
+    private const val MAX_SCORE = 8
 
     /**
      * 接受一档所需的最低分。
@@ -230,7 +267,7 @@ object TargetCatalog {
      * 留 2 分的余量：某一版改掉一两个类的形状时仍能命中，
      * 但「只碰巧对上两三处」的无关混淆类会被挡在门外。
      */
-    private const val MIN_ACCEPT = 5
+    private const val MIN_ACCEPT = 6
 
     @Volatile
     private var resolved: AppTargets? = null

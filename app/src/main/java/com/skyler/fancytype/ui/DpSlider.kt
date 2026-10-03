@@ -36,6 +36,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
  *
  * @param stepDp 拖拽的最小步进（dp）。默认 1dp；描边宽度这类默认值就是 0.5dp 的
  *   设置传 0.5f，否则拖拽只能落到整数、够不到自己的默认值。
+ * @param unit 数值单位，同时用于行尾显示与输入框标签。默认 dp；悬浮键盘最大尺寸
+ *   这类**倍率**设置传「倍」，否则会显示成 «2.0 dp» 这种不对的单位。
  */
 @Composable
 internal fun DpSlider(
@@ -48,6 +50,7 @@ internal fun DpSlider(
     onCommit: () -> Unit,
     commitGuard: () -> Boolean,
     stepDp: Float = 1f,
+    unit: String = "dp",
 ) {
     var dialogOpen by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
@@ -73,7 +76,7 @@ internal fun DpSlider(
         showKeyPoints = true,
         title = title,
         summary = summary,
-        valueText = "${numText(value)} dp",
+        valueText = "${numText(value)} $unit",
         onClick = {
             // 用当前值预填，用户多半是在它基础上微调
             input = numText(value)
@@ -93,7 +96,7 @@ internal fun DpSlider(
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = "数值（dp）",
+                    label = "数值（$unit）",
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )

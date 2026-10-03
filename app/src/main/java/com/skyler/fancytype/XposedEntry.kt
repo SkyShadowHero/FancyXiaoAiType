@@ -19,11 +19,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class XposedEntry : XposedModule() {
 
+    /**
+     * 悬浮键盘窗口宽度区间的下限至少要有这么多像素，才认它是我们的调用。
+     * 键盘自然宽度在真机上是上千像素，`0.65 × 自然宽度` 不可能只有几十像素。
+     */
+    private val minFloatingWidthPx = 200
+
     private val installed = AtomicBoolean(false)
 
     @Volatile
     private var processName: String? = null
-
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
         processName = param.processName
         L.i("event=module_loaded process=${param.processName} api=$apiVersion framework=$frameworkName")
@@ -65,6 +70,7 @@ class XposedEntry : XposedModule() {
             ok += hookPrefBool(cl, t)
             ok += hookMaterial(cl, t)
             ok += hookMaterialDiagnostics(cl, t)
+            ok += hookFloatingSize(cl, t)
         }
 
         L.i("event=install_done hooks=$ok process=$processName appVersion=${t?.label ?: "unknown"}")
@@ -643,6 +649,125 @@ class XposedEntry : XposedModule() {
         } catch (t: Throwable) {
             L.e("event=hook_failed target=material_apply_effect", t); 0
         }
+    }
+
+    /**
+     * 解锁悬浮键盘最大尺寸。
+     *
+     * 输入法把悬浮键盘的倍率与窗口宽度都夹在自然尺寸的 0.65 ~ 1.1 倍，
+     * 三处夹取（拖动中 / 松手提交 / 显示恢复）走的是**同一个** Kotlin
+     * `coerceIn` 实现，所以只接管那一个方法就能全部生效 —— 见 [FloatingSize]。
+     *
+     * ## 怎么认出「是我们的调用」
+     *
+     * 这个夹取方法是通用工具，输入法里有 190 多处调用，不能见着就改。
+     * 判据是**参数特征**而不是调用方：
+     *
+     * - float 版认死的 `(0.65f, 1.1f)` —— 这对字面量在输入法里只出现在
+     *   悬浮键盘的缩放夹取上。
+     * - int 版认「上下限除以各自的系数后应当收敛到同一个自然宽度」。
+     *   输入法是拿同一个 `fW` 算出上下限的（`0.65*fW`、`1.1*fW`），
+     *   所以把两端分别除回去必然差不多相等（只差取整）；随便别的夹取
+     *   凑不出这种关系。另外要求下限够大（像素宽度不会只有几十）。
+     *
+     * 只抬**上限**，下限原样保留 —— 下限决定键盘最小能缩多小，不该被影响。
+     * 未解锁时一律原样透传，等于没装这个 hook。
+     */
+    private fun hookFloatingSize(cl: ClassLoader, target: AppTargets): Int {
+        val util = loadClass(cl, target.clampUtil) ?: return 0
+        var ok = 0
+
+        // ---- 缩放倍率：(float, float, float) -> float ----
+        val clampFloat = findMethodByArity(util, target.mClampFloat, 3) {
+            it.returnType == Float::class.javaPrimitiveType &&
+                it.parameterTypes.all { p -> p == Float::class.javaPrimitiveType }
+        }
+        if (clampFloat != null) {
+            try {
+                hook(clampFloat)
+                    .setId("float_kb_scale")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept { chain ->
+                        val min = chain.getArg(1) as? Float
+                        val max = chain.getArg(2) as? Float
+                        val value = chain.getArg(0) as? Float
+                        if (min == PrefKeys.FLOAT_KB_NATIVE_MIN_SCALE &&
+                            max == PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE &&
+                            value != null
+                        ) {
+                            val newMax = FloatingSize.maxScale
+                            if (newMax > PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE) {
+                                L.sampled("fkb_size", limit = 8) {
+                                    "event=float_kb_scale value=$value -> max=$newMax"
+                                }
+                                return@intercept chain.proceed(arrayOf<Any?>(value, min, newMax))
+                            }
+                        }
+                        chain.proceed()
+                    }
+                ok++
+            } catch (t: Throwable) {
+                L.e("event=hook_failed target=float_kb_scale", t)
+            }
+        }
+
+        // ---- 窗口宽度：(int, int, int) -> int ----
+        val clampInt = findMethodByArity(util, target.mClampInt, 3) {
+            it.returnType == Int::class.javaPrimitiveType &&
+                it.parameterTypes.all { p -> p == Int::class.javaPrimitiveType }
+        }
+        if (clampInt != null) {
+            try {
+                hook(clampInt)
+                    .setId("float_kb_width")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept { chain ->
+                        val lo = chain.getArg(1) as? Int
+                        val hi = chain.getArg(2) as? Int
+                        val value = chain.getArg(0) as? Int
+                        if (lo != null && hi != null && value != null && isFloatingWidthRange(lo, hi)) {
+                            val newMax = FloatingSize.maxScale
+                            if (newMax > PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE) {
+                                // lo = 0.65 * fW，所以 fW = lo / 0.65，新上限 = fW * newMax
+                                val newHi = (lo * (newMax / PrefKeys.FLOAT_KB_NATIVE_MIN_SCALE)).toInt()
+                                L.sampled("fkb_size", limit = 8) {
+                                    "event=float_kb_width value=$value lo=$lo hi=$hi -> hi=$newHi"
+                                }
+                                return@intercept chain.proceed(arrayOf<Any?>(value, lo, newHi))
+                            }
+                        }
+                        chain.proceed()
+                    }
+                ok++
+            } catch (t: Throwable) {
+                L.e("event=hook_failed target=float_kb_width", t)
+            }
+        }
+
+        L.i(
+            "event=float_kb_hooks util=${target.clampUtil} " +
+                "scale=${if (clampFloat != null) "ok" else "missing"} " +
+                "width=${if (clampInt != null) "ok" else "missing"} " +
+                "unlock=${FloatingSize.unlocked} maxScale=${FloatingSize.maxScale}"
+        )
+        return ok
+    }
+
+    /**
+     * 这一对 (下限, 上限) 是不是悬浮键盘的窗口宽度区间？
+     *
+     * 输入法用同一个自然宽度 `fW` 算出两端：`lo = 0.65*fW`、`hi = 1.1*fW`。
+     * 所以把两端各自除回系数，应当收敛到同一个 `fW`（只差取整误差）。
+     * 别的夹取凑不出这种关系。
+     *
+     * 另外要求 `lo` 够大：键盘自然宽度在真机上是上千像素，区间下限不可能很小，
+     * 加上这一条可以把概率性的巧合挡掉。
+     */
+    private fun isFloatingWidthRange(lo: Int, hi: Int): Boolean {
+        if (lo < minFloatingWidthPx || hi <= lo) return false
+        val fwFromLo = lo / PrefKeys.FLOAT_KB_NATIVE_MIN_SCALE
+        val fwFromHi = hi / PrefKeys.FLOAT_KB_NATIVE_MAX_SCALE
+        return kotlin.math.abs(fwFromLo - fwFromHi) < 1.5f
     }
 
     /**

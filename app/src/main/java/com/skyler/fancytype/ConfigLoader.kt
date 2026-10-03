@@ -22,9 +22,15 @@ object ConfigLoader {
 
     fun attach(p: SharedPreferences?) {
         prefs = p
+        // 悬浮键盘尺寸上限处在热点路径上（夹取方法每帧都在调），不能按需读配置，
+        // 所以这里先刷一次缓存；之后由下面的监听 + 缓存自带的节流刷新跟上改动。
+        FloatingSize.refresh(p)
         // 注册监听：设置页改动后，Hook 侧下次读取立即取到新值（真正的实时生效）。
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             L.i("event=remote_pref_changed key=$key")
+            if (key == PrefKeys.FLOAT_KB_UNLOCK || key == PrefKeys.FLOAT_KB_MAX_SCALE) {
+                FloatingSize.refresh(prefs)
+            }
         }
         changeListener = listener
         try {
@@ -166,6 +172,12 @@ object ConfigLoader {
                 candWinBorderWidthDp = p.runCatching {
                     getFloat(PrefKeys.CAND_WIN_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
                 }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT),
+                // ---- 悬浮键盘：解锁最大尺寸 ----
+                floatKbUnlock = p.runCatching { getBoolean(PrefKeys.FLOAT_KB_UNLOCK, false) }
+                    .getOrDefault(false),
+                floatKbMaxScale = p.runCatching {
+                    getFloat(PrefKeys.FLOAT_KB_MAX_SCALE, PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
+                }.getOrDefault(PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT),
                 // 颜色相关配置已全部移除，见 PrefKeys 末尾的说明
             ).also {
                 if (!legacy.isNaN()) L.sampled("legacy") { "event=legacy_gap_dp_seen value=$legacy" }
@@ -241,6 +253,11 @@ object ConfigLoader {
         // ---- 悬浮键盘：描边宽度 ----
         val toolbarBorderWidthDp: Float,
         val candWinBorderWidthDp: Float,
+        // ---- 悬浮键盘：解锁最大尺寸 ----
+        /** 是否解锁输入法自带的 110% 尺寸上限 */
+        val floatKbUnlock: Boolean,
+        /** 解锁后的最大倍率（相对键盘自然宽度） */
+        val floatKbMaxScale: Float,
     ) {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
@@ -297,6 +314,8 @@ object ConfigLoader {
                 candWinPinyinFontDp = PrefKeys.CAND_WIN_PINYIN_FONT_DEFAULT,
                 toolbarBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
                 candWinBorderWidthDp = PrefKeys.BORDER_WIDTH_DEFAULT,
+                floatKbUnlock = false,
+                floatKbMaxScale = PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT,
             )
         }
     }

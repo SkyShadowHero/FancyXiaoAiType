@@ -88,6 +88,10 @@ class AppUiState {
     var toolbarBorderWidthDp by mutableStateOf(PrefKeys.BORDER_WIDTH_DEFAULT)
     var candWinBorderWidthDp by mutableStateOf(PrefKeys.BORDER_WIDTH_DEFAULT)
 
+    // ---- 悬浮键盘：解锁最大尺寸 ----
+    var floatKbUnlock by mutableStateOf(false)
+    var floatKbMaxScale by mutableStateOf(PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -311,4 +315,11 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.candWinBorderWidthDp = p.runCatching {
         getFloat(PrefKeys.CAND_WIN_BORDER_WIDTH_DP, PrefKeys.BORDER_WIDTH_DEFAULT)
     }.getOrDefault(PrefKeys.BORDER_WIDTH_DEFAULT)
+
+    // ---- 悬浮键盘：解锁最大尺寸 ----
+    uiState.floatKbUnlock = p.runCatching { getBoolean(PrefKeys.FLOAT_KB_UNLOCK, false) }
+        .getOrDefault(false)
+    uiState.floatKbMaxScale = p.runCatching {
+        getFloat(PrefKeys.FLOAT_KB_MAX_SCALE, PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
+    }.getOrDefault(PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
 }
