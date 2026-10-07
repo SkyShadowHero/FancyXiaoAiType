@@ -914,11 +914,25 @@ class AppMenuHooks(private val module: XposedInterface) {
     // ------------------------------------------------------------------ 树遍历
 
     private fun findMenuList(root: View): ListView? {
-        var found: ListView? = null
+        var byRows: ListView? = null
+        var byClass: ListView? = null
         forEachView(root) { v ->
-            if (found == null && v is ListView && rowCount(v) >= MIN_MENU_ROWS) found = v
+            if (v is ListView) {
+                if (byRows == null && rowCount(v) >= MIN_MENU_ROWS) byRows = v
+                // **不能只靠 adapter 行数**：`show()` 刚返回时 adapter 还没填
+                //（实测 rows=null、整棵子树都是 0x0），菜单会被整条跳过 ——
+                // 表现就是"有些右键菜单没被改"。类名对得上就先认下来：
+                // 后面每次布局还会重新 restyle，那时 adapter 与子项都齐了。
+                val cls = v.javaClass.name
+                if (byClass == null &&
+                    (cls.contains("MenuDropDownListView") ||
+                        cls.contains("KeyboardAccessibleListView"))
+                ) {
+                    byClass = v
+                }
+            }
         }
-        return found
+        return byRows ?: byClass
     }
 
     private fun rowCount(list: ListView): Int =
