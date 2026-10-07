@@ -205,8 +205,10 @@ class AppMenuHooks(private val module: XposedInterface) {
                 .setId("appmenu_show_dropdown")
                 .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                 .intercept { chain ->
-                    // 宽度必须在 show() 之前定好：之后写必然落在入场动画途中/之后 → 「宽度突变」
-                    runCatching { presizeWidth(chain.getThisObject() as? PopupWindow) }
+                    // 宽度：**不由本模块设定**（宿主按内容 wrap 就够了）。
+                    // 曾经在 show() 之前预设宽度以求"不突变"，但那会命中**任何带列表的弹窗**
+                    // （下拉框 / 自动补全 / 分享面板 / 应用自己的选择菜单），把它们的宽度一起重算
+                    // → 截断（实测误伤了长按菜单）。
                     val result = chain.proceed()
                     runCatching {
                         // 第 0 个参数就是锚点 View（showAsDropDown 是 anchor，showAtLocation 是 parent），
@@ -231,8 +233,10 @@ class AppMenuHooks(private val module: XposedInterface) {
                 .setId("appmenu_show_at_location")
                 .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                 .intercept { chain ->
-                    // 宽度必须在 show() 之前定好：之后写必然落在入场动画途中/之后 → 「宽度突变」
-                    runCatching { presizeWidth(chain.getThisObject() as? PopupWindow) }
+                    // 宽度：**不由本模块设定**（宿主按内容 wrap 就够了）。
+                    // 曾经在 show() 之前预设宽度以求"不突变"，但那会命中**任何带列表的弹窗**
+                    // （下拉框 / 自动补全 / 分享面板 / 应用自己的选择菜单），把它们的宽度一起重算
+                    // → 截断（实测误伤了长按菜单）。
                     val result = chain.proceed()
                     runCatching {
                         // 第 0 个参数就是锚点 View（showAsDropDown 是 anchor，showAtLocation 是 parent），
@@ -358,8 +362,19 @@ class AppMenuHooks(private val module: XposedInterface) {
         val rowBased0 = synchronized(rowBasedCache) {
             rowBasedCache.getOrPut(popup) { rows0.any { it.background is RippleDrawable } }
         }
-        // 不为 WebView 单独写判断：不管哪一类菜单，来了就按同一套处理
-        //（rowBased 只决定高亮挂在哪一层，不决定做不做）。
+        // **只在确认是目标菜单时才动手**：用 ListView 自身的类名判定。
+        // 注意不能按"行"判定 —— `show()` 刚返回时 ListView 还没布局，子项是空的。
+        //   框架菜单 → MenuPopupWindow$MenuDropDownListView
+        //   网页菜单 → KeyboardAccessibleListView
+        // 其它弹窗（下拉框 / 自动补全 / 分享面板 / 应用自己的选择菜单 / SystemUI 的长按工具栏）
+        // 一个字节都不碰 —— 这是之前误伤长按菜单宽度的根源。
+        val listCls = list0.javaClass.name
+        if (!listCls.contains("MenuDropDownListView") &&
+            !listCls.contains("KeyboardAccessibleListView")
+        ) {
+            diag(content, "skipped reason=not_target_menu cls=$listCls")
+            return
+        }
         if (!HookPrefs.appMenuAppAllowed(ctx.packageName)) {
             diag(content, "skipped reason=app_not_allowed pkg=${ctx.packageName}")
             return
