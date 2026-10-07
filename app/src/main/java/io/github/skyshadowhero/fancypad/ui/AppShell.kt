@@ -1,5 +1,6 @@
 package io.github.skyshadowhero.fancypad.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
@@ -31,6 +33,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
@@ -44,31 +48,22 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Background
-import top.yukonga.miuix.kmp.icon.extended.GridView
-import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.Layers
-import top.yukonga.miuix.kmp.icon.extended.Tune
+import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavKey
+import top.yukonga.miuix.kmp.nav.core.navBackStackOf
+import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
- * 导航项。FancyPad = 三个功能域合成一个 App：
- * 输入法外观（虚拟键盘 / 悬浮键盘 / 超级材质）+ 光标主题 + 平行窗口动画。
- */
-enum class AppPage(val label: String) {
-    VirtualKeyboard("虚拟键盘"),
-    FloatingKeyboard("悬浮键盘"),
-    Material("超级材质"),
-    Cursor("光标"),
-    Parallel("平行窗口"),
-    About("关于"),
-}
-
-/**
- * 自适应外壳：横屏平板走左侧栏，竖屏 / 手机走底部菜单。
- * 配置装载已在 App() 完成，这里只负责渲染与交互。
+ * 自适应外壳。全部导航走 miuix-nav（[NavDisplay] + [NavKey]）：作用域是路由栈的第一层，
+ * 作用域里的功能页是第二层，光标域的颜色设置是第三层。
+ *
+ * - 一级页面（[RouteScopes]）不显示多页导航；
+ * - 进入多页作用域（输入法外观）后，横屏走左侧栏、竖屏走底部菜单，在这几页之间切换
+ *   —— 同级切换只**替换**栈顶，不加深返回栈，返回键一次就回到作用域列表；
+ * - 配置装载已在 App() 完成，这里只负责渲染与交互。
  */
 @Composable
 fun AppShell(
@@ -122,7 +117,36 @@ fun AppShell(
     val gapMaxLand = (screenLongDp * PrefKeys.GAP_MAX_RATIO).coerceAtLeast(PrefKeys.GAP_MAX_FALLBACK)
     val gapMaxPort = (screenShortDp * PrefKeys.GAP_MAX_RATIO).coerceAtLeast(PrefKeys.GAP_MAX_FALLBACK)
 
-    val pages = AppPage.entries
+    // ---------------------------------------------------------------- 路由
+
+    // 只做内存栈（navBackStackOf）：路由都是 data object，不需要序列化插件，
+    // 代价是不做进程重建后的路由恢复 —— 对模块设置页够用。
+    val backStack = remember { navBackStackOf(RouteScopes) }
+    fun push(key: NavKey) {
+        if (key !in backStack) backStack.add(key)
+    }
+
+    fun pop() {
+        if (backStack.size > 1) backStack.removeLastOrNull()
+    }
+
+    /** 同一作用域内的功能页之间切换：只替换栈顶，返回键一次回到作用域列表。 */
+    fun openSibling(key: NavKey) {
+        val last = backStack.lastOrNull() ?: return
+        if (last == key) return
+        if (last.scope() != null && last.scope() == key.scope()) {
+            backStack[backStack.lastIndex] = key
+        } else {
+            push(key)
+        }
+    }
+
+    // 返回兜底：NavDisplay 的返回桥在部分宿主下不生效（会直接退到桌面），这里补一层；
+    // pop() 有 size 守卫，重复触发也不会退出
+    BackHandler(enabled = backStack.size > 1) { pop() }
+
+    val current = backStack.lastOrNull() ?: RouteScopes
+    val activeScope = current.scope()
 
     // ---- 尺寸过大风险提示（间隙 + 按键间距统一处理）----
     // 判定规则两者完全一致：任一项超过「该项上限的 6/10」即告警。
@@ -176,50 +200,87 @@ fun AppShell(
         },
     )
 
-    if (useRail) {
+    val pages = activeScope?.pages.orEmpty()
+
+    if (pages.size > 1 && useRail) {
         Row(modifier = Modifier.fillMaxSize()) {
             val railState = rememberNavigationRailState(initialValue = NavigationRailValue.Expanded)
             NavigationRail(state = railState) {
-                pages.forEachIndexed { index, page ->
+                pages.forEach { page ->
                     NavigationRailItem(
-                        selected = uiState.page == index,
-                        onClick = { uiState.page = index },
+                        selected = current == page,
+                        onClick = { openSibling(page) },
                         icon = page.icon(),
-                        label = page.label,
+                        label = page.title(),
                     )
                 }
             }
             Box(modifier = Modifier.weight(1f)) {
-                PageHost(uiState, pages, gapMaxLand, gapMaxPort, padding)
+                PageHost(
+                    uiState = uiState,
+                    backStack = backStack,
+                    current = current,
+                    gapMaxLand = gapMaxLand,
+                    gapMaxPort = gapMaxPort,
+                    padding = padding,
+                    onBack = { pop() },
+                    onPush = { push(it) },
+                )
+            }
+        }
+    } else if (pages.size > 1) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) {
+                PageHost(
+                    uiState = uiState,
+                    backStack = backStack,
+                    current = current,
+                    gapMaxLand = gapMaxLand,
+                    gapMaxPort = gapMaxPort,
+                    padding = padding,
+                    onBack = { pop() },
+                    onPush = { push(it) },
+                )
+            }
+            NavigationBar {
+                pages.forEach { page ->
+                    NavigationBarItem(
+                        selected = current == page,
+                        onClick = { openSibling(page) },
+                        icon = page.icon(),
+                        label = page.title(),
+                    )
+                }
             }
         }
     } else {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f)) {
-                PageHost(uiState, pages, gapMaxLand, gapMaxPort, padding)
-            }
-            NavigationBar {
-                pages.forEachIndexed { index, page ->
-                    NavigationBarItem(
-                        selected = uiState.page == index,
-                        onClick = { uiState.page = index },
-                        icon = page.icon(),
-                        label = page.label,
-                    )
-                }
-            }
-        }
+        PageHost(
+            uiState = uiState,
+            backStack = backStack,
+            current = current,
+            gapMaxLand = gapMaxLand,
+            gapMaxPort = gapMaxPort,
+            padding = padding,
+            onBack = { pop() },
+            onPush = { push(it) },
+        )
     }
 }
 
-/** 页面宿主：持有唯一的 Scaffold，右上角放「重启输入法」入口。 */
+/**
+ * 页面宿主：唯一的 Scaffold（顶栏 + Snackbar），内容交给 [NavDisplay] 按路由渲染。
+ * 右上角放「重启输入法」入口。
+ */
 @Composable
 private fun PageHost(
     uiState: AppUiState,
-    pages: List<AppPage>,
+    backStack: androidx.compose.runtime.snapshots.SnapshotStateList<NavKey>,
+    current: NavKey,
     gapMaxLand: Float,
     gapMaxPort: Float,
     padding: PaddingValues,
+    onBack: () -> Unit,
+    onPush: (NavKey) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
 
@@ -266,11 +327,19 @@ private fun PageHost(
                 scrollOffsetPx = { -scrollBehavior.state.contentOffset },
             ) {
                 TopAppBar(
-                    title = pages[uiState.page.coerceIn(0, pages.size - 1)].title(),
+                    title = current.title(),
+                    subtitle = current.subtitle(),
                     scrollBehavior = scrollBehavior,
                     // 模糊层在顶栏下面；顶栏自己必须透明，否则会盖住模糊。
                     // 没滚动时不需要模糊，用回主题色，避免透出下面的内容。
                     color = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface,
+                    navigationIcon = {
+                        if (backStack.size > 1) {
+                            IconButton(onClick = onBack) {
+                                Icon(MiuixIcons.Back, "返回")
+                            }
+                        }
+                    },
                     actions = {
                         DropdownActionMenu { showRestartDialog = true }
                     },
@@ -290,13 +359,82 @@ private fun PageHost(
         // 「should be attached to a Modifier.nestedScroll in order to keep track of
         // the scroll events」。之前全模块一处都没挂，scrollBehavior.state.contentOffset
         // 恒为 0 —— 顶栏既不收起，渐进模糊也永远不出现（实测「完全没效果」就是这个原因）。
-        // 挂在这一层而不是各页的 LazyColumn 上，四个页面一次性全覆盖。
         Box(
             modifier = Modifier
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
+                // 宽屏（有左栏时）转场图层不能画到 rail 上面
+                .clipToBounds()
         ) {
-            PageContent(uiState, pages, gapMaxLand, gapMaxPort, padding, contentPadding)
+            NavDisplay(
+                backStack = backStack,
+                onBack = onBack,
+                transition = NavTransitions.MiuixDefault,
+            ) {
+                entry<RouteScopes> {
+                    ScopeListPage(
+                        onEnter = { scope -> onPush(scope.pages.first()) },
+                        onAbout = { onPush(RouteAbout) },
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteImeVirtual> {
+                    VirtualKeyboardPage(
+                        uiState = uiState,
+                        gapMaxLand = gapMaxLand,
+                        gapMaxPort = gapMaxPort,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteImeFloating> {
+                    FloatingKeyboardPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteImeMaterial> {
+                    MaterialPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteCursor> {
+                    CursorPage(
+                        cursorEnabled = uiState.cursorEnabled,
+                        onCursorEnabledChange = { checked ->
+                            uiState.cursorEnabled = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
+                        },
+                        onOpenColors = { onPush(RouteCursorColors) },
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteCursorColors> {
+                    CursorColorsPage(
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteParallel> {
+                    ParallelPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+                entry<RouteAbout> {
+                    AboutPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
         }
     }
 
@@ -331,77 +469,10 @@ private fun PageHost(
     )
 }
 
-/** 按当前页分发内容。抽出来是为了让 [PageHost] 能把整块内容包进 backdrop。 */
-@Composable
-private fun PageContent(
-    uiState: AppUiState,
-    pages: List<AppPage>,
-    gapMaxLand: Float,
-    gapMaxPort: Float,
-    padding: PaddingValues,
-    contentPadding: PaddingValues,
-) {
-    when (pages[uiState.page.coerceIn(0, pages.size - 1)]) {
-        AppPage.VirtualKeyboard -> VirtualKeyboardPage(
-            uiState = uiState,
-            gapMaxLand = gapMaxLand,
-            gapMaxPort = gapMaxPort,
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-
-        AppPage.FloatingKeyboard -> FloatingKeyboardPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-
-        AppPage.Material -> MaterialPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-
-        AppPage.Cursor -> CursorPage(
-            cursorEnabled = uiState.cursorEnabled,
-            onCursorEnabledChange = { checked ->
-                uiState.cursorEnabled = checked
-                uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
-            },
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-
-        AppPage.Parallel -> ParallelPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-
-        AppPage.About -> AboutPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = contentPadding,
-        )
-    }
-}
-
-private fun AppPage.title(): String = when (this) {
-    AppPage.VirtualKeyboard -> "虚拟键盘"
-    AppPage.FloatingKeyboard -> "悬浮键盘"
-    AppPage.Material -> "超级材质"
-    AppPage.Cursor -> "光标"
-    AppPage.Parallel -> "平行窗口"
-    AppPage.About -> "关于"
-}
-
-private fun AppPage.icon() = when (this) {
-    AppPage.VirtualKeyboard -> MiuixIcons.Tune
-    AppPage.FloatingKeyboard -> MiuixIcons.Layers
-    AppPage.Material -> MiuixIcons.Background
-    AppPage.Cursor -> MiuixIcons.GridView
-    AppPage.Parallel -> MiuixIcons.HorizontalSplit
-    AppPage.About -> MiuixIcons.Info
+/** 顶栏副标题（目前只有颜色设置页用） */
+private fun NavKey.subtitle(): String = when (this) {
+    RouteCursorColors -> cursorColorsSubtitle()
+    else -> ""
 }
 
 /** 平板布局断点：横屏平板走左侧栏；竖屏平板 / 手机走底部菜单。 */

@@ -19,10 +19,9 @@ import io.github.skyshadowhero.fancypad.RemoteConfig
 import kotlinx.coroutines.delay
 
 /**
- * 顶层 UI 状态：跨页面共享（配置值 + 当前页）。
+ * 顶层 UI 状态：跨页面共享（配置值；导航状态由 miuix-nav 的路由栈持有）。
  */
 class AppUiState {
-    var page by mutableIntStateOf(0)
     var themeMode by mutableIntStateOf(0)
 
     var gapEnabled by mutableStateOf(true)

@@ -12,10 +12,7 @@ import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTitleDefaults
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * 「平行窗口」页（原 os4平行窗口动画fix模块）：作用域 `com.android.systemui`。
@@ -90,16 +87,6 @@ fun ParallelPage(
                     }
                 }
             }
-        }
-        item {
-            Text(
-                "改动即时生效，不用重启。\n"
-                    + "作用域：仅 com.android.systemui，不影响其它应用与 system_server。\n"
-                    + "若开关都打开仍有卡顿，多半是别的模块（例如系统云配置类的）在同时改这一块。",
-                modifier = Modifier.padding(SmallTitleDefaults.InsideMargin),
-                style = MiuixTheme.textStyles.footnote1,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
-            )
         }
     }
 }
