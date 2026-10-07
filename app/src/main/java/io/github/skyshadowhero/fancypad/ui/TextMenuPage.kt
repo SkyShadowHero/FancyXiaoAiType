@@ -92,5 +92,58 @@ fun TextMenuPage(
                 }
             }
         }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.contextMenuEnabled,
+                    onCheckedChange = { checked ->
+                        uiState.contextMenuEnabled = checked
+                        uiState.save { e ->
+                            e.putBoolean(PrefKeys.CONTEXTMENU_ENABLED, checked)
+                        }
+                    },
+                    title = "右键上下文菜单",
+                    summary = "右键弹出的多行菜单换成 Miuix 圆角/配色/字号（原版圆角只有 2dp）；" +
+                        "作用域是各个应用自己，需在 LSPosed 里把目标应用加进作用域并重启该应用",
+                )
+                AnimatedVisibility(visible = uiState.contextMenuEnabled) {
+                    Column {
+                        DpSlider(
+                            title = "弹出层圆角",
+                            summary = "默认 ${PrefKeys.CONTEXTMENU_CORNER_DEFAULT.toInt()}dp（原版 2dp）",
+                            value = uiState.contextMenuCornerDp,
+                            range = PrefKeys.TOOLBAR_CORNER_MIN..PrefKeys.TOOLBAR_CORNER_MAX,
+                            keyPoint = PrefKeys.CONTEXTMENU_CORNER_DEFAULT,
+                            onValueChange = { v -> uiState.contextMenuCornerDp = v },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(
+                                        PrefKeys.CONTEXTMENU_CORNER_DP,
+                                        uiState.contextMenuCornerDp,
+                                    )
+                                }
+                            },
+                            commitGuard = { uiState.loaded },
+                        )
+                        DpSlider(
+                            title = "菜单文字大小",
+                            summary = "默认 ${PrefKeys.CONTEXTMENU_TEXT_DEFAULT.toInt()}sp" +
+                                "（原版 16sp，Miuix Body2 = 14sp）",
+                            value = uiState.contextMenuTextSp,
+                            range = PrefKeys.TOOLBAR_TEXT_MIN..PrefKeys.TOOLBAR_TEXT_MAX,
+                            keyPoint = PrefKeys.CONTEXTMENU_TEXT_DEFAULT,
+                            unit = "sp",
+                            onValueChange = { v -> uiState.contextMenuTextSp = v },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(PrefKeys.CONTEXTMENU_TEXT_SP, uiState.contextMenuTextSp)
+                                }
+                            },
+                            commitGuard = { uiState.loaded },
+                        )
+                    }
+                }
+            }
+        }
     }
 }

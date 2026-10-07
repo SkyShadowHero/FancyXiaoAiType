@@ -41,6 +41,9 @@ public final class HookPrefs {
     private static volatile boolean toolbarEnabled = false;
     private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
     private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
+    private static volatile boolean contextMenuEnabled = false;
+    private static volatile float contextMenuCornerDp = PrefKeys.CONTEXTMENU_CORNER_DEFAULT;
+    private static volatile float contextMenuTextSp = PrefKeys.CONTEXTMENU_TEXT_DEFAULT;
 
     private HookPrefs() {}
 
@@ -98,6 +101,20 @@ public final class HookPrefs {
             toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
         } catch (Throwable ignored) {
         }
+        try {
+            contextMenuEnabled = p.getBoolean(PrefKeys.CONTEXTMENU_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            contextMenuCornerDp = p.getFloat(
+                    PrefKeys.CONTEXTMENU_CORNER_DP, PrefKeys.CONTEXTMENU_CORNER_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            contextMenuTextSp = p.getFloat(
+                    PrefKeys.CONTEXTMENU_TEXT_SP, PrefKeys.CONTEXTMENU_TEXT_DEFAULT);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -132,5 +149,19 @@ public final class HookPrefs {
 
     public static float toolbarTextSp() {
         return toolbarTextSp;
+    }
+
+    // ---- 右键上下文菜单（应用进程侧） ----
+
+    public static boolean contextMenuEnabled() {
+        return contextMenuEnabled;
+    }
+
+    public static float contextMenuCornerDp() {
+        return contextMenuCornerDp;
+    }
+
+    public static float contextMenuTextSp() {
+        return contextMenuTextSp;
     }
 }

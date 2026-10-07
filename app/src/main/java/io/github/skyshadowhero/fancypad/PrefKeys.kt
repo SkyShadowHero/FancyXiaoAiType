@@ -423,4 +423,28 @@ object PrefKeys {
 
     /** Miuix Body2 = 14.sp（miuix-ui theme/TextStyles.kt） */
     const val TOOLBAR_TEXT_DEFAULT = 14f
+
+    // ==================================================================
+    // FancyPad：右键上下文菜单（多行列表）
+    //
+    // 这个菜单由**应用进程里的框架菜单类**画（ContextMenuBuilder →
+    // MenuPopupHelper → StandardMenuPopup → MenuPopupWindow extends
+    // ListPopupWindow），所以作用域是「目标应用自己」；scope.list 只是推荐列表。
+    // Hook 侧 ContextMenuHooks 读取。
+    // ==================================================================
+
+    /** 右键上下文菜单改用 Miuix 外观（总开关，默认关闭） */
+    const val CONTEXTMENU_ENABLED = "contextmenu_enabled"
+
+    /** 弹出层圆角（dp） */
+    const val CONTEXTMENU_CORNER_DP = "contextmenu_corner_dp"
+
+    /** 菜单文字大小（sp） */
+    const val CONTEXTMENU_TEXT_SP = "contextmenu_text_sp"
+
+    /** Miuix 弹出层圆角 16dp（原版 popup_background_material 只有 2dp） */
+    const val CONTEXTMENU_CORNER_DEFAULT = TOOLBAR_CORNER_DEFAULT
+
+    /** Miuix Body2 = 14.sp */
+    const val CONTEXTMENU_TEXT_DEFAULT = TOOLBAR_TEXT_DEFAULT
 }
