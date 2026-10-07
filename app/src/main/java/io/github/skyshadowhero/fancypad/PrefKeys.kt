@@ -372,57 +372,6 @@ object PrefKeys {
     const val CURSOR_SCALE_MAX = 3f
     const val CURSOR_SCALE_DEFAULT = 100
 
-    // ---- 摇晃放大（macOS「摇晃鼠标定位指针」） ----
-    //
-    // 判定与渲染都在 system_server 侧：
-    // CursorShake 挂 PointerEventDispatcher.onInputEvent 拿指针位置流做摇晃判定，
-    // 命中后把「放大系数」交给 CursorHooks，后者让已渲染图标失效并 native 重拉。
-    // 放大只在用户设定的 CURSOR_SCALE 之上乘一个临时系数，不改用户设置本身。
-
-    /** 摇晃放大总开关（默认关闭）。需同时开启 [CURSOR_ENABLED] 才有意义。 */
-    const val CURSOR_SHAKE_ENABLED = "cursor_shake_enabled"
-
-    /** 摇晃时的放大倍数（百分比，200 = 2 倍），乘在 [CURSOR_SCALE] 之上 */
-    const val CURSOR_SHAKE_BOOST = "cursor_shake_boost"
-
-    /**
-     * 触发灵敏度：需要完成的「换向」次数，越大越难触发。
-     *
-     * 一次换向 = 摆动方向反转一次（左→右 算一次），5 次换向 ≈ 来回摇 2.5 个周期。
-     */
-    const val CURSOR_SHAKE_REVERSALS = "cursor_shake_reversals"
-
-    /** 放大后保持的时长（毫秒）；期间继续摇晃会顺延，并继续往上加码 */
-    const val CURSOR_SHAKE_HOLD_MS = "cursor_shake_hold_ms"
-
-    /**
-     * 放大/缩回动画的帧数（60fps 帧间隔，所以帧数 = 时长）。
-     *
-     * 光标图标是烘焙进位图的、没有可插值的缩放量：**每一帧都要让 native 重拉一次 sprite**。
-     * 但模块侧每帧的开销已经压到接近 0（固定尺寸画布复用、零分配、只重画被要到的类型、
-     * 矢量预栅格化），所以帧数按正常动画给足即可 —— 这个值现在只决定动画时长（帧数 × 16ms），
-     * 1 表示不播动画、一次到位。
-     */
-    const val CURSOR_SHAKE_FRAMES = "cursor_shake_frames"
-
-    const val CURSOR_SHAKE_BOOST_MIN = 1.2f
-    const val CURSOR_SHAKE_BOOST_MAX = 3f
-    const val CURSOR_SHAKE_BOOST_DEFAULT = 200
-
-    const val CURSOR_SHAKE_REVERSALS_MIN = 3
-    const val CURSOR_SHAKE_REVERSALS_MAX = 8
-    const val CURSOR_SHAKE_REVERSALS_DEFAULT = 5
-
-    const val CURSOR_SHAKE_FRAMES_MIN = 1
-    const val CURSOR_SHAKE_FRAMES_MAX = 30
-
-    /** 默认 12 帧 ≈ 190ms，是一段正常动画该有的时长。 */
-    const val CURSOR_SHAKE_FRAMES_DEFAULT = 12
-
-    const val CURSOR_SHAKE_HOLD_MIN = 400
-    const val CURSOR_SHAKE_HOLD_MAX = 3000
-    const val CURSOR_SHAKE_HOLD_DEFAULT = 1200
-
     // ==================================================================
     // FancyPad：平行窗口动画（原 os4平行窗口动画fix模块）
     //

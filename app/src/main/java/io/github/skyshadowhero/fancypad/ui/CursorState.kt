@@ -76,19 +76,6 @@ internal class CursorUiState {
     var scale by mutableFloatStateOf(1f)
     var fill by mutableStateOf(Color(DEFAULT_FILL))
     var stroke by mutableStateOf(Color(DEFAULT_STROKE))
-
-    // ---- 摇晃放大（macOS 式「摇晃鼠标定位指针」）----
-    /** 总开关（独立落盘，不走防抖） */
-    var shakeEnabled by mutableStateOf(false)
-    /** 放大倍数，1.2~3.0（首次命中时的倍数，之后每命中一次继续往上加码） */
-    var shakeBoost by mutableFloatStateOf(PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT / 100f)
-    /** 触发灵敏度：需要完成的换向次数，越大越难触发 */
-    var shakeReversals by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT)
-    /** 放大/缩回动画的帧数；1 = 不播动画、一次到位 */
-    var shakeFrames by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT)
-    /** 放大后保持的时长（毫秒） */
-    var shakeHoldMs by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT)
-
     var bound by mutableStateOf(false)
     var importedCount by mutableIntStateOf(0)
     var importedKeys by mutableStateOf<Set<String>>(emptySet())
@@ -141,14 +128,6 @@ internal fun CursorUiState.loadFromPrefs() {
     val dflt = defaultColorsOf(preset)
     fill = Color(p.getInt(PrefKeys.CURSOR_FILL_PREFIX + tk, dflt.first))
     stroke = Color(p.getInt(PrefKeys.CURSOR_STROKE_PREFIX + tk, dflt.second))
-
-    shakeEnabled = p.getBoolean(PrefKeys.CURSOR_SHAKE_ENABLED, false)
-    shakeBoost = p.getInt(PrefKeys.CURSOR_SHAKE_BOOST, PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT) / 100f
-    shakeReversals = p.getInt(
-        PrefKeys.CURSOR_SHAKE_REVERSALS, PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT
-    )
-    shakeFrames = p.getInt(PrefKeys.CURSOR_SHAKE_FRAMES, PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT)
-    shakeHoldMs = p.getInt(PrefKeys.CURSOR_SHAKE_HOLD_MS, PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT)
 }
 
 /** 刷新「已导入的光标」统计（逐项选择用）。 */
@@ -179,11 +158,6 @@ internal suspend fun CursorUiState.persistDebounced() {
             e.putInt(PrefKeys.CURSOR_FILL_PREFIX + tk, fill.toArgb())
             e.putInt(PrefKeys.CURSOR_STROKE_PREFIX + tk, stroke.toArgb())
         }
-        // 摇晃放大：开关单独即时落盘，这几个滑块跟着防抖走
-        e.putInt(PrefKeys.CURSOR_SHAKE_BOOST, (shakeBoost * 100).roundToInt())
-        e.putInt(PrefKeys.CURSOR_SHAKE_REVERSALS, shakeReversals)
-        e.putInt(PrefKeys.CURSOR_SHAKE_FRAMES, shakeFrames)
-        e.putInt(PrefKeys.CURSOR_SHAKE_HOLD_MS, shakeHoldMs)
     }
 }
 

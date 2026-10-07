@@ -34,17 +34,6 @@ public final class HookPrefs {
 
     // ---- 快照（Hook 侧只读这些字段） ----
     private static volatile boolean cursorEnabled = false;
-    /**
-     * 摇晃放大（{@link CursorShake}）。
-     *
-     * <p>这几项是 system_server 里最热的一条读路径：鼠标事件可达每秒上千次，
-     * 判定循环里只读这些 volatile，绝不碰 SharedPreferences。
-     */
-    private static volatile boolean cursorShakeEnabled = false;
-    private static volatile float cursorShakeBoost = PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT / 100f;
-    private static volatile int cursorShakeReversals = PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT;
-    private static volatile int cursorShakeFrames = PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT;
-    private static volatile long cursorShakeHoldMs = PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT;
     private static volatile boolean embeddingEnabled = false;
     private static volatile boolean folmeDisabled = true;
     private static volatile boolean mergeDisabled = true;
@@ -104,30 +93,6 @@ public final class HookPrefs {
         }
         try {
             cursorEnabled = p.getBoolean(PrefKeys.CURSOR_ENABLED, false);
-        } catch (Throwable ignored) {
-        }
-        try {
-            cursorShakeEnabled = p.getBoolean(PrefKeys.CURSOR_SHAKE_ENABLED, false);
-        } catch (Throwable ignored) {
-        }
-        try {
-            cursorShakeBoost = p.getInt(
-                    PrefKeys.CURSOR_SHAKE_BOOST, PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT) / 100f;
-        } catch (Throwable ignored) {
-        }
-        try {
-            cursorShakeReversals = p.getInt(
-                    PrefKeys.CURSOR_SHAKE_REVERSALS, PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT);
-        } catch (Throwable ignored) {
-        }
-        try {
-            cursorShakeFrames = p.getInt(
-                    PrefKeys.CURSOR_SHAKE_FRAMES, PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT);
-        } catch (Throwable ignored) {
-        }
-        try {
-            cursorShakeHoldMs = p.getInt(
-                    PrefKeys.CURSOR_SHAKE_HOLD_MS, PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT);
         } catch (Throwable ignored) {
         }
         try {
@@ -192,32 +157,6 @@ public final class HookPrefs {
 
     public static boolean cursorEnabled() {
         return cursorEnabled;
-    }
-
-    // ---- 摇晃放大 ----
-
-    public static boolean cursorShakeEnabled() {
-        return cursorShakeEnabled;
-    }
-
-    /** 放大倍数（1.0 = 不放大）。*/
-    public static float cursorShakeBoost() {
-        return cursorShakeBoost;
-    }
-
-    /** 触发灵敏度：需要完成的换向次数。*/
-    public static int cursorShakeReversals() {
-        return cursorShakeReversals;
-    }
-
-    /** 放大/缩回动画的帧数：1 = 不播动画、一次到位。*/
-    public static int cursorShakeFrames() {
-        return cursorShakeFrames;
-    }
-
-    /** 放大后保持的时长（毫秒）。*/
-    public static long cursorShakeHoldMs() {
-        return cursorShakeHoldMs;
     }
 
     public static boolean embeddingEnabled() {
