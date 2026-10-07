@@ -43,7 +43,7 @@ class XposedEntry : XposedModule() {
     /** 平行窗口域（com.android.systemui）。 */
     private val embeddingHooks by lazy { EmbeddingHooks(this) }
 
-    /** 长按菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
+    /** AOSP长按菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
     private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
 
     @Volatile

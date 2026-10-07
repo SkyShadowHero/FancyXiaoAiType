@@ -15,7 +15,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /**
- * 「长按菜单」页：长按或选中文字后弹出的那个工具栏（复制 / 粘贴 / 全选 / 分享…）。
+ * 「AOSP长按菜单」页：长按或选中文字后弹出的那个工具栏（复制 / 粘贴 / 全选 / 分享…）。
  *
  * **它由 SystemUI 画，不是在应用里画的** —— framework 里
  * `Flags.systemSelectionToolbarEnabled()` 在本机是硬编码 `return true`：应用只把
@@ -49,7 +49,7 @@ fun TextMenuPage(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SmallTitle("长按菜单") }
+        item { SmallTitle("AOSP长按菜单") }
         item {
             Card {
                 SwitchPreference(
@@ -59,8 +59,8 @@ fun TextMenuPage(
                         uiState.save { e -> e.putBoolean(PrefKeys.TOOLBAR_ENABLED, checked) }
                     },
                     title = "改用 Miuix 样式",
-                    summary = "长按或选中文字的工具栏换成 Miuix 的圆角、配色与字号" +
-                        "（由 SystemUI 绘制，所有应用一起生效；改完即时生效）",
+                    summary = "将部分调用AOSP原生菜单的工具栏样式换成 Miuix 的圆角、配色与字号" +
+                        "（由 SystemUI 绘制，改完即时生效）",
                 )
                 AnimatedVisibility(visible = uiState.toolbarEnabled) {
                     Column {

@@ -101,7 +101,7 @@ class AppUiState {
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
 
-    // ---- 长按菜单（作用域 com.android.systemui，由 SystemUI 绘制）----
+    // ---- AOSP长按菜单（作用域 com.android.systemui，由 SystemUI 绘制）----
     var toolbarEnabled by mutableStateOf(false)
     var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
     var toolbarTextSp by mutableStateOf(PrefKeys.TOOLBAR_TEXT_DEFAULT)

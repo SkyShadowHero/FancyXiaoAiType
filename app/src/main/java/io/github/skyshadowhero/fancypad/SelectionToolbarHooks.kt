@@ -22,7 +22,7 @@ import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * FancyPad · 长按菜单（长按 / 选中文字后弹出的浮动工具栏）改造成 Miuix 观感。
+ * FancyPad · AOSP长按菜单（长按 / 选中文字后弹出的浮动工具栏）改造成 Miuix 观感。
  * 作用域 `com.android.systemui`。
  *
  * ## 为什么 hook 落在 SystemUI，而不是各个应用
