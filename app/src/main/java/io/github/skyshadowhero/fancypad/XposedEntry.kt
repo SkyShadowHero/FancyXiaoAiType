@@ -29,6 +29,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class XposedEntry : XposedModule() {
 
+    private companion object {
+        /** 模块自己的包名：设置界面没有右键菜单，不需要装那一域。 */
+        const val MODULE_PACKAGE = "io.github.skyshadowhero.fancypad"
+    }
+
     /**
      * 悬浮键盘窗口宽度区间的下限至少要有这么多像素，才认它是我们的调用。
      * 键盘自然宽度在真机上是上千像素，`0.65 × 自然宽度` 不可能只有几十像素。
@@ -45,6 +50,14 @@ class XposedEntry : XposedModule() {
 
     /** AOSP长按菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
     private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
+
+    /**
+     * 右键菜单域（**目标应用自身**的进程，本机先只挂 mark.via）。
+     *
+     * 与 [selectionToolbarHooks] 是两条完全不同的路径：长按/选中菜单由 SystemUI 画，
+     * 右键菜单是应用自己 `PopupWindow.showAsDropDown()` 弹的，只能逐应用注入。
+     */
+    private val appMenuHooks by lazy { AppMenuHooks(this) }
 
     @Volatile
     private var processName: String? = null
@@ -83,6 +96,20 @@ class XposedEntry : XposedModule() {
                 HookPrefs.bind(this)
                 embeddingHooks.install(param.classLoader)
                 selectionToolbarHooks.install(param.classLoader)
+            }
+
+            /**
+             * 其余包 = 用户自己加进作用域的「普通应用」，走右键菜单域。
+             *
+             * 只处理命令行里真的会弹菜单的应用；模块自己的设置界面没有右键菜单，
+             * 注入进去只会白装 hook，直接跳过。
+             */
+            else -> {
+                if (param.packageName != MODULE_PACKAGE) {
+                    L.i("event=package_ready package=${param.packageName} process=$processName")
+                    HookPrefs.bind(this)
+                    appMenuHooks.install(param.classLoader)
+                }
             }
         }
     }

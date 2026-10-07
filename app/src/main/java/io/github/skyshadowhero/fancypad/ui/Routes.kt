@@ -8,6 +8,7 @@ import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
+import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.nav.core.NavKey
@@ -48,6 +49,8 @@ data object RouteParallel : NavKey
 
 data object RouteTextMenu : NavKey
 
+data object RouteAppMenu : NavKey
+
 data object RouteAbout : NavKey
 
 /**
@@ -87,6 +90,12 @@ enum class AppScope(
         pages = listOf(RouteTextMenu),
         icon = MiuixIcons.SelectAll,
     ),
+    AppMenu(
+        label = "右键菜单",
+        pkg = "mark.via",
+        pages = listOf(RouteAppMenu),
+        icon = MiuixIcons.ListView,
+    ),
 }
 
 /** 路由 → 顶栏标题 */
@@ -101,6 +110,7 @@ fun NavKey.title(): String = when (this) {
     RouteCursorColors -> "颜色设置"
     RouteParallel -> "平行窗口"
     RouteTextMenu -> "AOSP长按菜单"
+    RouteAppMenu -> "右键菜单"
     RouteAbout -> "关于"
     else -> ""
 }
@@ -115,6 +125,7 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteCursorImport -> MiuixIcons.Import
     RouteParallel -> MiuixIcons.HorizontalSplit
     RouteTextMenu -> MiuixIcons.SelectAll
+    RouteAppMenu -> MiuixIcons.ListView
     RouteAbout -> MiuixIcons.Info
     else -> MiuixIcons.Info
 }

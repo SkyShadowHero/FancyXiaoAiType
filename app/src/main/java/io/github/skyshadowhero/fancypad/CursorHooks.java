@@ -6,12 +6,14 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.LruCache;
 import android.util.SparseArray;
@@ -138,8 +140,26 @@ public final class CursorHooks {
      * 只有 miss 才渲染并把结果 put 回去。我们的拦截器不调用 chain.proceed()，
      * 平台那段 put 永远不会执行，所以必须自己缓存 —— 否则 native 每次来要图标
      * 都会重新走一遍「建位图 + 栅格化矢量 + 造 BitmapDrawable/PointerIcon + JNI 转 sprite」。
+     *
+     * <p>缓存的值还记着「它是按哪个放大系数渲染的」：放大动画每一帧系数都在变，
+     * 靠这个校验就**只需要重画 native 真正来要的那几种类型**，而不是每种都重画。
      */
-    private final Map<Long, Object> iconCache = new ConcurrentHashMap<>();
+    private final Map<Long, CachedIcon> iconCache = new ConcurrentHashMap<>();
+    /** 最近一次被 native 要过的图标 key；只用于诊断。 */
+    private volatile long lastIconKey;
+    /** 放大系数按浮点比较的容差。 */
+    private static final float BOOST_EPSILON = 1e-4f;
+
+    /** 已渲染的光标图标 + 它当时的放大系数。 */
+    private static final class CachedIcon {
+        final Object icon;
+        final float boost;
+
+        CachedIcon(Object icon, float boost) {
+            this.icon = icon;
+            this.boost = boost;
+        }
+    }
     /** 渲染代际：偏好一变就 +1，用于丢弃并发渲染中的旧结果。 */
     private volatile int themeGeneration;
     private final AtomicBoolean reloadScheduled = new AtomicBoolean();
@@ -186,6 +206,23 @@ public final class CursorHooks {
     /** {@link #layerRasterSize()} 的记忆值（0 = 还没算）。 */
     private volatile int layerRasterSizePx;
     /**
+     * 每个光标类型一张「sprite 画布」位图，**尺寸在整段动画里恒定**。
+     *
+     * <p>这是让放大动画变便宜的关键：动画的每一帧都只是把图案在这张画布上重画大一点，
+     * 画布本身既不改尺寸也不重新分配 —— 于是
+     * <ol>
+     *   <li>native 那边的 sprite 尺寸从头到尾不变，重载不需要重建/缩放 sprite；</li>
+     *   <li>每帧的生产垃圾为 0（原来每帧每个类型都要 {@code Bitmap.createBitmap} 一张
+     *       几百 KB 的位图，那是 system_server 里实打实的 GC 压力）。</li>
+     * </ol>
+     *
+     * <p>画布尺寸取「本轮动画的最大尺寸」；静止时等于图案尺寸，没有额外内存开销。
+     * 尺寸变了（动画档位变化）由 {@link #spriteFor} 自动换新。
+     */
+    private final Map<Integer, Bitmap> spriteCache = new ConcurrentHashMap<>();
+    /** 串行化「取画布 + 重绘」：动画期间同一张画布会被反复重画，不能两个线程同时画。 */
+    private final Object spriteLock = new Object();
+    /**
      * material 的 wait 图标（24 帧动画）按「scale × 4」粒度缓存的小 LRU。
      * 条目数按 8 个封顶：每个条目是一整套 24 帧位图，不按字节算也得有上限。
      */
@@ -222,20 +259,16 @@ public final class CursorHooks {
     private volatile float currentBoost = 1.0f;
 
     /**
-     * 动画帧间隔。
+     * 动画帧间隔（毫秒）。帧**数**由偏好的「动画帧数」决定，帧间隔固定。
      *
-     * <p>光标图标是烘焙进位图的，「改大小」只能是离散帧（见类注释）。但每一帧都要让 native
-     * 重拉、把当时用到的图标全部重建，所以帧间隔直接决定动画开销：调大 = 更省更稳、但更"跳"；
-     * 调小 = 更顺、但更容易卡。配合 logcat 的 {@code event=boost_anim_done builds=N} 调：
-     * N 很大就说明该把这个值调大。
+     * <p>光标图标是烘焙进位图的，「改大小」只能是离散帧 —— 每一帧都要让 native 重拉一次 sprite。
+     * 所以「平滑程度」和「开销」是同一件事的两面，直接交给用户在界面上选（1 帧 = 不播动画）。
      */
-    private static final long BOOST_STEP_MS = 55L;
-
-    /** 每帧向目标逼近的比例：缓出，起步快、收尾软。 */
-    private static final float BOOST_EASE = 0.55f;
-
-    /** 与目标的差距小于它就认为动画结束，直接落到目标值。 */
-    private static final float BOOST_EPS = 0.05f;
+    /**
+     * 动画帧间隔：固定 60fps。**帧数只决定动画时长**（帧数 × 这个间隔），不决定平滑度上限 ——
+     * 平滑度取决于每帧那次 native 重拉能不能在这个间隔内跑完。
+     */
+    private static final long BOOST_STEP_MS = 16L;
 
     /**
      * 持续摇晃时的每档增幅：每再命中一次摇晃，目标倍数就乘这个系数。
@@ -249,14 +282,25 @@ public final class CursorHooks {
     /** 串行化 native 重载：动画帧与偏好变更的合并重载可能同时到。 */
     private final Object reloadLock = new Object();
 
+    // ---- 动画时间轴（{@link #retargetBoost} 重置，动画线程读取）----
+    /** 本次动画的起点系数。 */
+    private volatile float boostAnimFrom = 1.0f;
+    /** 本次动画的起点时刻（uptimeMillis）。 */
+    private volatile long boostAnimStartMs;
+    /** 本次动画的总时长（毫秒）= 帧数 × {@link #BOOST_STEP_MS}。 */
+    private volatile long boostAnimDurationMs = BOOST_STEP_MS;
+
     /**
-     * 诊断：一次放大/缩回动画期间总共重建了多少张光标图标。
+     * 诊断：一次动画期间重建了多少张图标、每帧的重载耗时。
      *
-     * <p>这个数直接反映动画开销：它是「native 每次重拉会来要多少种图标」的上界估计。
-     * 太大就说明该调大 {@link #BOOST_STEP_MS}，或说明 native 确实会全量重拉。
+     * <p>{@code builds} 反映 native 每次重拉会来要多少种图标；{@code reloadMs} 是
+     * {@code native.reloadPointerIcons()} 的累计耗时 —— 如果 builds 很小而 reloadMs 很大，
+     * 瓶颈就在 native 侧，只能靠减少帧数。
      */
     private final AtomicInteger boostAnimBuilds = new AtomicInteger();
+    private final AtomicInteger boostAnimTicks = new AtomicInteger();
     private volatile boolean boostAnimCounting;
+    private final AtomicLong boostAnimReloadNanos = new AtomicLong();
 
     /**
      * 一次摇晃命中：抬高目标倍数并启动动画。
@@ -272,11 +316,11 @@ public final class CursorHooks {
         }
         float max = maxBoost();
         float next = targetBoost <= 1.001f ? base : targetBoost * PROGRESSIVE_GROWTH;
-        targetBoost = Math.min(next, max);
+        next = Math.min(next, max);
         // 只在「摇晃命中」时打一行，调手感时用它可以看清阶梯走到哪一档了
-        Log.i("FancyPad", "event=shake_boost target=" + targetBoost + " max=" + max
+        Log.i("FancyPad", "event=shake_boost target=" + next + " max=" + max
                 + " current=" + currentBoost);
-        startBoostAnimation();
+        retargetBoost(next);
     }
 
     /** 摇晃停手、保持时长走完：目标回到用户设定的大小，同样走动画。 */
@@ -284,8 +328,7 @@ public final class CursorHooks {
         if (targetBoost == 1.0f && currentBoost == 1.0f) {
             return;
         }
-        targetBoost = 1.0f;
-        startBoostAnimation();
+        retargetBoost(1.0f);
     }
 
     /** 关掉开关 / 关掉光标接管：立刻回到底，不播动画（用户明确要求"别放了"）。 */
@@ -306,15 +349,26 @@ public final class CursorHooks {
     }
 
     /**
-     * 启动（或继续）放大/还原动画。
+     * 重新设定放大目标并启动/续播动画。
      *
-     * <p>光标是烘焙进位图的，没有可插值的缩放量；每一帧都是「清掉已渲染图标 → 让 native
-     * 重拉 → 按新尺寸重绘」。所以帧数必须克制，而且每帧的重建成本必须低 ——
-     * 后者靠 {@link #layerCache}（矢量预栅格化）保证，否则矢量栅格化会被帧数放大成明显卡顿。
+     * <p>动画按**时间轴**推进，不按「还差几帧」：每次改目标都把起点重置为当前值，
+     * 然后按 {@code 帧数 × BOOST_STEP_MS} 的时长、用缓出曲线走完。
+     * 这样做的好处是 —— 就算某一帧的 native 重拉慢了，后面那一帧会按真实流逝时间**直接追上进度**，
+     * 动画总时长不受影响，只是那一瞬间掉一点平滑度；不会像"上一帧跑完再排下一帧"那样越拖越长。
+     *
+     * <p>模块侧每帧的开销已经被压到接近 0（复用固定尺寸画布、零分配、只重画被要到的类型、
+     * 矢量预栅格化），所以帧数可以按正常动画给足；真正每帧都跑不掉的只有一次
+     * {@code native.reloadPointerIcons()}。
      */
-    private void startBoostAnimation() {
+    private void retargetBoost(float next) {
+        targetBoost = next;
+        boostAnimFrom = currentBoost;
+        boostAnimStartMs = SystemClock.uptimeMillis();
+        boostAnimDurationMs = Math.max(1L,
+                Math.max(1, HookPrefs.cursorShakeFrames()) * BOOST_STEP_MS);
         if (boostAnimating.compareAndSet(false, true)) {
             boostAnimBuilds.set(0);
+            boostAnimReloadNanos.set(0L);
             boostAnimCounting = true;
             boostExecutor().schedule(this::boostStep, BOOST_STEP_MS, TimeUnit.MILLISECONDS);
         }
@@ -322,23 +376,29 @@ public final class CursorHooks {
 
     private void boostStep() {
         try {
+            boostAnimTicks.incrementAndGet();
+            long elapsed = SystemClock.uptimeMillis() - boostAnimStartMs;
+            long duration = boostAnimDurationMs;
             float target = targetBoost;
-            float cur = currentBoost;
-            float next = cur + (target - cur) * BOOST_EASE;
-            if (Math.abs(target - next) < BOOST_EPS) {
-                next = target;
-            }
-            if (next != cur) {
+            float from = boostAnimFrom;
+            float progress = duration <= 0L ? 1f : Math.min(1f, (float) elapsed / duration);
+            boolean done = progress >= 1f;
+            // 缓出：1-(1-p)² —— 起步快、收尾软
+            float eased = 1f - (1f - progress) * (1f - progress);
+            float next = done ? target : from + (target - from) * eased;
+            if (next != currentBoost) {
                 currentBoost = next;
                 // 动画帧直接重载，不走 scheduleReload 的 150ms 合并窗口，
                 // 否则整段动画会被压成两三帧、看起来还是跳变。
                 invalidateFrameNow();
             }
-            if (next == target) {
+            if (done) {
                 boostAnimating.set(false);
                 boostAnimCounting = false;
                 Log.i("FancyPad", "event=boost_anim_done builds=" + boostAnimBuilds.get()
-                        + " final=" + next);
+                        + " reload_ms=" + (boostAnimReloadNanos.get() / 1_000_000L)
+                        + " ticks=" + boostAnimTicks.get()
+                        + " final=" + currentBoost);
                 return;
             }
             boostExecutor().schedule(this::boostStep, BOOST_STEP_MS, TimeUnit.MILLISECONDS);
@@ -348,14 +408,21 @@ public final class CursorHooks {
         }
     }
 
-    /** 动画帧：失效已渲染图标并立即请 native 重拉。 */
+    /**
+     * 动画帧：请 native 重拉 sprite。
+     *
+     * <p>**不清图标缓存**：缓存里每条都记着自己当时的放大系数，native 来要时发现系数对不上才重画，
+     * 于是每帧只重画「真正被要到的」那几种类型，而不是全部。
+     */
     private void invalidateFrameNow() {
+        long t0 = SystemClock.uptimeMillis();
         try {
-            iconCache.clear();
-            themeGeneration++;
-        } catch (Throwable ignored) {
+            doReload();
+        } finally {
+            if (boostAnimCounting) {
+                boostAnimReloadNanos.addAndGet((SystemClock.uptimeMillis() - t0) * 1_000_000L);
+            }
         }
-        doReload();
     }
 
     private ScheduledExecutorService boostExecutor() {
@@ -421,15 +488,20 @@ public final class CursorHooks {
                                 int displayId = (Integer) chain.getArg(0);
                                 int type = (Integer) chain.getArg(1);
                                 long key = iconKey(displayId, type);
-                                Object cached = iconCache.get(key);
-                                if (cached != null) {
-                                    return cached;              // 稳态：一次查表，不再重绘
+                                lastIconKey = key;
+                                float boost = currentBoost;
+                                CachedIcon cached = iconCache.get(key);
+                                // 只有「按同一个放大系数渲染过」的才算命中。
+                                // 放大动画每一帧系数都在变，于是只有 native 真正来要的那几种类型会重画，
+                                // 而不是（像原来那样清空整个缓存）每种类型都重画一遍。
+                                if (cached != null && Math.abs(cached.boost - boost) < BOOST_EPSILON) {
+                                    return cached.icon;         // 稳态：一次查表，不再重绘
                                 }
                                 int generation = themeGeneration;
                                 Object custom = buildIcon(type);
                                 if (custom != null) {
                                     if (generation == themeGeneration) {
-                                        iconCache.putIfAbsent(key, custom);
+                                        iconCache.put(key, new CachedIcon(custom, boost));
                                     }
                                     return custom;
                                 }
@@ -633,33 +705,117 @@ public final class CursorHooks {
         if (!hasContent(row, preset)) {
             return null;        // 这个预设下该类型没有可画内容，别白建一张位图再丢掉
         }
+        // 本次「图案」要画多大（含摇晃放大的动画系数）。
         float scale = renderScaleOf(p);
         float density = ctx.getResources().getDisplayMetrics().density;
         float baseSize = 24f * density;
-        int size = Math.max(4, Math.min(MAX_ICON_SIZE, Math.round(baseSize * scale)));
-        // 只有真的被 MAX_ICON_SIZE 截断时才改用截断后的实际缩放来算热点，否则沿用 scale ——
-        // 与改动前的行为逐像素等价（摇晃放大把尺寸推高后才会碰到这个上限）。
-        float effScale = baseSize * scale > MAX_ICON_SIZE ? size / baseSize : scale;
+
+        // sprite 画布边长：取「本轮动画的最大尺寸」与「当前图案尺寸」的较大者。
+        // 动画期间它恒定不变 —— 于是 native 那边的 sprite 尺寸从头到尾不变，每帧只是在同一张
+        // 画布上把图案重画大一点；静止时它就等于图案尺寸，没有额外开销。
+        float canvasScale = spriteCanvasScale(p);
+        int size = Math.max(4, Math.min(MAX_ICON_SIZE, Math.round(baseSize * canvasScale)));
+        // 图案画在画布左上角：热点就是从图案左上角量的，所以热点不受画布尺寸影响
+        int artSize = Math.max(1, Math.min(size, Math.round(baseSize * scale)));
+        // 只有真的被位图上限截断时才改用截断后的缩放来算热点，否则沿用 scale
+        float effScale = baseSize * scale > size ? artSize / baseSize : scale;
+
+        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG |
+                Paint.DITHER_FLAG);
+        Rect bounds = new Rect(0, 0, artSize, artSize);
 
         try {
-            Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(out);
-            Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG |
-                    Paint.DITHER_FLAG);
-            Rect bounds = new Rect(0, 0, size, size);
-
             String themeKey;
             int themeIdx;
             // 热点（0.1dp）：默认用 AOSP 官方热点，可改色/原图主题各用自己仓库里的热点
             int hotX10 = row[3];
             int hotY10 = row[4];
-            if (preset == PRESET_CUSTOM || preset >= PRESET_THEME_BASE) {
-                // 逐项选择 / 导入的主题：直接用 PNG 原图，不染色
-                Bitmap imported = preset == PRESET_CUSTOM ? importedBitmap(type, null)
-                        : importedBitmap(type, themeNameOf(p, preset));
-                if (imported != null) {
-                    canvas.drawBitmap(imported, null, bounds, paint);
-                } else if (row[1] != 0 || row[2] != 0) {
+            Bitmap out;
+            // 同类型复用同一张画布、就地重绘：动画每帧都要重建，若每帧新建位图，
+            // system_server 会持续产生「几百 KB × 类型数」的垃圾，GC 抖动本身就是卡顿来源。
+            // 整段绘制串行化，避免两个线程同时往同一张画布上画。
+            synchronized (spriteLock) {
+                out = spriteFor(type, size);
+                out.eraseColor(Color.TRANSPARENT);
+                Canvas canvas = new Canvas(out);
+                if (preset == PRESET_CUSTOM || preset >= PRESET_THEME_BASE) {
+                    // 逐项选择 / 导入的主题：直接用 PNG 原图，不染色
+                    Bitmap imported = preset == PRESET_CUSTOM ? importedBitmap(type, null)
+                            : importedBitmap(type, themeNameOf(p, preset));
+                    if (imported != null) {
+                        canvas.drawBitmap(imported, null, bounds, paint);
+                    } else if (row[1] != 0 || row[2] != 0) {
+                        int[] c = themeColors("aosp", -1, p);
+                        if (row[1] != 0) {
+                            drawLayer(canvas, res, row[1], c[0], bounds);
+                        }
+                        if (row[2] != 0) {
+                            drawLayer(canvas, res, row[2], c[1], bounds);
+                        }
+                    } else {
+                        return null;
+                    }
+                } else if (preset == PRESET_MATERIAL || preset == PRESET_APPLE
+                        || preset == PRESET_BREEZEX) {
+                    // 这三套用仓库原色图（material 带投影、apple=BreezeX 的成图色），不可改色
+                    int img, hx, hy;
+                    if (preset == PRESET_MATERIAL) {
+                        img = row[9]; hx = row[10]; hy = row[11];
+                    } else if (preset == PRESET_APPLE) {
+                        img = row[12]; hx = row[13]; hy = row[14];
+                    } else {
+                        img = row[15]; hx = row[16]; hy = row[17];
+                    }
+                    if (img != 0) {
+                        drawPlain(canvas, res, img, bounds, paint);
+                        hotX10 = hx;
+                        hotY10 = hy;
+                    } else {
+                        // 该主题没有这个类型 → 用 AOSP 官方矢量层兜底（热点也用 AOSP 的）
+                        if (row[1] == 0 && row[2] == 0) {
+                            return null;
+                        }
+                        int[] c = themeColors("aosp", -1, p);
+                        if (row[1] != 0) {
+                            drawLayer(canvas, res, row[1], c[0], bounds);
+                        }
+                        if (row[2] != 0) {
+                            drawLayer(canvas, res, row[2], c[1], bounds);
+                        }
+                    }
+                } else if ((themeIdx = themeIndexFor(preset)) >= 0) {
+                    // GoogleDot：主体/描边两层 mask + 可改色
+                    themeKey = CursorIcons.THEMES[themeIdx];
+                    int fillRes = row[5];
+                    int strokeRes = row[6];
+                    if (fillRes == 0 && strokeRes == 0) {
+                        if (row[1] == 0 && row[2] == 0) {
+                            return null;
+                        }
+                        int[] ca = themeColors("aosp", -1, p);
+                        if (row[1] != 0) {
+                            drawLayer(canvas, res, row[1], ca[0], bounds);
+                        }
+                        if (row[2] != 0) {
+                            drawLayer(canvas, res, row[2], ca[1], bounds);
+                        }
+                    } else {
+                        int[] c = themeColors(themeKey, themeIdx, p);
+                        // 原图里描边在主体下面，主体 mask 已把"该压在上面的描边"掏成洞
+                        if (strokeRes != 0) {
+                            drawMask(canvas, res, strokeRes, c[1], bounds, paint);
+                        }
+                        if (fillRes != 0) {
+                            drawMask(canvas, res, fillRes, c[0], bounds, paint);
+                        }
+                        hotX10 = row[7];
+                        hotY10 = row[8];
+                    }
+                } else {
+                    // AOSP：官方矢量拆层 + 任意配色
+                    if (row[1] == 0 && row[2] == 0) {
+                        return null;    // wait 之类没有矢量层的 → 交回平台
+                    }
                     int[] c = themeColors("aosp", -1, p);
                     if (row[1] != 0) {
                         drawLayer(canvas, res, row[1], c[0], bounds);
@@ -667,76 +823,6 @@ public final class CursorHooks {
                     if (row[2] != 0) {
                         drawLayer(canvas, res, row[2], c[1], bounds);
                     }
-                } else {
-                    return null;
-                }
-            } else if (preset == PRESET_MATERIAL || preset == PRESET_APPLE
-                    || preset == PRESET_BREEZEX) {
-                // 这三套用仓库原色图（material 带投影、apple=BreezeX 的成图色），不可改色
-                int img, hx, hy;
-                if (preset == PRESET_MATERIAL) {
-                    img = row[9]; hx = row[10]; hy = row[11];
-                } else if (preset == PRESET_APPLE) {
-                    img = row[12]; hx = row[13]; hy = row[14];
-                } else {
-                    img = row[15]; hx = row[16]; hy = row[17];
-                }
-                if (img != 0) {
-                    drawPlain(canvas, res, img, bounds, paint);
-                    hotX10 = hx;
-                    hotY10 = hy;
-                } else {
-                    // 该主题没有这个类型 → 用 AOSP 官方矢量层兜底（热点也用 AOSP 的）
-                    if (row[1] == 0 && row[2] == 0) {
-                        return null;
-                    }
-                    int[] c = themeColors("aosp", -1, p);
-                    if (row[1] != 0) {
-                        drawLayer(canvas, res, row[1], c[0], bounds);
-                    }
-                    if (row[2] != 0) {
-                        drawLayer(canvas, res, row[2], c[1], bounds);
-                    }
-                }
-            } else if ((themeIdx = themeIndexFor(preset)) >= 0) {
-                // GoogleDot：主体/描边两层 mask + 可改色
-                themeKey = CursorIcons.THEMES[themeIdx];
-                int fillRes = row[5];
-                int strokeRes = row[6];
-                if (fillRes == 0 && strokeRes == 0) {
-                    if (row[1] == 0 && row[2] == 0) {
-                        return null;
-                    }
-                    int[] ca = themeColors("aosp", -1, p);
-                    if (row[1] != 0) {
-                        drawLayer(canvas, res, row[1], ca[0], bounds);
-                    }
-                    if (row[2] != 0) {
-                        drawLayer(canvas, res, row[2], ca[1], bounds);
-                    }
-                } else {
-                    int[] c = themeColors(themeKey, themeIdx, p);
-                    // 原图里描边在主体下面，主体 mask 已把"该压在上面的描边"掏成洞
-                    if (strokeRes != 0) {
-                        drawMask(canvas, res, strokeRes, c[1], bounds, paint);
-                    }
-                    if (fillRes != 0) {
-                        drawMask(canvas, res, fillRes, c[0], bounds, paint);
-                    }
-                    hotX10 = row[7];
-                    hotY10 = row[8];
-                }
-            } else {
-                // AOSP：官方矢量拆层 + 任意配色
-                if (row[1] == 0 && row[2] == 0) {
-                    return null;    // wait 之类没有矢量层的 → 交回平台
-                }
-                int[] c = themeColors("aosp", -1, p);
-                if (row[1] != 0) {
-                    drawLayer(canvas, res, row[1], c[0], bounds);
-                }
-                if (row[2] != 0) {
-                    drawLayer(canvas, res, row[2], c[1], bounds);
                 }
             }
 
@@ -851,6 +937,33 @@ public final class CursorHooks {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * 取该类型的 sprite 画布：尺寸相同就复用同一张位图（动画每帧都重画它，不重新分配）。
+     * 尺寸变了（动画档位上升/回落）才换一张新的。
+     */
+    private Bitmap spriteFor(int type, int size) {
+        Bitmap cached = spriteCache.get(type);
+        if (cached != null && !cached.isRecycled() && cached.getWidth() == size) {
+            return cached;
+        }
+        Bitmap fresh = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        spriteCache.put(type, fresh);
+        return fresh;
+    }
+
+    /**
+     * sprite 画布的渲染缩放：取「本轮动画的峰值」与「当前值」的较大者。
+     *
+     * <p>放大时峰值 = 目标，缩回时峰值 = 当前 —— 两种情况画布都够大，
+     * 所以图案从小长到大（或反过来）的整个过程中画布尺寸不变。
+     * 没开摇晃放大时峰值恒为 1，画布就等于图案尺寸，与改动前的行为一致。
+     */
+    private float spriteCanvasScale(SharedPreferences p) {
+        float userScale = userScaleOf(p);
+        float peak = Math.max(currentBoost, targetBoost);
+        return Math.max(0.3f, Math.min(MAX_RENDERED_SCALE, userScale * peak));
     }
 
     /** 用户自己设定的大小（0.3~3.0），不含摇晃放大。 */

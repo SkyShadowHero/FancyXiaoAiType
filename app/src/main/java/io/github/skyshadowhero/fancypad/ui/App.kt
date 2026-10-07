@@ -106,6 +106,15 @@ class AppUiState {
     var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
     var toolbarTextSp by mutableStateOf(PrefKeys.TOOLBAR_TEXT_DEFAULT)
 
+    // ---- 右键菜单（作用域 = 目标应用自身；菜单由应用自己 PopupWindow 弹出）----
+    var appMenuEnabled by mutableStateOf(false)
+    var appMenuWebviewEnabled by mutableStateOf(true)
+    var appMenuApps by mutableStateOf("")
+    var appMenuCornerDp by mutableStateOf(PrefKeys.APPMENU_CORNER_DEFAULT)
+    var appMenuTextSp by mutableStateOf(PrefKeys.APPMENU_TEXT_DEFAULT)
+    var appMenuPaddingHDp by mutableStateOf(PrefKeys.APPMENU_PADDING_H_DEFAULT)
+    var appMenuPaddingVDp by mutableStateOf(PrefKeys.APPMENU_PADDING_V_DEFAULT)
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -363,4 +372,25 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.toolbarTextSp = p.runCatching {
         getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT)
     }.getOrDefault(PrefKeys.TOOLBAR_TEXT_DEFAULT)
+
+    // ---- 右键菜单（默认关闭）----
+    uiState.appMenuEnabled = p.runCatching { getBoolean(PrefKeys.APPMENU_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.appMenuWebviewEnabled = p.runCatching {
+        getBoolean(PrefKeys.APPMENU_WEBVIEW_ENABLED, true)
+    }.getOrDefault(true)
+    uiState.appMenuApps = p.runCatching { getString(PrefKeys.APPMENU_APPS, "") }
+        .getOrNull().orEmpty()
+    uiState.appMenuCornerDp = p.runCatching {
+        getFloat(PrefKeys.APPMENU_CORNER_DP, PrefKeys.APPMENU_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.APPMENU_CORNER_DEFAULT)
+    uiState.appMenuTextSp = p.runCatching {
+        getFloat(PrefKeys.APPMENU_TEXT_SP, PrefKeys.APPMENU_TEXT_DEFAULT)
+    }.getOrDefault(PrefKeys.APPMENU_TEXT_DEFAULT)
+    uiState.appMenuPaddingHDp = p.runCatching {
+        getFloat(PrefKeys.APPMENU_PADDING_H_DP, PrefKeys.APPMENU_PADDING_H_DEFAULT)
+    }.getOrDefault(PrefKeys.APPMENU_PADDING_H_DEFAULT)
+    uiState.appMenuPaddingVDp = p.runCatching {
+        getFloat(PrefKeys.APPMENU_PADDING_V_DP, PrefKeys.APPMENU_PADDING_V_DEFAULT)
+    }.getOrDefault(PrefKeys.APPMENU_PADDING_V_DEFAULT)
 }

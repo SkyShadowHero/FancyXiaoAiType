@@ -561,6 +561,15 @@ private fun PageHost(
                             )
                         }
                     }
+                    entry<RouteAppMenu> {
+                        PageSurface {
+                            AppMenuPage(
+                                uiState = uiState,
+                                padding = padding,
+                                scaffoldPadding = contentPadding,
+                            )
+                        }
+                    }
                     entry<RouteAbout> {
                         PageSurface {
                             AboutPage(

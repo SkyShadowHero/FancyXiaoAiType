@@ -84,6 +84,8 @@ internal class CursorUiState {
     var shakeBoost by mutableFloatStateOf(PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT / 100f)
     /** 触发灵敏度：需要完成的换向次数，越大越难触发 */
     var shakeReversals by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT)
+    /** 放大/缩回动画的帧数；1 = 不播动画、一次到位 */
+    var shakeFrames by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT)
     /** 放大后保持的时长（毫秒） */
     var shakeHoldMs by mutableIntStateOf(PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT)
 
@@ -145,6 +147,7 @@ internal fun CursorUiState.loadFromPrefs() {
     shakeReversals = p.getInt(
         PrefKeys.CURSOR_SHAKE_REVERSALS, PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT
     )
+    shakeFrames = p.getInt(PrefKeys.CURSOR_SHAKE_FRAMES, PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT)
     shakeHoldMs = p.getInt(PrefKeys.CURSOR_SHAKE_HOLD_MS, PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT)
 }
 
@@ -179,6 +182,7 @@ internal suspend fun CursorUiState.persistDebounced() {
         // 摇晃放大：开关单独即时落盘，这几个滑块跟着防抖走
         e.putInt(PrefKeys.CURSOR_SHAKE_BOOST, (shakeBoost * 100).roundToInt())
         e.putInt(PrefKeys.CURSOR_SHAKE_REVERSALS, shakeReversals)
+        e.putInt(PrefKeys.CURSOR_SHAKE_FRAMES, shakeFrames)
         e.putInt(PrefKeys.CURSOR_SHAKE_HOLD_MS, shakeHoldMs)
     }
 }

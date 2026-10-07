@@ -395,6 +395,16 @@ object PrefKeys {
     /** 放大后保持的时长（毫秒）；期间继续摇晃会顺延，并继续往上加码 */
     const val CURSOR_SHAKE_HOLD_MS = "cursor_shake_hold_ms"
 
+    /**
+     * 放大/缩回动画的帧数（60fps 帧间隔，所以帧数 = 时长）。
+     *
+     * 光标图标是烘焙进位图的、没有可插值的缩放量：**每一帧都要让 native 重拉一次 sprite**。
+     * 但模块侧每帧的开销已经压到接近 0（固定尺寸画布复用、零分配、只重画被要到的类型、
+     * 矢量预栅格化），所以帧数按正常动画给足即可 —— 这个值现在只决定动画时长（帧数 × 16ms），
+     * 1 表示不播动画、一次到位。
+     */
+    const val CURSOR_SHAKE_FRAMES = "cursor_shake_frames"
+
     const val CURSOR_SHAKE_BOOST_MIN = 1.2f
     const val CURSOR_SHAKE_BOOST_MAX = 3f
     const val CURSOR_SHAKE_BOOST_DEFAULT = 200
@@ -402,6 +412,12 @@ object PrefKeys {
     const val CURSOR_SHAKE_REVERSALS_MIN = 3
     const val CURSOR_SHAKE_REVERSALS_MAX = 8
     const val CURSOR_SHAKE_REVERSALS_DEFAULT = 5
+
+    const val CURSOR_SHAKE_FRAMES_MIN = 1
+    const val CURSOR_SHAKE_FRAMES_MAX = 30
+
+    /** 默认 12 帧 ≈ 190ms，是一段正常动画该有的时长。 */
+    const val CURSOR_SHAKE_FRAMES_DEFAULT = 12
 
     const val CURSOR_SHAKE_HOLD_MIN = 400
     const val CURSOR_SHAKE_HOLD_MAX = 3000
@@ -458,4 +474,73 @@ object PrefKeys {
 
     /** Miuix Body2 = 14.sp（miuix-ui theme/TextStyles.kt） */
     const val TOOLBAR_TEXT_DEFAULT = 14f
+
+    // ==================================================================
+    // FancyPad：右键菜单（应用进程内弹的菜单）
+    //
+    // 作用域 = 目标应用自身，Hook 侧 AppMenuHooks 读取。
+    //
+    // 与上面「AOSP长按菜单」**不是同一条路径**：长按/选中菜单由 SystemUI 画
+    // （改一处全局生效）；右键菜单是**应用自己** PopupWindow.showAsDropDown()
+    // 弹出来的。真机实测（sendevent 合成右键 + screencap 取证）：
+    //
+    //     Window{u0 PopupWindow:...}: mOwnerUid=<应用> ty=APPLICATION_PANEL
+    //     mParentWindow=Window{u0 mark.via/mark.via.Shell}
+    //
+    // 所以这一域必须把目标应用逐个加进作用域（本机先只挂 mark.via）。
+    // ==================================================================
+
+    /** 右键菜单改用 Miuix 外观（总开关，默认关闭） */
+    const val APPMENU_ENABLED = "appmenu_enabled"
+
+    /** 弹出层圆角（dp） */
+    const val APPMENU_CORNER_DP = "appmenu_corner_dp"
+
+    /** 文字大小（sp） */
+    const val APPMENU_TEXT_SP = "appmenu_text_sp"
+
+
+    /** 分类开关之二：**WebView/Chromium 自绘菜单**（`KeyboardAccessibleListView` 那套） */
+    const val APPMENU_WEBVIEW_ENABLED = "appmenu_webview_enabled"
+
+    /**
+     * 生效的应用白名单（逗号分隔的包名）。
+     *
+     * **空 = 谁都不生效（默认关闭）**，只有列表里勾选的应用会被改造 ——
+     * 注意这跟 LSPosed 作用域是两件事：作用域决定「模块能不能注入」，这里决定「注入后做不做」。
+     */
+    const val APPMENU_APPS = "appmenu_apps"
+
+    const val APPMENU_CORNER_MIN = 0f
+    const val APPMENU_CORNER_MAX = 32f
+
+    /** Miuix 弹出层圆角：miuix-ui basic/ListPopup.kt 的 cornerRadius = 16.dp */
+    const val APPMENU_CORNER_DEFAULT = 16f
+
+    const val APPMENU_TEXT_MIN = 10f
+    const val APPMENU_TEXT_MAX = 22f
+
+    /**
+     * Miuix `Body1` = 16.sp，且菜单项标题用 `FontWeight.Medium`
+     * （miuix-ui basic/Dropdown.kt 的 `DropdownImpl`：`textStyles.body1.fontSize` + Medium）。
+     */
+    const val APPMENU_TEXT_DEFAULT = 16f
+
+    /** 每行横向内边距（dp）—— Miuix 是 20dp */
+    const val APPMENU_PADDING_H_DP = "appmenu_padding_h_dp"
+
+    /** 中间行纵向内边距（dp）—— Miuix 是 12dp */
+    const val APPMENU_PADDING_V_DP = "appmenu_padding_v_dp"
+
+    const val APPMENU_PADDING_H_MIN = 0f
+    const val APPMENU_PADDING_H_MAX = 40f
+    const val APPMENU_PADDING_V_MIN = 0f
+    const val APPMENU_PADDING_V_MAX = 32f
+
+    /** miuix-ui basic/Dropdown.kt → DropdownDefaults.InsideHorizontalPadding = 20.dp */
+    const val APPMENU_PADDING_H_DEFAULT = 20f
+
+    /** miuix-ui basic/Dropdown.kt → DropdownDefaults.MiddleVerticalPadding = 12.dp */
+    const val APPMENU_PADDING_V_DEFAULT = 12f
+
 }

@@ -217,7 +217,7 @@ fun CursorSizePage(
 
     LaunchedEffect(
         state.preset, state.scale, state.fill, state.stroke, state.bound,
-        state.shakeBoost, state.shakeReversals, state.shakeHoldMs,
+        state.shakeBoost, state.shakeReversals, state.shakeFrames, state.shakeHoldMs,
     ) {
         state.persistDebounced()
     }
@@ -295,6 +295,20 @@ private fun LazyListScope.shakeSection(state: CursorUiState) {
                         valueText = "${state.shakeReversals} 次",
                         valueRange = PrefKeys.CURSOR_SHAKE_REVERSALS_MIN.toFloat()..PrefKeys.CURSOR_SHAKE_REVERSALS_MAX.toFloat(),
                         steps = 4,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SliderPreference(
+                        value = state.shakeFrames.toFloat(),
+                        onValueChange = { state.shakeFrames = it.roundToInt() },
+                        title = "动画时长",
+                        summary = "60fps 逐帧播放；每帧都要让系统重载一次光标，所以时长越长帧数越多",
+                        valueText = if (state.shakeFrames <= 1) {
+                            "1 帧（直接跳变）"
+                        } else {
+                            "${state.shakeFrames} 帧 · ${state.shakeFrames * 16} 毫秒"
+                        },
+                        valueRange = PrefKeys.CURSOR_SHAKE_FRAMES_MIN.toFloat()..PrefKeys.CURSOR_SHAKE_FRAMES_MAX.toFloat(),
+                        steps = 28,
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SliderPreference(

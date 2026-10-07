@@ -43,6 +43,7 @@ public final class HookPrefs {
     private static volatile boolean cursorShakeEnabled = false;
     private static volatile float cursorShakeBoost = PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT / 100f;
     private static volatile int cursorShakeReversals = PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT;
+    private static volatile int cursorShakeFrames = PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT;
     private static volatile long cursorShakeHoldMs = PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT;
     private static volatile boolean embeddingEnabled = false;
     private static volatile boolean folmeDisabled = true;
@@ -51,6 +52,14 @@ public final class HookPrefs {
     private static volatile boolean toolbarEnabled = false;
     private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
     private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
+    private static volatile boolean appMenuEnabled = false;
+    private static volatile boolean appMenuWebviewEnabled = true;
+    /** 生效白名单（空串 = 不限制）。只读字符串，判断时按逗号切分。 */
+    private static volatile String appMenuApps = "";
+    private static volatile float appMenuCornerDp = PrefKeys.APPMENU_CORNER_DEFAULT;
+    private static volatile float appMenuTextSp = PrefKeys.APPMENU_TEXT_DEFAULT;
+    private static volatile float appMenuPaddingHDp = PrefKeys.APPMENU_PADDING_H_DEFAULT;
+    private static volatile float appMenuPaddingVDp = PrefKeys.APPMENU_PADDING_V_DEFAULT;
 
     private HookPrefs() {}
 
@@ -69,6 +78,23 @@ public final class HookPrefs {
             p.registerOnSharedPreferenceChangeListener(l);
         } catch (Throwable ignored) {
             // 读不到偏好就按默认值（全开）工作
+        }
+    }
+
+    /**
+     * 强制从框架重读一遍偏好。
+     *
+     * 为什么不只靠 {@link #bind} 时的快照 + 变更监听：实测**已注入的应用进程**不一定能收到
+     * 框架的偏好变更通知，于是 App 里关掉开关后，Hook 侧仍拿着旧快照（表现为「关了没生效」）。
+     * 菜单弹出是低频事件，这里重新走一次 getRemotePreferences 的代价可接受。
+     */
+    public static synchronized void rebind(XposedInterface module) {
+        try {
+            SharedPreferences p = module.getRemotePreferences(PrefKeys.GROUP);
+            prefs = p;
+            bound = true;
+            refresh(p);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -92,6 +118,11 @@ public final class HookPrefs {
         try {
             cursorShakeReversals = p.getInt(
                     PrefKeys.CURSOR_SHAKE_REVERSALS, PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            cursorShakeFrames = p.getInt(
+                    PrefKeys.CURSOR_SHAKE_FRAMES, PrefKeys.CURSOR_SHAKE_FRAMES_DEFAULT);
         } catch (Throwable ignored) {
         }
         try {
@@ -127,6 +158,36 @@ public final class HookPrefs {
             toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
         } catch (Throwable ignored) {
         }
+        try {
+            appMenuEnabled = p.getBoolean(PrefKeys.APPMENU_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuWebviewEnabled = p.getBoolean(PrefKeys.APPMENU_WEBVIEW_ENABLED, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuApps = p.getString(PrefKeys.APPMENU_APPS, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuCornerDp = p.getFloat(PrefKeys.APPMENU_CORNER_DP, PrefKeys.APPMENU_CORNER_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuTextSp = p.getFloat(PrefKeys.APPMENU_TEXT_SP, PrefKeys.APPMENU_TEXT_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuPaddingHDp = p.getFloat(
+                    PrefKeys.APPMENU_PADDING_H_DP, PrefKeys.APPMENU_PADDING_H_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuPaddingVDp = p.getFloat(
+                    PrefKeys.APPMENU_PADDING_V_DP, PrefKeys.APPMENU_PADDING_V_DEFAULT);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -147,6 +208,11 @@ public final class HookPrefs {
     /** 触发灵敏度：需要完成的换向次数。*/
     public static int cursorShakeReversals() {
         return cursorShakeReversals;
+    }
+
+    /** 放大/缩回动画的帧数：1 = 不播动画、一次到位。*/
+    public static int cursorShakeFrames() {
+        return cursorShakeFrames;
     }
 
     /** 放大后保持的时长（毫秒）。*/
@@ -182,5 +248,47 @@ public final class HookPrefs {
 
     public static float toolbarTextSp() {
         return toolbarTextSp;
+    }
+
+    // ---- 右键菜单（目标应用进程侧） ----
+
+    public static boolean appMenuEnabled() {
+        return appMenuEnabled;
+    }
+
+    public static boolean appMenuWebviewEnabled() {
+        return appMenuWebviewEnabled;
+    }
+
+    /** 白名单为空 = 不限制；否则要求包名在列表里。 */
+    public static boolean appMenuAppAllowed(String pkg) {
+        String list = appMenuApps;
+        // **默认关闭**：没选任何应用 = 谁都不生效（用户要求）。
+        if (list == null || list.trim().isEmpty()) {
+            return false;
+        }
+        // 注意分隔符：App 侧用 MaterialPackages 编码，是**换行**分隔；这里兼容逗号与换行
+        for (String part : list.split("[,\\n]")) {
+            if (part.trim().equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static float appMenuCornerDp() {
+        return appMenuCornerDp;
+    }
+
+    public static float appMenuTextSp() {
+        return appMenuTextSp;
+    }
+
+    public static float appMenuPaddingHDp() {
+        return appMenuPaddingHDp;
+    }
+
+    public static float appMenuPaddingVDp() {
+        return appMenuPaddingVDp;
     }
 }
