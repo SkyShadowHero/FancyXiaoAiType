@@ -420,6 +420,21 @@ def apply_render_colors(x, tkey):
     return x
 
 
+# 定义块：这些区域里的元素是「被引用的定义」，不是画在画布上的内容。
+# 绝不能对它们做垫片清理 —— 删掉 <clipPath> 里的全画布 <rect> 会让裁剪区变空，
+# 整个组被裁掉、出图全透明（实测 apple/copy 等 6 张就是这么变成 241 字节空图的）。
+PROTECTED_BLOCKS = ("defs", "clipPath", "mask", "pattern", "symbol", "marker", "filter")
+
+
+def protected_ranges(x):
+    """返回不该被垫片清理动到的字符区间（<defs>/<clipPath>/<mask> … 整块）。"""
+    out = []
+    for tag in PROTECTED_BLOCKS:
+        for m in re.finditer(r"<%s\b[^>]*>.*?</%s>" % (tag, tag), x, re.S | re.I):
+            out.append((m.start(), m.end()))
+    return out
+
+
 def full_color_svg(svg, tkey=""):
     """原色直出用的 SVG：去掉不可见组与全画布垫片，其余（含 <defs> 投影滤镜）原样保留。"""
     raw = open(svg).read()
@@ -437,11 +452,21 @@ def full_color_svg(svg, tkey=""):
             if w and h:
                 vb = (float(w.group(1)), float(h.group(1)))
     x = apply_render_colors(drop_invisible_groups(raw), tkey)
-    for m in list(SHAPE_RE.finditer(x)):
-        el = m.group(0)
-        if is_backdrop(el, vb) and el in x:
-            x = x.replace(el, "", 1)
-    return x
+    # 逐次定位、删除后重算：每删一处都会移动后面的偏移，快照式遍历会按旧偏移误删。
+    # 另外按匹配区间精确切除，不用 replace(el, "", 1) —— 那只按文本找「首次出现」，
+    # 当同一段元素在 <defs> 里也有一份时，会删错位置（把定义删了、画布上的留下）。
+    while True:
+        protected = protected_ranges(x)
+        hit = None
+        for m in SHAPE_RE.finditer(x):
+            if any(a <= m.start() < b for a, b in protected):
+                continue
+            if is_backdrop(m.group(0), vb):
+                hit = m
+                break
+        if hit is None:
+            return x
+        x = x[:hit.start()] + x[hit.end():]
 
 
 def aosp_hotspots():
