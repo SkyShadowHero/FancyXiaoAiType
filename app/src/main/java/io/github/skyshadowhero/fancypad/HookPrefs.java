@@ -19,8 +19,8 @@ import io.github.libxposed.api.XposedInterface;
  *   <li>Hook 侧只读 volatile，不做取偏好动作。</li>
  * </ol>
  *
- * <p>失败一律回退成「默认开启」，与开关的默认值一致：
- * 偏好读不到时模块按启用状态工作，而不是静默失效。
+ * <p>失败一律回退成「默认关闭」，与开关的默认值一致：
+ * 读不到偏好时模块什么都不做（所有功能默认关闭），而不是静默生效。
  */
 public final class HookPrefs {
 
@@ -33,8 +33,8 @@ public final class HookPrefs {
     private static volatile SharedPreferences.OnSharedPreferenceChangeListener listener;
 
     // ---- 快照（Hook 侧只读这些字段） ----
-    private static volatile boolean cursorEnabled = true;
-    private static volatile boolean embeddingEnabled = true;
+    private static volatile boolean cursorEnabled = false;
+    private static volatile boolean embeddingEnabled = false;
     private static volatile boolean folmeDisabled = true;
     private static volatile boolean mergeDisabled = true;
     private static volatile boolean jumpCutDisabled = true;
@@ -64,11 +64,11 @@ public final class HookPrefs {
             return;
         }
         try {
-            cursorEnabled = p.getBoolean(PrefKeys.CURSOR_ENABLED, true);
+            cursorEnabled = p.getBoolean(PrefKeys.CURSOR_ENABLED, false);
         } catch (Throwable ignored) {
         }
         try {
-            embeddingEnabled = p.getBoolean(PrefKeys.EMBEDDING_ENABLED, true);
+            embeddingEnabled = p.getBoolean(PrefKeys.EMBEDDING_ENABLED, false);
         } catch (Throwable ignored) {
         }
         try {

@@ -5,25 +5,32 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.nav.core.NavKey
+import androidx.compose.ui.unit.LayoutDirection
+import top.yukonga.miuix.kmp.nav.transition.NavTransition
+import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
 
 /**
  * 路由表。全部走 miuix-nav（`NavDisplay` + `NavKey` + `navBackStackOf`）。
  *
- * 层级只有三层，和模块的三个作用域一一对应：
+ * 层级只有三层，一级页面按功能名列出，点进去才看到该功能域里的设置：
  * ```
- * 作用域（一级）
- * ├── 输入法外观 · com.xiaomi.type ──┬── 虚拟键盘
- * │                                 ├── 悬浮键盘
- * │                                 └── 超级材质
- * ├── 系统光标 · system ─────────────┬── 光标
- * │                                 └── 颜色设置（二级，AOSP / GoogleDot 可改色时进入）
- * ├── 平行窗口动画 · com.android.systemui ── 平行窗口
+ * 功能（一级）
+ * ├── 键盘外观 ──┬── 虚拟键盘
+ * │              ├── 悬浮键盘
+ * │              └── 超级材质
+ * ├── 光标主题 ──┬── 主题预设
+ * │              ├── 大小
+ * │              ├── 导入
+ * │              └── 颜色设置（二级，AOSP / GoogleDot 可改色时进入）
+ * ├── 平行窗口动画 ── 平行窗口
  * └── 关于
  * ```
+ * 各自对应的 LSPosed 作用域见 [AppScope.pkg]（在「关于」页里列出）。
  */
 data object RouteScopes : NavKey
 
@@ -31,7 +38,9 @@ data object RouteImeVirtual : NavKey
 data object RouteImeFloating : NavKey
 data object RouteImeMaterial : NavKey
 
-data object RouteCursor : NavKey
+data object RouteCursorPreset : NavKey
+data object RouteCursorSize : NavKey
+data object RouteCursorImport : NavKey
 data object RouteCursorColors : NavKey
 
 data object RouteParallel : NavKey
@@ -39,36 +48,33 @@ data object RouteParallel : NavKey
 data object RouteAbout : NavKey
 
 /**
- * 一级页面「作用域」里的一项。
+ * 一级页面里的一项 = 一个功能域。
  *
- * [pages] 是该作用域自己的功能页：作用域里有多页时，进入后用左侧栏 / 底部菜单在它们之间切换；
- * 只有一页时（光标、平行窗口）不显示多页导航。
+ * 一级页面只列功能名（[label] + 图标），**不带任何描述** —— 描述都留在各自的页面里。
+ * [pkg] 是它对应的 LSPosed 作用域，只在「关于」页里列出来。
+ * [pages] 是功能域里的页面：多页时用左侧栏 / 底部菜单切换，单页时不显示多页导航。
  */
 enum class AppScope(
     val label: String,
     val pkg: String,
-    val summary: String,
     val pages: List<NavKey>,
     val icon: ImageVector,
 ) {
     Ime(
-        label = "输入法外观",
+        label = "键盘外观",
         pkg = "com.xiaomi.type",
-        summary = "分离键盘 · 按键圆角与间距 · 候选词 · 悬浮键盘 · 超级材质",
         pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial),
         icon = MiuixIcons.Tune,
     ),
     Cursor(
-        label = "系统光标",
+        label = "光标主题",
         pkg = "system",
-        summary = "接管光标渲染：预设 · 大小 · 颜色 · 导入",
-        pages = listOf(RouteCursor),
+        pages = listOf(RouteCursorPreset, RouteCursorSize, RouteCursorImport),
         icon = MiuixIcons.GridView,
     ),
     Parallel(
         label = "平行窗口动画",
         pkg = "com.android.systemui",
-        summary = "把平行窗口转场恢复成 AOSP 原生实现",
         pages = listOf(RouteParallel),
         icon = MiuixIcons.HorizontalSplit,
     ),
@@ -76,11 +82,13 @@ enum class AppScope(
 
 /** 路由 → 顶栏标题 */
 fun NavKey.title(): String = when (this) {
-    RouteScopes -> "作用域"
+    RouteScopes -> "功能"
     RouteImeVirtual -> "虚拟键盘"
     RouteImeFloating -> "悬浮键盘"
     RouteImeMaterial -> "超级材质"
-    RouteCursor -> "光标"
+    RouteCursorPreset -> "主题预设"
+    RouteCursorSize -> "大小"
+    RouteCursorImport -> "导入"
     RouteCursorColors -> "颜色设置"
     RouteParallel -> "平行窗口"
     RouteAbout -> "关于"
@@ -92,7 +100,9 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteImeVirtual -> MiuixIcons.Tune
     RouteImeFloating -> MiuixIcons.Layers
     RouteImeMaterial -> MiuixIcons.Background
-    RouteCursor -> MiuixIcons.GridView
+    RouteCursorPreset -> MiuixIcons.GridView
+    RouteCursorSize -> MiuixIcons.Tune
+    RouteCursorImport -> MiuixIcons.Import
     RouteParallel -> MiuixIcons.HorizontalSplit
     RouteAbout -> MiuixIcons.Info
     else -> MiuixIcons.Info
@@ -100,3 +110,23 @@ fun NavKey.icon(): ImageVector = when (this) {
 
 /** 路由所属的作用域；一级页面与「关于」返回 null。 */
 fun NavKey.scope(): AppScope? = AppScope.entries.firstOrNull { this in it.pages }
+
+/**
+ * 轻量压栈转场：只有进入的页面从右侧滑入（离开时滑回右侧），被覆盖的页面**原地不动**。
+ *
+ * 不用 [NavTransitions.MiuixDefault] 的原因：它会给被覆盖页加 25% 宽度的视差位移 + alpha 衰减，
+ * 再叠上默认的 0.5 暗层（`NavDisplayEffects.dimAmount`），也就是每帧要重绘**两整页**再加一层全屏
+ * 暗色。这台平板是 3200×2136，实测转场明显发卡；而且被覆盖页被推开后还能看见，观感也乱。
+ *
+ * 这里只保留必需的位移，配合 [NavDisplayEffects] 关掉暗层与圆角裁切，每帧只有新页在动。
+ */
+val PadPush: NavTransition = navGraphicsTransition(opaqueDepth = 1f) { scope ->
+    val width = scope.layoutSize.width.toFloat()
+    val d = scope.relativeDepth
+    val rtl = scope.layoutDirection == LayoutDirection.Rtl
+    if (d <= 0f) {
+        // 进入 / 离开栈顶：从尾边整屏滑入（RTL 镜像）
+        translationX = (if (rtl) -1f else 1f) * (-d).coerceIn(0f, 1f) * width
+    }
+    // d > 0：被覆盖页保持原位 —— 不位移、不淡出、不重绘
+}

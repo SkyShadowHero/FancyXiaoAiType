@@ -1,14 +1,27 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +52,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
+import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -50,9 +64,9 @@ import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
-import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 
@@ -201,20 +215,61 @@ fun AppShell(
     )
 
     val pages = activeScope?.pages.orEmpty()
+    val showScopeNav = pages.size > 1
 
-    if (pages.size > 1 && useRail) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            val railState = rememberNavigationRailState(initialValue = NavigationRailValue.Expanded)
-            NavigationRail(state = railState) {
-                pages.forEach { page ->
-                    NavigationRailItem(
-                        selected = current == page,
-                        onClick = { openSibling(page) },
-                        icon = page.icon(),
-                        label = page.title(),
-                    )
+    // 左栏宽度动画：菜单是「从左边让出空间」出现的，所以宽度必须跟内容位移同步动画。
+    // 之前用 AnimatedVisibility 只动菜单本身，空间是**瞬间**让出来的 —— 表现为一级页面先
+    // 闪现右移、左边留下一块空位，然后菜单才慢慢滑进来。
+    val railVisible = showScopeNav && useRail
+    val railWidth by animateDpAsState(
+        targetValue = if (railVisible) RAIL_WIDTH else 0.dp,
+        animationSpec = tween(durationMillis = 260),
+        label = "railWidth",
+    )
+
+    // 收起过程中 pages 已经空了（当前路由不再属于任何功能域），但菜单还要播完收回动画，
+    // 所以记住最后一组菜单项。
+    var lastRailPages by remember { mutableStateOf(emptyList<NavKey>()) }
+    LaunchedEffect(pages) { if (pages.isNotEmpty()) lastRailPages = pages }
+    val railPages = pages.ifEmpty { lastRailPages }
+    val railState = rememberNavigationRailState(initialValue = NavigationRailValue.Expanded)
+
+    // 结构固定为 Row[左栏（宽度动画）] + Column[内容 + 可选底栏]：
+    // 无论当前是否有功能域菜单，PageHost（也就是 NavDisplay）在组合树里的位置都不变，
+    // 否则从一级页面进入多页功能域时，整棵子树被重建 → 转场动画直接不播（只剩硬切）。
+    // 整块底色给 surface：菜单让出空间时背后露出来的也是页面底色，不是窗口底色（浅色下是纯白）。
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MiuixTheme.colorScheme.surface)
+    ) {
+        if (railWidth > 0.dp) {
+            Box(
+                modifier = Modifier
+                    .width(railWidth)
+                    .fillMaxHeight()
+                    .clipToBounds()
+            ) {
+                // requiredWidth：菜单本体始终按展开宽度排版，由外层容器裁切 ——
+                // 这样出现时是「从左边推出来」，而不是被压扁。
+                NavigationRail(
+                    state = railState,
+                    modifier = Modifier
+                        .requiredWidth(RAIL_WIDTH)
+                        .fillMaxHeight(),
+                ) {
+                    railPages.forEach { page ->
+                        NavigationRailItem(
+                            selected = current == page,
+                            onClick = { openSibling(page) },
+                            icon = page.icon(),
+                            label = page.title(),
+                        )
+                    }
                 }
             }
+        }
+        Column(modifier = Modifier.weight(1f).fillMaxSize()) {
             Box(modifier = Modifier.weight(1f)) {
                 PageHost(
                     uiState = uiState,
@@ -223,47 +278,29 @@ fun AppShell(
                     gapMaxLand = gapMaxLand,
                     gapMaxPort = gapMaxPort,
                     padding = padding,
+                    clipContent = railVisible,
                     onBack = { pop() },
                     onPush = { push(it) },
                 )
             }
-        }
-    } else if (pages.size > 1) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f)) {
-                PageHost(
-                    uiState = uiState,
-                    backStack = backStack,
-                    current = current,
-                    gapMaxLand = gapMaxLand,
-                    gapMaxPort = gapMaxPort,
-                    padding = padding,
-                    onBack = { pop() },
-                    onPush = { push(it) },
-                )
-            }
-            NavigationBar {
-                pages.forEach { page ->
-                    NavigationBarItem(
-                        selected = current == page,
-                        onClick = { openSibling(page) },
-                        icon = page.icon(),
-                        label = page.title(),
-                    )
+            // 窄屏用底部菜单，从底部滑入 / 滑出
+            AnimatedVisibility(
+                visible = showScopeNav && !useRail,
+                enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(180)),
+                exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(140)),
+            ) {
+                NavigationBar {
+                    pages.forEach { page ->
+                        NavigationBarItem(
+                            selected = current == page,
+                            onClick = { openSibling(page) },
+                            icon = page.icon(),
+                            label = page.title(),
+                        )
+                    }
                 }
             }
         }
-    } else {
-        PageHost(
-            uiState = uiState,
-            backStack = backStack,
-            current = current,
-            gapMaxLand = gapMaxLand,
-            gapMaxPort = gapMaxPort,
-            padding = padding,
-            onBack = { pop() },
-            onPush = { push(it) },
-        )
     }
 }
 
@@ -279,10 +316,14 @@ private fun PageHost(
     gapMaxLand: Float,
     gapMaxPort: Float,
     padding: PaddingValues,
+    clipContent: Boolean,
     onBack: () -> Unit,
     onPush: (NavKey) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
+
+    // 光标域的框架连接跟随（拆成三个页面后只在外壳里跑一份轮询）
+    CursorConnectionEffect()
 
     // 顶部渐进模糊。backdrop 需要内容层注册进去（见下面的 layerBackdrop），
     // 顶栏的模糊层才能采样到滚动经过的内容。
@@ -363,76 +404,116 @@ private fun PageHost(
             modifier = Modifier
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
-                // 宽屏（有左栏时）转场图层不能画到 rail 上面
-                .clipToBounds()
+                // 只有真的有左栏时才裁剪：转场图层不能画到 rail 上面。
+                // 没有左栏的页面不加这层裁剪 —— 全屏裁剪层在转场里同样是白开销。
+                .then(if (clipContent) Modifier.clipToBounds() else Modifier)
         ) {
             NavDisplay(
                 backStack = backStack,
                 onBack = onBack,
-                transition = NavTransitions.MiuixDefault,
+                transition = PadPush,
+                // 关掉默认的 0.5 暗层与圆角裁切：这台平板 3200×2136，全屏暗层 + 裁切每帧都要重绘，
+                // 实测发卡；backdropColor 给页面底色，转场期间露出的区域不会是黑的。
+                effects = NavDisplayEffects(
+                    enableCornerClip = false,
+                    dimAmount = 0f,
+                    backdropColor = MiuixTheme.colorScheme.surface,
+                ),
             ) {
                 entry<RouteScopes> {
-                    ScopeListPage(
-                        onEnter = { scope -> onPush(scope.pages.first()) },
-                        onAbout = { onPush(RouteAbout) },
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        ScopeListPage(
+                            onEnter = { scope -> onPush(scope.pages.first()) },
+                            onAbout = { onPush(RouteAbout) },
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteImeVirtual> {
-                    VirtualKeyboardPage(
-                        uiState = uiState,
-                        gapMaxLand = gapMaxLand,
-                        gapMaxPort = gapMaxPort,
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        VirtualKeyboardPage(
+                            uiState = uiState,
+                            gapMaxLand = gapMaxLand,
+                            gapMaxPort = gapMaxPort,
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteImeFloating> {
-                    FloatingKeyboardPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        FloatingKeyboardPage(
+                            uiState = uiState,
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteImeMaterial> {
-                    MaterialPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        MaterialPage(
+                            uiState = uiState,
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
-                entry<RouteCursor> {
-                    CursorPage(
-                        cursorEnabled = uiState.cursorEnabled,
-                        onCursorEnabledChange = { checked ->
-                            uiState.cursorEnabled = checked
-                            uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
-                        },
-                        onOpenColors = { onPush(RouteCursorColors) },
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                entry<RouteCursorPreset> {
+                    PageSurface {
+                        CursorPresetPage(
+                            cursorEnabled = uiState.cursorEnabled,
+                            onCursorEnabledChange = { checked ->
+                                uiState.cursorEnabled = checked
+                                uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
+                            },
+                            onOpenColors = { onPush(RouteCursorColors) },
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
+                }
+                entry<RouteCursorSize> {
+                    PageSurface {
+                        CursorSizePage(
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
+                }
+                entry<RouteCursorImport> {
+                    PageSurface {
+                        CursorImportPage(
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteCursorColors> {
-                    CursorColorsPage(
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        CursorColorsPage(
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteParallel> {
-                    ParallelPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        ParallelPage(
+                            uiState = uiState,
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
                 entry<RouteAbout> {
-                    AboutPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = contentPadding,
-                    )
+                    PageSurface {
+                        AboutPage(
+                            uiState = uiState,
+                            padding = padding,
+                            scaffoldPadding = contentPadding,
+                        )
+                    }
                 }
             }
         }
@@ -477,6 +558,9 @@ private fun NavKey.subtitle(): String = when (this) {
 
 /** 平板布局断点：横屏平板走左侧栏；竖屏平板 / 手机走底部菜单。 */
 private const val RAIL_BREAKPOINT_DP = 840
+
+/** 展开态左栏宽度（与 Miuix NavigationRailDefaults.ExpandedWidth 一致，动画按它换算）。 */
+private val RAIL_WIDTH = NavigationRailDefaults.ExpandedWidth
 
 /** 物理屏幕尺寸（最大窗口边界）。取不到返回 null，由调用方退回 displayMetrics。 */
 private data class ScreenSize(val width: Int, val height: Int, val density: Float)

@@ -24,7 +24,7 @@ import kotlinx.coroutines.delay
 class AppUiState {
     var themeMode by mutableIntStateOf(0)
 
-    var gapEnabled by mutableStateOf(true)
+    var gapEnabled by mutableStateOf(false)
     var gapLand by mutableStateOf(284f)
     var gapPort by mutableStateOf(113f)
     var portraitForceNormal by mutableStateOf(false)
@@ -93,10 +93,10 @@ class AppUiState {
 
     // ---- 光标主题（原 os4光标主题模块，作用域 system）----
     /** 接管系统光标总开关；关掉则 Hook 侧完全走系统原实现。 */
-    var cursorEnabled by mutableStateOf(true)
+    var cursorEnabled by mutableStateOf(false)
 
     // ---- 平行窗口动画（原 os4平行窗口动画fix模块，作用域 com.android.systemui）----
-    var embeddingEnabled by mutableStateOf(true)
+    var embeddingEnabled by mutableStateOf(false)
     var embeddingFolmeDisable by mutableStateOf(true)
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
@@ -192,7 +192,7 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
 /** 一次性把远端配置读进 UI 状态。逐键 runCatching，单键异常不影响整体。 */
 private fun loadConfigInto(uiState: AppUiState) {
     val p = RemoteConfig.prefs() ?: return
-    uiState.gapEnabled = p.runCatching { getBoolean(PrefKeys.GAP_ENABLED, true) }.getOrDefault(true)
+    uiState.gapEnabled = p.runCatching { getBoolean(PrefKeys.GAP_ENABLED, false) }.getOrDefault(false)
     uiState.gapLand = p.runCatching { getFloat(PrefKeys.GAP_LAND, 0f) }.getOrDefault(0f)
         .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_LAND
     uiState.gapPort = p.runCatching { getFloat(PrefKeys.GAP_PORT, 0f) }.getOrDefault(0f)
@@ -332,13 +332,13 @@ private fun loadConfigInto(uiState: AppUiState) {
         getFloat(PrefKeys.FLOAT_KB_MAX_SCALE, PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
     }.getOrDefault(PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT)
 
-    // ---- 光标主题（默认开启：与旧 os4光标主题模块的默认行为一致）----
-    uiState.cursorEnabled = p.runCatching { getBoolean(PrefKeys.CURSOR_ENABLED, true) }
-        .getOrDefault(true)
+    // ---- 光标主题（默认关闭：所有功能都要用户显式打开）----
+    uiState.cursorEnabled = p.runCatching { getBoolean(PrefKeys.CURSOR_ENABLED, false) }
+        .getOrDefault(false)
 
-    // ---- 平行窗口动画（默认全开：与旧 os4平行窗口动画fix模块一致）----
-    uiState.embeddingEnabled = p.runCatching { getBoolean(PrefKeys.EMBEDDING_ENABLED, true) }
-        .getOrDefault(true)
+    // ---- 平行窗口动画（总开关默认关闭；子项保持开启，打开总开关即生效）----
+    uiState.embeddingEnabled = p.runCatching { getBoolean(PrefKeys.EMBEDDING_ENABLED, false) }
+        .getOrDefault(false)
     uiState.embeddingFolmeDisable = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, true)
     }.getOrDefault(true)

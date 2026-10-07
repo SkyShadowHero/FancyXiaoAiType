@@ -1,5 +1,11 @@
 package io.github.skyshadowhero.fancypad.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -138,7 +144,7 @@ internal fun CursorUiState.refreshImported() {
  * 防抖落盘。
  *
  * 每次写都会让 system_server 重刷光标，所以拖动滑块 / 取色器时不能每帧都写。
- * 两个页面（光标页、颜色设置页）都用同一个 effect 调它：调用方要求
+ * 光标那几个页面都用同一个 effect 调它：调用方要求
  * `LaunchedEffect(preset, scale, fill, stroke, bound) { persistDebounced() }`。
  */
 internal suspend fun CursorUiState.persistDebounced() {
@@ -151,6 +157,54 @@ internal suspend fun CursorUiState.persistDebounced() {
         if (tk != null) {
             e.putInt(PrefKeys.CURSOR_FILL_PREFIX + tk, fill.toArgb())
             e.putInt(PrefKeys.CURSOR_STROKE_PREFIX + tk, stroke.toArgb())
+        }
+    }
+}
+
+/** 读「导入的主题」列表与缩略图（Remote Files）。 */
+internal suspend fun CursorUiState.loadThemes() {
+    val p = RemoteConfig.prefs()
+    val names = (p?.getString(PrefKeys.CURSOR_THEMES, "") ?: "").split("|").filter { it.isNotBlank() }
+    themes = names
+    val labelList = (p?.getString(PrefKeys.CURSOR_THEME_LABELS, "") ?: "").split("|")
+    labels = names.indices.map { labelList.getOrNull(it) ?: "" }
+    if (names.isEmpty()) {
+        thumbs = emptyMap()
+        return
+    }
+    thumbs = withContext(Dispatchers.IO) {
+        names.mapNotNull { n ->
+            val bmp = runCatching {
+                RemoteConfig.openRemoteFile("cust_${n}_thumb.png")?.use { pfd ->
+                    BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor)
+                }
+            }.getOrNull() ?: return@mapNotNull null
+            n to bmp.asImageBitmap()
+        }.toMap()
+    }
+}
+
+/**
+ * 框架连接跟随（连接就绪时装载配置），**在外壳里调用一次**。
+ *
+ * 光标域拆成了「主题预设 / 大小 / 导入」三个页面，如果每个页面各自轮询，
+ * 切页时就会重复起轮询、也会各自重复装载。放在外壳里只跑一份。
+ */
+@Composable
+internal fun CursorConnectionEffect() {
+    val state = cursorState
+    LaunchedEffect(Unit) {
+        while (true) {
+            val ready = RemoteConfig.isReady
+            if (ready != state.bound) {
+                state.bound = ready
+                if (ready) {
+                    state.loadFromPrefs()
+                    state.refreshImported()
+                    state.loadThemes()
+                }
+            }
+            delay(500)
         }
     }
 }

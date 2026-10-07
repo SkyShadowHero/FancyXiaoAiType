@@ -50,7 +50,7 @@ object ConfigLoader {
             // 避免它的 ClassCastException 把整个快照打成默认值。
             val legacy = p.runCatching { getFloat(PrefKeys.GAP_LEGACY, Float.NaN) }.getOrDefault(Float.NaN)
             Cfg(
-                gapEnabled = p.runCatching { getBoolean(PrefKeys.GAP_ENABLED, true) }.getOrDefault(true),
+                gapEnabled = p.runCatching { getBoolean(PrefKeys.GAP_ENABLED, false) }.getOrDefault(false),
                 gapLand = p.runCatching { getFloat(PrefKeys.GAP_LAND, 0f) }.getOrDefault(0f)
                     .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_LAND,
                 gapPort = p.runCatching { getFloat(PrefKeys.GAP_PORT, 0f) }.getOrDefault(0f)
@@ -270,7 +270,7 @@ object ConfigLoader {
 
         companion object {
             val DEFAULT = Cfg(
-                gapEnabled = true,
+                gapEnabled = false,
                 gapLand = PrefKeys.GAP_DEFAULT_LAND,
                 gapPort = PrefKeys.GAP_DEFAULT_PORT,
                 portraitForceNormal = false,

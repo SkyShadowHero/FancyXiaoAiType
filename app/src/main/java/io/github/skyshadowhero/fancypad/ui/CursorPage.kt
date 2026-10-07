@@ -2,7 +2,6 @@ package io.github.skyshadowhero.fancypad.ui
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -40,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -50,7 +48,6 @@ import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.R
 import io.github.skyshadowhero.fancypad.RemoteConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
@@ -71,173 +68,32 @@ import java.io.FileOutputStream
 import kotlin.math.roundToInt
 
 /**
- * 「光标」页（作用域 system）—— 接管系统光标渲染。
+ * 光标域（作用域 `system`）的三个页面 —— 平板端的左侧菜单就是这三项（与原 os4光标主题模块一致）：
+ * 「主题预设」「大小」「导入」。
  *
- * 状态与常量放在 [CursorState.kt]（与二级页「颜色设置」共用）。
- * 颜色设置按原模块的做法留在**二级页**：可改色的预设（AOSP / GoogleDot）被选中时，
- * 该行下方出现「颜色设置 ›」，点进去才是取色器。
+ * 状态与常量都在 [CursorState.kt]；「颜色设置」是可改色预设的二级页（[CursorColorsPage]）。
+ * 连接跟随由外壳里的 [CursorConnectionEffect] 统一负责，这里不各自轮询。
  */
+
+// --------------------------------------------------------------- 主题预设
+
 @Composable
-fun CursorPage(
+fun CursorPresetPage(
     cursorEnabled: Boolean,
     onCursorEnabledChange: (Boolean) -> Unit,
     onOpenColors: () -> Unit,
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val state = cursorState
 
-    fun reloadThemes() {
-        val p = RemoteConfig.prefs()
-        val names = (p?.getString(PrefKeys.CURSOR_THEMES, "") ?: "").split("|").filter { it.isNotBlank() }
-        state.themes = names
-        val labelList = (p?.getString(PrefKeys.CURSOR_THEME_LABELS, "") ?: "").split("|")
-        state.labels = names.indices.map { labelList.getOrNull(it) ?: "" }
-        if (names.isEmpty()) {
-            state.thumbs = emptyMap()
-            return
-        }
-        scope.launch {
-            state.thumbs = withContext(Dispatchers.IO) {
-                names.mapNotNull { n ->
-                    val bmp = runCatching {
-                        RemoteConfig.openRemoteFile("cust_${n}_thumb.png")?.use { pfd ->
-                            BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor)
-                        }
-                    }.getOrNull() ?: return@mapNotNull null
-                    n to bmp.asImageBitmap()
-                }.toMap()
-            }
-        }
-    }
-
-    // 连接状态跟随：轮询 RemoteConfig（Application.onCreate 里已注册监听器），
-    // 不再自己 registerListener —— 那样在「服务早于本页注册就已绑定」时永远收不到回调。
-    LaunchedEffect(Unit) {
-        while (true) {
-            val ready = RemoteConfig.isReady
-            if (ready != state.bound) {
-                state.bound = ready
-                if (ready) {
-                    state.loadFromPrefs()
-                    state.refreshImported()
-                    reloadThemes()
-                }
-            }
-            delay(500)
-        }
-    }
-
-    // 防抖落盘（拖滑块 / 取色器时不要每帧写）
     LaunchedEffect(state.preset, state.scale, state.fill, state.stroke, state.bound) {
         state.persistDebounced()
     }
 
-    // 切换预设 → 读取该主题自己的颜色
-    LaunchedEffect(state.preset, state.bound) {
-        if (!state.bound) return@LaunchedEffect
-        val p = RemoteConfig.prefs() ?: return@LaunchedEffect
-        val tk = themeKeyOf(state.preset) ?: return@LaunchedEffect
-        val dflt = defaultColorsOf(state.preset)
-        state.fill = Color(p.getInt(PrefKeys.CURSOR_FILL_PREFIX + tk, dflt.first))
-        state.stroke = Color(p.getInt(PrefKeys.CURSOR_STROKE_PREFIX + tk, dflt.second))
-    }
-
-    var pendingKey by remember { mutableStateOf<String?>(null) }
-    val typePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val key = pendingKey
-        if (uri == null || !RemoteConfig.isReady || key == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                val nm = queryName(context, uri) ?: "img"
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                if (bytes == null) false else upload(key, bytes, nm)
-            }
-            withContext(Dispatchers.Main) {
-                state.refreshImported()
-                state.message = if (ok) "已设置「$key」" else "设置失败：$key"
-                RemoteConfig.edit { it.putInt(PrefKeys.CURSOR_PRESET, PRESET_CUSTOM) }
-                state.preset = PRESET_CUSTOM
-            }
-        }
-    }
-
-    val onPickType: (String) -> Unit = { key ->
-        pendingKey = key
-        typePicker.launch(arrayOf("*/*"))
-    }
-    val onClear: () -> Unit = {
-        if (RemoteConfig.isReady) {
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                        RemoteConfig.listRemoteFiles()
-                            .filter { it.startsWith("cust_") }
-                            .forEach { RemoteConfig.deleteRemoteFile(it) }
-                    }
-                }
-                RemoteConfig.edit { e ->
-                    e.putString(PrefKeys.CURSOR_THEMES, "")
-                    e.putInt(PrefKeys.CURSOR_PRESET, PRESET_AOSP)
-                }
-                withContext(Dispatchers.Main) {
-                    state.refreshImported()
-                    state.themes = emptyList()
-                    state.preset = PRESET_AOSP
-                    state.message = "已清空全部导入主题"
-                }
-            }
-        }
-        Unit
-    }
-    val onRename: (String, String) -> Unit = { key, newName ->
-        val idx = state.themes.indexOf(key)
-        if (idx >= 0) {
-            val list = state.themes.indices.map { state.labels.getOrNull(it) ?: "" }.toMutableList()
-            list[idx] = newName.trim()
-            state.labels = list
-            RemoteConfig.edit {
-                it.putString(PrefKeys.CURSOR_THEME_LABELS, list.joinToString("|"))
-            }
-        }
-        Unit
-    }
-    val onDeleteTheme: (String) -> Unit = { theme ->
-        if (RemoteConfig.isReady) {
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                        RemoteConfig.listRemoteFiles()
-                            .filter { it.startsWith("cust_${theme}_") }
-                            .forEach { RemoteConfig.deleteRemoteFile(it) }
-                    }
-                }
-                withContext(Dispatchers.Main) {
-                    val list = state.themes.filter { it != theme }
-                    RemoteConfig.edit { e ->
-                        e.putString(PrefKeys.CURSOR_THEMES, list.joinToString("|"))
-                        e.putInt(PrefKeys.CURSOR_PRESET, PRESET_AOSP)
-                    }
-                    state.themes = list
-                    state.preset = PRESET_AOSP
-                    state.message = "已删除主题「$theme」"
-                    state.refreshImported()
-                }
-            }
-        }
-        Unit
-    }
-
     LazyColumn(
         modifier = Modifier.padding(padding),
-        contentPadding = PaddingValues(
-            start = 12.dp,
-            end = 12.dp,
-            top = scaffoldPadding.calculateTopPadding() + 8.dp,
-            bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
-        ),
+        contentPadding = pagePadding(scaffoldPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { SmallTitle("接管") }
@@ -258,13 +114,9 @@ fun CursorPage(
         if (cursorEnabled) {
             previewSection(state)
             presetSection(state, onOpenColors)
-            sizeSection(state)
-            importSection(state, onClear, onDeleteTheme, onRename, onPickType)
         }
     }
 }
-
-// --------------------------------------------------------------------- 各分段
 
 private fun LazyListScope.previewSection(state: CursorUiState) {
     val presets = presetList(state.themes, state.labels, state.importedKeys.isNotEmpty())
@@ -312,8 +164,8 @@ private fun LazyListScope.previewSection(state: CursorUiState) {
 }
 
 /**
- * 主题预设。可改色的预设（AOSP / GoogleDot）被选中时，该行下方展开「颜色设置 ›」——
- * 和原 os4光标主题模块一致：颜色不在这里直接摊开，而是进二级页。
+ * 主题预设。可改色的预设（AOSP / GoogleDot）被选中时，该行下方展开「颜色设置 ›」，
+ * 点进去是二级页（与原模块一致）。
  */
 private fun LazyListScope.presetSection(state: CursorUiState, onOpenColors: () -> Unit) {
     item { SmallTitle("主题预设") }
@@ -354,20 +206,143 @@ private fun LazyListScope.presetSection(state: CursorUiState, onOpenColors: () -
     }
 }
 
-private fun LazyListScope.sizeSection(state: CursorUiState) {
-    item { SmallTitle("大小") }
-    item {
-        Card {
-            SliderPreference(
-                value = state.scale,
-                onValueChange = { state.scale = it },
-                title = "光标大小",
-                summary = "拖动即时预览",
-                valueText = "${(state.scale * 100).roundToInt()}%",
-                valueRange = PrefKeys.CURSOR_SCALE_MIN..PrefKeys.CURSOR_SCALE_MAX,
-                steps = 26,
-            )
+// ------------------------------------------------------------------- 大小
+
+@Composable
+fun CursorSizePage(
+    padding: PaddingValues,
+    scaffoldPadding: PaddingValues,
+) {
+    val state = cursorState
+
+    LaunchedEffect(state.preset, state.scale, state.fill, state.stroke, state.bound) {
+        state.persistDebounced()
+    }
+
+    LazyColumn(
+        modifier = Modifier.padding(padding),
+        contentPadding = pagePadding(scaffoldPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { SmallTitle("大小") }
+        item {
+            Card {
+                SliderPreference(
+                    value = state.scale,
+                    onValueChange = { state.scale = it },
+                    title = "光标大小",
+                    summary = "拖动即时预览",
+                    valueText = "${(state.scale * 100).roundToInt()}%",
+                    valueRange = PrefKeys.CURSOR_SCALE_MIN..PrefKeys.CURSOR_SCALE_MAX,
+                    steps = 26,
+                )
+            }
         }
+    }
+}
+
+// ------------------------------------------------------------------- 导入
+
+@Composable
+fun CursorImportPage(
+    padding: PaddingValues,
+    scaffoldPadding: PaddingValues,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val state = cursorState
+
+    var pendingKey by remember { mutableStateOf<String?>(null) }
+    val typePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val key = pendingKey
+        if (uri == null || !RemoteConfig.isReady || key == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                val nm = queryName(context, uri) ?: "img"
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) false else upload(key, bytes, nm)
+            }
+            withContext(Dispatchers.Main) {
+                state.refreshImported()
+                state.message = if (ok) "已设置「$key」" else "设置失败：$key"
+                RemoteConfig.edit { it.putInt(PrefKeys.CURSOR_PRESET, PRESET_CUSTOM) }
+                state.preset = PRESET_CUSTOM
+            }
+        }
+    }
+
+    val onPickType: (String) -> Unit = { key ->
+        pendingKey = key
+        typePicker.launch(arrayOf("*/*"))
+    }
+    val onClear: () -> Unit = {
+        if (RemoteConfig.isReady) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        RemoteConfig.listRemoteFiles()
+                            .filter { it.startsWith("cust_") }
+                            .forEach { RemoteConfig.deleteRemoteFile(it) }
+                    }
+                }
+                RemoteConfig.edit { e ->
+                    e.putString(PrefKeys.CURSOR_THEMES, "")
+                    e.putInt(PrefKeys.CURSOR_PRESET, PRESET_AOSP)
+                }
+                withContext(Dispatchers.Main) {
+                    state.refreshImported()
+                    state.themes = emptyList()
+                    state.thumbs = emptyMap()
+                    state.preset = PRESET_AOSP
+                    state.message = "已清空全部导入主题"
+                }
+            }
+        }
+        Unit
+    }
+    val onRename: (String, String) -> Unit = { key, newName ->
+        val idx = state.themes.indexOf(key)
+        if (idx >= 0) {
+            val list = state.themes.indices.map { state.labels.getOrNull(it) ?: "" }.toMutableList()
+            list[idx] = newName.trim()
+            state.labels = list
+            RemoteConfig.edit {
+                it.putString(PrefKeys.CURSOR_THEME_LABELS, list.joinToString("|"))
+            }
+        }
+        Unit
+    }
+    val onDeleteTheme: (String) -> Unit = { theme ->
+        if (RemoteConfig.isReady) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        RemoteConfig.listRemoteFiles()
+                            .filter { it.startsWith("cust_${theme}_") }
+                            .forEach { RemoteConfig.deleteRemoteFile(it) }
+                    }
+                }
+                RemoteConfig.edit { e ->
+                    e.putString(PrefKeys.CURSOR_THEMES, state.themes.filter { it != theme }.joinToString("|"))
+                    e.putInt(PrefKeys.CURSOR_PRESET, PRESET_AOSP)
+                }
+                withContext(Dispatchers.Main) {
+                    state.preset = PRESET_AOSP
+                    state.message = "已删除主题「$theme」"
+                    state.refreshImported()
+                    state.loadThemes()
+                }
+            }
+        }
+        Unit
+    }
+
+    LazyColumn(
+        modifier = Modifier.padding(padding),
+        contentPadding = pagePadding(scaffoldPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        importSection(state, onClear, onDeleteTheme, onRename, onPickType)
     }
 }
 
@@ -438,6 +413,13 @@ private fun LazyListScope.importSection(
 }
 
 // --------------------------------------------------------------------- 部件
+
+private fun pagePadding(scaffoldPadding: PaddingValues) = PaddingValues(
+    start = 12.dp,
+    end = 12.dp,
+    top = scaffoldPadding.calculateTopPadding() + 8.dp,
+    bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
+)
 
 @Composable
 private fun ThemeThumb(bitmap: ImageBitmap) {
