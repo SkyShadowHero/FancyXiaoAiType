@@ -33,8 +33,8 @@ android {
         targetSdk = 37
         // versionCode 用 major*10000 + minor*100 + patch，便于后续按语义递增
         // FancyPad 是三个模块合并后的新应用（新包名），从 1.0.0 起算
-        versionCode = 10003
-        versionName = "1.0.3"
+        versionCode = 10004
+        versionName = "1.0.4"
     }
 
     signingConfigs {

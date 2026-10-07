@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -15,8 +16,19 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
  * 平板（宽屏）下内容的宽度上限。
  * 3200×2136 的平板上不限宽的话，一行设置会横跨整个屏幕，读起来很散。
+ *
+ * 实际上限由外壳通过 [LocalContentMaxWidth] 下发（左栏展开时要在两侧都留得下），
+ * 这里的 840dp 只是兜底。
  */
-private val CONTENT_MAX_WIDTH = 840.dp
+internal val CONTENT_MAX_WIDTH = 840.dp
+
+/**
+ * 外壳下发的内容宽度上限。
+ *
+ * 左栏是**覆盖**在内容之上的（不参与布局，见 AppShell），所以上限要保证左栏完全展开时
+ * 也压不到内容：`上限 ≤ 屏宽 - 左栏宽`。
+ */
+internal val LocalContentMaxWidth = compositionLocalOf { CONTENT_MAX_WIDTH }
 
 /**
  * 页面容器：**不透明底色** + 平板限宽居中。
@@ -41,7 +53,7 @@ fun PageSurface(content: @Composable () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .widthIn(max = CONTENT_MAX_WIDTH)
+                .widthIn(max = LocalContentMaxWidth.current)
                 .fillMaxWidth(),
         ) {
             content()

@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -32,7 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
@@ -52,6 +56,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
+import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
@@ -217,13 +222,11 @@ fun AppShell(
     val pages = activeScope?.pages.orEmpty()
     val showScopeNav = pages.size > 1
 
-    // 左栏宽度动画：菜单是「从左边让出空间」出现的，所以宽度必须跟内容位移同步动画。
-    // 之前用 AnimatedVisibility 只动菜单本身，空间是**瞬间**让出来的 —— 表现为一级页面先
-    // 闪现右移、左边留下一块空位，然后菜单才慢慢滑进来。
+    // 左栏宽度动画（0 ↔ 展开宽度）：内容同步让位，见下面的 graphicsLayer 平移。
     val railVisible = showScopeNav && useRail
     val railWidth by animateDpAsState(
         targetValue = if (railVisible) RAIL_WIDTH else 0.dp,
-        animationSpec = tween(durationMillis = 260),
+        animationSpec = tween(durationMillis = 240),
         label = "railWidth",
     )
 
@@ -234,69 +237,86 @@ fun AppShell(
     val railPages = pages.ifEmpty { lastRailPages }
     val railState = rememberNavigationRailState(initialValue = NavigationRailValue.Expanded)
 
-    // 结构固定为 Row[左栏（宽度动画）] + Column[内容 + 可选底栏]：
-    // 无论当前是否有功能域菜单，PageHost（也就是 NavDisplay）在组合树里的位置都不变，
-    // 否则从一级页面进入多页功能域时，整棵子树被重建 → 转场动画直接不播（只剩硬切）。
-    // 整块底色给 surface：菜单让出空间时背后露出来的也是页面底色，不是窗口底色（浅色下是纯白）。
-    Row(
+    // 内容区宽度上限：左栏完全展开时也要压不到内容（左栏是覆盖在内容之上的）。
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MiuixTheme.colorScheme.surface)
     ) {
-        if (railWidth > 0.dp) {
-            Box(
+        val contentMaxWidth = maxOf(
+            320.dp,
+            minOf(CONTENT_MAX_WIDTH, maxWidth - RAIL_WIDTH - 16.dp),
+        )
+        CompositionLocalProvider(LocalContentMaxWidth provides contentMaxWidth) {
+            // 内容：树位置固定（Box → Column → Box），从一级页面进入多页功能域时
+            // PageHost / NavDisplay 不会被重建，转场动画才播得出来。
+            //
+            // 让位用 graphicsLayer 平移 + 半宽（等价于「左栏占掉左侧 RAIL_WIDTH」时内容居中位置），
+            // **不能**改内容宽度：改宽度会让内容（含顶栏模糊 backdrop 那一整层）每帧重新测量/重录，
+            // 实测进入「键盘外观」时卡顿就是它 —— 平移只动图层，不触发重新测量。
+            Column(
                 modifier = Modifier
-                    .width(railWidth)
-                    .fillMaxHeight()
-                    .clipToBounds()
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = railWidth.toPx() / 2f },
             ) {
-                // requiredWidth：菜单本体始终按展开宽度排版，由外层容器裁切 ——
-                // 这样出现时是「从左边推出来」，而不是被压扁。
-                NavigationRail(
-                    state = railState,
-                    modifier = Modifier
-                        .requiredWidth(RAIL_WIDTH)
-                        .fillMaxHeight(),
+                Box(modifier = Modifier.weight(1f)) {
+                    PageHost(
+                        uiState = uiState,
+                        backStack = backStack,
+                        current = current,
+                        gapMaxLand = gapMaxLand,
+                        gapMaxPort = gapMaxPort,
+                        padding = padding,
+                        clipContent = false,
+                        onBack = { pop() },
+                        onPush = { push(it) },
+                    )
+                }
+                // 窄屏用底部菜单，从底部滑入 / 滑出
+                AnimatedVisibility(
+                    visible = showScopeNav && !useRail,
+                    enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(180)),
+                    exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(140)),
                 ) {
-                    railPages.forEach { page ->
-                        NavigationRailItem(
-                            selected = current == page,
-                            onClick = { openSibling(page) },
-                            icon = page.icon(),
-                            label = page.title(),
-                        )
+                    NavigationBar {
+                        pages.forEach { page ->
+                            NavigationBarItem(
+                                selected = current == page,
+                                onClick = { openSibling(page) },
+                                icon = page.icon(),
+                                label = page.title(),
+                            )
+                        }
                     }
                 }
             }
-        }
-        Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f)) {
-                PageHost(
-                    uiState = uiState,
-                    backStack = backStack,
-                    current = current,
-                    gapMaxLand = gapMaxLand,
-                    gapMaxPort = gapMaxPort,
-                    padding = padding,
-                    clipContent = railVisible,
-                    onBack = { pop() },
-                    onPush = { push(it) },
-                )
-            }
-            // 窄屏用底部菜单，从底部滑入 / 滑出
-            AnimatedVisibility(
-                visible = showScopeNav && !useRail,
-                enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(180)),
-                exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(140)),
-            ) {
-                NavigationBar {
-                    pages.forEach { page ->
-                        NavigationBarItem(
-                            selected = current == page,
-                            onClick = { openSibling(page) },
-                            icon = page.icon(),
-                            label = page.title(),
-                        )
+
+            // 左栏：覆盖在内容之上的独立图层（不参与布局），宽度 0 ↔ RAIL_WIDTH 动画 ——
+            // 出现是「从左边推出来」，收起是「缩回左边」。
+            // 容器按动画宽度裁切，菜单本体用 requiredWidth 固定按展开宽度排版，避免被压扁。
+            // 容器宽度要算上 Miuix 自带的那条 0.75dp 右侧分隔线，否则线会被裁掉（实测看不见）。
+            if (railWidth > 0.dp) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .width(railWidth)
+                        .fillMaxHeight()
+                        .clipToBounds()
+                ) {
+                    NavigationRail(
+                        state = railState,
+                        modifier = Modifier
+                            .requiredWidth(RAIL_WIDTH)
+                            .fillMaxHeight(),
+                    ) {
+                        railPages.forEach { page ->
+                            NavigationRailItem(
+                                selected = current == page,
+                                onClick = { openSibling(page) },
+                                icon = page.icon(),
+                                label = page.title(),
+                            )
+                        }
                     }
                 }
             }
@@ -382,7 +402,11 @@ private fun PageHost(
                         }
                     },
                     actions = {
-                        DropdownActionMenu { showRestartDialog = true }
+                        // 「重启小爱输入法」只跟输入法域有关：只在键盘外观的页面里出现，
+                        // 功能列表 / 光标 / 平行窗口 / 关于都不显示它。
+                        if (current.scope() == AppScope.Ime) {
+                            DropdownActionMenu { showRestartDialog = true }
+                        }
                     },
                 )
             }
@@ -559,8 +583,11 @@ private fun NavKey.subtitle(): String = when (this) {
 /** 平板布局断点：横屏平板走左侧栏；竖屏平板 / 手机走底部菜单。 */
 private const val RAIL_BREAKPOINT_DP = 840
 
-/** 展开态左栏宽度（与 Miuix NavigationRailDefaults.ExpandedWidth 一致，动画按它换算）。 */
-private val RAIL_WIDTH = NavigationRailDefaults.ExpandedWidth
+/**
+ * 展开态左栏**总**宽 = Miuix 的展开宽度 + 它自带的那条右侧分隔线。
+ * 少算这 0.75dp 就会让分隔线落在裁切范围之外，界面上那条竖细线就看不见了。
+ */
+private val RAIL_WIDTH = NavigationRailDefaults.ExpandedWidth + DividerDefaults.Thickness
 
 /** 物理屏幕尺寸（最大窗口边界）。取不到返回 null，由调用方退回 displayMetrics。 */
 private data class ScreenSize(val width: Int, val height: Int, val density: Float)
