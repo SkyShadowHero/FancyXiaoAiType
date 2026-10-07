@@ -423,4 +423,14 @@ object PrefKeys {
 
     /** Miuix Body2 = 14.sp（miuix-ui theme/TextStyles.kt） */
     const val TOOLBAR_TEXT_DEFAULT = 14f
+
+    // ==================================================================
+    // FancyPad：右键改长按
+    //
+    // 在**应用进程**里生效（拦 View.performButtonActionOnTouchDown），
+    // 所以目标应用必须加进模块作用域；scope.list 只是推荐列表。
+    // ==================================================================
+
+    /** 把鼠标右键换成系统长按（选词 + 选择工具栏），不再弹原生上下文菜单 */
+    const val RIGHTCLICK_AS_LONGPRESS = "rightclick_as_longpress"
 }

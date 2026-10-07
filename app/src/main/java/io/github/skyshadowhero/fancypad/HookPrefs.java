@@ -41,6 +41,7 @@ public final class HookPrefs {
     private static volatile boolean toolbarEnabled = false;
     private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
     private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
+    private static volatile boolean rightClickAsLongPress = false;
 
     private HookPrefs() {}
 
@@ -98,6 +99,10 @@ public final class HookPrefs {
             toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
         } catch (Throwable ignored) {
         }
+        try {
+            rightClickAsLongPress = p.getBoolean(PrefKeys.RIGHTCLICK_AS_LONGPRESS, false);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -132,5 +137,11 @@ public final class HookPrefs {
 
     public static float toolbarTextSp() {
         return toolbarTextSp;
+    }
+
+    // ---- 右键改长按（应用进程侧） ----
+
+    public static boolean rightClickAsLongPress() {
+        return rightClickAsLongPress;
     }
 }

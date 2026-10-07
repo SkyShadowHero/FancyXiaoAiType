@@ -106,6 +106,9 @@ class AppUiState {
     var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
     var toolbarTextSp by mutableStateOf(PrefKeys.TOOLBAR_TEXT_DEFAULT)
 
+    // ---- 右键改长按（作用域 = 目标应用自己）----
+    var rightClickAsLongPress by mutableStateOf(false)
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -363,4 +366,9 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.toolbarTextSp = p.runCatching {
         getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT)
     }.getOrDefault(PrefKeys.TOOLBAR_TEXT_DEFAULT)
+
+    // ---- 右键改长按（默认关闭）----
+    uiState.rightClickAsLongPress = p.runCatching {
+        getBoolean(PrefKeys.RIGHTCLICK_AS_LONGPRESS, false)
+    }.getOrDefault(false)
 }

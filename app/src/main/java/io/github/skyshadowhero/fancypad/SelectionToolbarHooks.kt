@@ -6,6 +6,7 @@ import android.animation.AnimatorSet
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
@@ -18,6 +19,7 @@ import io.github.libxposed.api.XposedInterface
 import java.lang.reflect.Field
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * FancyPad · 文本选择菜单（右键 / 长按文字弹出的浮动工具栏）改造成 Miuix 观感。
@@ -75,6 +77,9 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
             "com.android.systemui.selectiontoolbar.app.ui.RemoteSelectionToolbar"
         const val CLS_SHOW_INFO = "android.view.selectiontoolbar.ShowInfo"
 
+        /** 诊断用的偏好组（不参与功能，只用来把现场数据带出 SystemUI 进程） */
+        const val DIAG_GROUP = "fancypad_diag"
+
         // ---- Miuix 设计 token（值见类注释里的出处表）----
         // 注意：这些不能用 const val —— Kotlin 的常量表达式不接受 .toInt() 转换与
         // Java 常量（Color.BLACK），会在编译期报 "should be a constant value"。
@@ -112,6 +117,12 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
     private val hideWired: MutableSet<Any> =
         Collections.newSetFromMap(WeakHashMap<Any, Boolean>())
 
+    /** 诊断落点：模块自己的 RemotePreferences 组（本机 logcat 被关掉了，用偏好把现场带出来） */
+    private val diagPrefs by lazy {
+        runCatching { module.getRemotePreferences(DIAG_GROUP) }.getOrNull()
+    }
+    private val diagCount = AtomicInteger()
+
     /** 由 [XposedEntry] 在 com.android.systemui 进程里调用。可重复调用。 */
     fun install(classLoader: ClassLoader) {
         if (installed) return
@@ -146,23 +157,44 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
     /** 每次显示都过一遍：圆角 / 底色 / 文字 / 入场动画。全程不抛。 */
     private fun restyle(self: Any?) {
         if (self == null) return
+        val container = field(self, "contentContainer") as? ViewGroup
+        val holder = field(self, "contentHolder") as? View
+
+        // 诊断放在开关判定之前：即使开关没开也要能确认 hook 到底有没有命中
+        // —— WebView / Via 那两个反例究竟走不走 SystemUI 这条路径，全靠这条。
+        diag(
+            "self=${self.javaClass.simpleName} enabled=${HookPrefs.toolbarEnabled()} " +
+                "container=[${container?.let { describe(it) } ?: "-"}] " +
+                "holder=[${holder?.let { describe(it) } ?: "-"}]"
+        )
         if (!HookPrefs.toolbarEnabled()) return
 
         val ctx = field(self, "context") as? Context ?: return
-        val container = field(self, "contentContainer") as? ViewGroup ?: return
+        if (container == null) return
         val dark = isNight(ctx)
 
-        // 1) 容器：Miuix 弹出层 = 16dp 圆角 + surfaceContainer 底色。
+        // 1) 底色挂在哪一层：本地版画在内容容器上，远程版可能画在承载 surface 的
+        //    contentHolder 上。按现场「谁本来就有不透明底色」选层，并把**另一层的
+        //    原底色清掉** —— 只改一层、另一层照旧的话，原版的小圆角会从新底色
+        //    边缘露出来（外面一圈小圆角 + 里面一块新底色）。
+        val surface = when {
+            isOpaque(container) -> container
+            holder != null && isOpaque(holder) -> holder
+            else -> container
+        }
+        if (surface !== container && isOpaque(container)) container.background = null
+        if (holder != null && surface !== holder && isOpaque(holder)) holder.background = null
+
         //    clipToOutline 让子视图（菜单项的按压反馈）也被圆角裁掉，
         //    否则方角的高亮会溢出到圆角外面。
-        container.background = roundedRect(
+        surface.background = roundedRect(
             dp(ctx, HookPrefs.toolbarCornerDp()),
             if (dark) MIUIX_SURFACE_CONTAINER_DARK else MIUIX_SURFACE_CONTAINER_LIGHT,
         )
-        container.clipToOutline = true
+        surface.clipToOutline = true
 
-        // 2) 溢出面板（ListView）自带一层不透明底色，会方方正正地盖住容器的圆角，
-        //    清掉让容器底色透出来。
+        // 2) 溢出面板（ListView）自带一层不透明底色，会方方正正地盖住圆角，
+        //    清掉让 surface 底色透出来。
         (field(self, "overflowPanel") as? View)?.background = null
 
         // 3) 文字：Miuix Body2 字号 + onSurfaceContainer 颜色 + 系统默认字体。
@@ -175,20 +207,48 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
         // 4) 入场动画：叠加缩放（系统自带的只有 alpha）。
         animateEnter(self, container)
 
-        // 首测用的诊断：确认可见的那层底色确实在 contentContainer 上
-        // （若是 contentHolder 承载底色，这里能一眼看出来，不用靠猜）。
-        L.sampled("rst_restyled", limit = 4) {
-            "event=selection_toolbar_restyled dark=$dark " +
+        diag(
+            "restyled surface=${surface.javaClass.simpleName} dark=$dark " +
                 "corner=${HookPrefs.toolbarCornerDp()} textSp=${HookPrefs.toolbarTextSp()} " +
-                "container=[${describe(container)}] " +
-                "holder=[${(field(self, "contentHolder") as? View)?.let { describe(it) } ?: "-"}]"
-        }
+                "container=[${describe(container)}] holder=[${holder?.let { describe(it) } ?: "-"}]"
+        )
     }
 
-    /** 诊断用：尺寸 + 当前底色是哪个 Drawable */
-    private fun describe(v: View): String =
-        "${v.javaClass.simpleName} ${v.width}x${v.height} " +
-            "bg=${v.background?.javaClass?.simpleName ?: "none"}"
+    /** 诊断用：尺寸 + 当前底色的 Drawable 类型与不透明度（op=-1 表示不透明） */
+    private fun describe(v: View): String {
+        val bg = v.background
+        return "${v.javaClass.simpleName} ${v.width}x${v.height} " +
+            "bg=${bg?.javaClass?.simpleName ?: "none"}/op=${bg?.opacity ?: "-"}"
+    }
+
+    /** 这一层当前是否由不透明底色承载（= 它才是肉眼看到的那层表面） */
+    private fun isOpaque(v: View): Boolean =
+        v.background?.let { runCatching { it.opacity == PixelFormat.OPAQUE }.getOrDefault(false) }
+            ?: false
+
+    /**
+     * 把现场数据写进模块自己的 RemotePreferences 组。
+     *
+     * 为什么不用 logcat：本机用户出于省电与隐私把日志关了（`log -t` 探针写进去也读不到），
+     * 所以 logcat 在这台设备上不作为诊断通道。偏好走的是 binder，与 logd 无关。
+     * 读法：
+     * ```
+     * su -c 'cat /data/data/io.github.skyshadowhero.fancypad/shared_prefs/fancypad_diag.xml'
+     * ```
+     * 只记前几条，避免反复刷偏好。
+     */
+    private fun diag(msg: String) {
+        val n = diagCount.incrementAndGet()
+        if (n > 6) return
+        runCatching {
+            val p = diagPrefs ?: return
+            val e = p.edit()
+            if (n == 1) e.putString("first", msg)
+            e.putString("last", msg)
+            e.putInt("count", n)
+            e.apply()
+        }
+    }
 
     /** 递归把文字换成 Miuix 观感。溢出按钮是 ImageButton，不受影响。 */
     private fun styleText(root: View, color: Int, sizeSp: Float) {
