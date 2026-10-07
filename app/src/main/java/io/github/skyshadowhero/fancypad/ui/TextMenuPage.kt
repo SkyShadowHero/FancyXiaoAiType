@@ -15,27 +15,19 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /**
- * 「文本选择菜单」页：右键 / 长按文字弹出的那个菜单。两块功能各自独立。
+ * 「文本选择菜单」页：长按 / 选中文字后的选择工具栏。
  *
- * ## 1. Miuix 外观（作用域 `com.android.systemui`）
+ * 它由 SystemUI 的 `RemoteSelectionToolbar` 渲染 —— framework 里
+ * `Flags.systemSelectionToolbarEnabled()` 在本机是硬编码 `return true`，应用进程只负责把
+ * 菜单项与锚点快照发过去，所以这一域的作用域是 `com.android.systemui`，
+ * **不需要把模块注入到各个应用**。
  *
- * 长按文字走的是选择 ActionMode，它的工具栏由 SystemUI 的 `RemoteSelectionToolbar` 渲染
- * （framework 里 `system_selection_toolbar_enabled` 硬编码为 true，应用进程只负责把菜单项
- * 和锚点快照发过去）。原样式是小圆角 + MD 配色 + 只有 150ms 纯 alpha 淡入；打开后换成
- * Miuix 的 token：弹出层圆角 16dp、底色 `surfaceContainer`、文字 `onSurfaceContainer` +
- * `Body2` 14sp，并补上缩放入场。
+ * 原样式是小圆角 + MD 配色 + 只有 150ms 纯 alpha 淡入；打开后换成 Miuix 的 token：
+ * 弹出层圆角 16dp、底色 `surfaceContainer`（浅色纯白 / 深色 `#242424`）、
+ * 文字 `onSurfaceContainer` + `Body2` 14sp，并补上缩放入场。
  *
- * ## 2. 右键改为长按（作用域 = 目标应用自己）
- *
- * 右键和长按在本机是两条实现：右键走 `View.performButtonActionOnTouchDown()` →
- * `showContextMenu()`，弹的是框架的上下文菜单，在**应用进程**里按各自主题画；
- * 长按走选择 ActionMode，落在 SystemUI 上、样式统一。
- *
- * 打开这一项后，右键会在原地合成一次触摸长按，直接复用系统 / Chromium / MIUI 自己的长按
- * 逻辑（反正上面那一项已经把长按菜单换成 Miuix 观感了）。
- *
- * ⚠ 它跑在应用进程里，所以**目标应用必须先加入模块作用域**（LSPosed → 模块 → 作用域，
- * 逐个勾选；`scope.list` 只是推荐列表，不会自动生效），再重启该应用。
+ * ⚠ 改完即时生效（Hook 侧读的是偏好缓存快照，一变就刷新）；
+ * **模块本身的升级 / 作用域变更仍需要重启一次平板**。
  */
 @Composable
 fun TextMenuPage(
@@ -98,22 +90,6 @@ fun TextMenuPage(
                         )
                     }
                 }
-            }
-        }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.rightClickAsLongPress,
-                    onCheckedChange = { checked ->
-                        uiState.rightClickAsLongPress = checked
-                        uiState.save { e ->
-                            e.putBoolean(PrefKeys.RIGHTCLICK_AS_LONGPRESS, checked)
-                        }
-                    },
-                    title = "右键改为长按",
-                    summary = "右键文字时走系统长按（选词 + 选择工具栏），不再弹原生上下文菜单；" +
-                        "需在 LSPosed 里把目标应用加进作用域并重启该应用",
-                )
             }
         }
     }

@@ -46,12 +46,6 @@ class XposedEntry : XposedModule() {
     /** 文本选择菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
     private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
 
-    /**
-     * 右键改长按：跑在**目标应用进程**里（不在 SystemUI）。
-     * 只有把应用加进模块作用域，[onPackageReady] 才会为那个应用触发。
-     */
-    private val rightClickHooks by lazy { RightClickHooks(this) }
-
     @Volatile
     private var processName: String? = null
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
@@ -89,14 +83,6 @@ class XposedEntry : XposedModule() {
                 HookPrefs.bind(this)
                 embeddingHooks.install(param.classLoader)
                 selectionToolbarHooks.install(param.classLoader)
-            }
-
-            else -> {
-                // 普通应用：右键改长按这类「应用进程内」的功能在这里装。
-                // 没被加进作用域的应用不会走到这个分支，也就完全不受影响。
-                L.i("event=package_ready package=${param.packageName} process=$processName")
-                HookPrefs.bind(this)
-                rightClickHooks.install(param.classLoader)
             }
         }
     }
