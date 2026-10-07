@@ -43,6 +43,9 @@ class XposedEntry : XposedModule() {
     /** 平行窗口域（com.android.systemui）。 */
     private val embeddingHooks by lazy { EmbeddingHooks(this) }
 
+    /** 文本选择菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
+    private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
+
     @Volatile
     private var processName: String? = null
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
@@ -79,6 +82,7 @@ class XposedEntry : XposedModule() {
                 L.i("event=package_ready package=${param.packageName} process=$processName")
                 HookPrefs.bind(this)
                 embeddingHooks.install(param.classLoader)
+                selectionToolbarHooks.install(param.classLoader)
             }
         }
     }

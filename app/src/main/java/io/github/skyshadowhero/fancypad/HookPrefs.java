@@ -38,6 +38,9 @@ public final class HookPrefs {
     private static volatile boolean folmeDisabled = true;
     private static volatile boolean mergeDisabled = true;
     private static volatile boolean jumpCutDisabled = true;
+    private static volatile boolean toolbarEnabled = false;
+    private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
+    private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
 
     private HookPrefs() {}
 
@@ -83,6 +86,18 @@ public final class HookPrefs {
             jumpCutDisabled = p.getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true);
         } catch (Throwable ignored) {
         }
+        try {
+            toolbarEnabled = p.getBoolean(PrefKeys.TOOLBAR_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            toolbarCornerDp = p.getFloat(PrefKeys.TOOLBAR_CORNER_DP, PrefKeys.TOOLBAR_CORNER_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -103,5 +118,19 @@ public final class HookPrefs {
 
     public static boolean jumpCutDisabled() {
         return jumpCutDisabled;
+    }
+
+    // ---- 文本选择菜单（SystemUI 侧） ----
+
+    public static boolean toolbarEnabled() {
+        return toolbarEnabled;
+    }
+
+    public static float toolbarCornerDp() {
+        return toolbarCornerDp;
+    }
+
+    public static float toolbarTextSp() {
+        return toolbarTextSp;
     }
 }

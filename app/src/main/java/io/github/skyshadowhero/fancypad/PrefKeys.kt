@@ -391,4 +391,36 @@ object PrefKeys {
 
     /** 禁止跳切（跳切等于这次转场不播动画） */
     const val EMBEDDING_JUMPCUT_DISABLE = "embedding_jumpcut_disable"
+
+    // ==================================================================
+    // FancyPad：文本选择菜单（右键 / 长按文字弹出的浮动工具栏）
+    //
+    // 作用域 com.android.systemui，Hook 侧 SelectionToolbarHooks 读取。
+    // 系统把这个工具栏交给 SystemUI 渲染 —— framework 里
+    // Flags.systemSelectionToolbarEnabled() 在本机是硬编码 return true，
+    // 应用进程只跑 RemoteFloatingToolbarPopup（发菜单项 + 锚点快照），
+    // 真正画出来的是 SystemUI 的 RemoteSelectionToolbar。
+    // 所以这里不需要把模块注入到每个应用进程。
+    // ==================================================================
+
+    /** 文本选择菜单改用 Miuix 外观（总开关，默认关闭） */
+    const val TOOLBAR_ENABLED = "toolbar_enabled"
+
+    /** 弹出层圆角（dp） */
+    const val TOOLBAR_CORNER_DP = "toolbar_corner_dp"
+
+    /** 文字大小（sp） */
+    const val TOOLBAR_TEXT_SP = "toolbar_text_sp"
+
+    const val TOOLBAR_CORNER_MIN = 0f
+    const val TOOLBAR_CORNER_MAX = 32f
+
+    /** Miuix 弹出层圆角：miuix-ui basic/ListPopup.kt 的 cornerRadius = 16.dp */
+    const val TOOLBAR_CORNER_DEFAULT = 16f
+
+    const val TOOLBAR_TEXT_MIN = 10f
+    const val TOOLBAR_TEXT_MAX = 22f
+
+    /** Miuix Body2 = 14.sp（miuix-ui theme/TextStyles.kt） */
+    const val TOOLBAR_TEXT_DEFAULT = 14f
 }

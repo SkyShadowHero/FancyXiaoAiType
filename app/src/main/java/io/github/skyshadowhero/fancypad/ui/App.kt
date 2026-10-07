@@ -101,6 +101,11 @@ class AppUiState {
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
 
+    // ---- 文本选择菜单（作用域 com.android.systemui）----
+    var toolbarEnabled by mutableStateOf(false)
+    var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
+    var toolbarTextSp by mutableStateOf(PrefKeys.TOOLBAR_TEXT_DEFAULT)
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -348,4 +353,14 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.embeddingJumpCutDisable = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true)
     }.getOrDefault(true)
+
+    // ---- 文本选择菜单（默认关闭）----
+    uiState.toolbarEnabled = p.runCatching { getBoolean(PrefKeys.TOOLBAR_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.toolbarCornerDp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_CORNER_DP, PrefKeys.TOOLBAR_CORNER_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_CORNER_DEFAULT)
+    uiState.toolbarTextSp = p.runCatching {
+        getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT)
+    }.getOrDefault(PrefKeys.TOOLBAR_TEXT_DEFAULT)
 }

@@ -552,6 +552,15 @@ private fun PageHost(
                             )
                         }
                     }
+                    entry<RouteTextMenu> {
+                        PageSurface {
+                            TextMenuPage(
+                                uiState = uiState,
+                                padding = padding,
+                                scaffoldPadding = contentPadding,
+                            )
+                        }
+                    }
                     entry<RouteAbout> {
                         PageSurface {
                             AboutPage(

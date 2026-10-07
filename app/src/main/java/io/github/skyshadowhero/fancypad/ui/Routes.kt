@@ -8,6 +8,7 @@ import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
+import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import androidx.compose.ui.unit.LayoutDirection
@@ -45,6 +46,8 @@ data object RouteCursorColors : NavKey
 
 data object RouteParallel : NavKey
 
+data object RouteTextMenu : NavKey
+
 data object RouteAbout : NavKey
 
 /**
@@ -78,6 +81,12 @@ enum class AppScope(
         pages = listOf(RouteParallel),
         icon = MiuixIcons.HorizontalSplit,
     ),
+    TextMenu(
+        label = "文本选择菜单",
+        pkg = "com.android.systemui",
+        pages = listOf(RouteTextMenu),
+        icon = MiuixIcons.SelectAll,
+    ),
 }
 
 /** 路由 → 顶栏标题 */
@@ -91,6 +100,7 @@ fun NavKey.title(): String = when (this) {
     RouteCursorImport -> "导入"
     RouteCursorColors -> "颜色设置"
     RouteParallel -> "平行窗口"
+    RouteTextMenu -> "文本选择菜单"
     RouteAbout -> "关于"
     else -> ""
 }
@@ -104,6 +114,7 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteCursorSize -> MiuixIcons.Tune
     RouteCursorImport -> MiuixIcons.Import
     RouteParallel -> MiuixIcons.HorizontalSplit
+    RouteTextMenu -> MiuixIcons.SelectAll
     RouteAbout -> MiuixIcons.Info
     else -> MiuixIcons.Info
 }
