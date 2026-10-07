@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 动画光标：框架 loadResource 会把 AnimationDrawable 变成多帧 PointerIcon -->
+<pointer-icon xmlns:android="http://schemas.android.com/apk/res/android"
+    android:bitmap="@drawable/cursor_wait_frames"
+    android:hotSpotX="12dp"
+    android:hotSpotY="12dp" />

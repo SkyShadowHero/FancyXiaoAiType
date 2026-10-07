@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 与 miuix example/android 的 Theme.Miuix 保持一致：无 ActionBar 的 Material 主题 -->
+<!-- 与 miuix example/android 的 Theme.Miuix 保持一致：无 ActionBar 的 Material 主题。
+     补 windowBackground：Compose 首帧之前 / 二级页转场时不至于露黑底。 -->
 <resources>
-    <style name="Theme.Miuix" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Miuix" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
+    </style>
 </resources>

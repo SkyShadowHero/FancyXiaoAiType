@@ -21,19 +21,20 @@ val signKeyPassword = keystoreProps.getProperty("keyPassword")
     ?: (findProperty("ANDROID_SIGNING_KEY_PASSWORD") as String?)
 
 android {
-    namespace = "com.skyler.fancytype"
+    namespace = "io.github.skyshadowhero.fancypad"
     // Miuix 0.9.4 / Compose 1.12 要求 compileSdk 37；
     // 本机 SDK 为次版本号式平台 android-37.0，故需同时指定 compileSdkMinor。
     compileSdk = 37
     compileSdkMinor = 0
 
     defaultConfig {
-        applicationId = "com.skyler.fancytype"
+        applicationId = "io.github.skyshadowhero.fancypad"
         minSdk = 35
         targetSdk = 37
         // versionCode 用 major*10000 + minor*100 + patch，便于后续按语义递增
-        versionCode = 10303
-        versionName = "1.3.3"
+        // FancyPad 是三个模块合并后的新应用（新包名），从 1.0.0 起算
+        versionCode = 10000
+        versionName = "1.0.0"
     }
 
     signingConfigs {
@@ -86,6 +87,7 @@ kotlin {
 dependencies {
     // 由 LSPosed 框架在运行时提供，绝不能打包进 APK
     compileOnly("io.github.libxposed:api:102.0.0")
+    compileOnly("androidx.annotation:annotation:1.9.1")
 
     // 模块 App 与 Hook 进程通信（RemotePreferences），需要打包
     implementation("io.github.libxposed:service:102.0.0")
@@ -99,10 +101,16 @@ dependencies {
 
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.compose.ui:ui")
+    // 动画 api 传递依赖不保证，显式声明（光标页的颜色展开动画用到）
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
+
+    // 光标页导入 SVG 素材时在 App 内栅格化（Android 本身不认 SVG）
+    implementation("com.caverock:androidsvg-aar:1.4")
 
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
 }

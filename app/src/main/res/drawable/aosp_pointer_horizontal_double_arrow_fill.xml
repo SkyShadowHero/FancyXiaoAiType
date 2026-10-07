@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AOSP 官方 pointer_horizontal_double_arrow（fill 层，代码 tint） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportHeight="24"
+    android:viewportWidth="24">
+<path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19.465 11.052 16.4 9.294a1.065 1.065 0 0 0-1.596.922v.843H9.195v-.843c0-.818-.886-1.33-1.596-.922l-3.065 1.758a1.063 1.063 0 0 0 0 1.845l3.065 1.758a1.065 1.065 0 0 0 1.596-.922v-.791h5.609v.791c0 .818.886 1.33 1.596.922l3.065-1.758a1.063 1.063 0 0 0 0-1.845" />
+</vector>

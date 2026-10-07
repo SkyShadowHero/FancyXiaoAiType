@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animation-list xmlns:android="http://schemas.android.com/apk/res/android" android:oneshot="false">
+    <item android:drawable="@drawable/wait_f01" android:duration="60" />
+    <item android:drawable="@drawable/wait_f02" android:duration="60" />
+    <item android:drawable="@drawable/wait_f03" android:duration="60" />
+    <item android:drawable="@drawable/wait_f04" android:duration="60" />
+    <item android:drawable="@drawable/wait_f05" android:duration="60" />
+    <item android:drawable="@drawable/wait_f06" android:duration="60" />
+    <item android:drawable="@drawable/wait_f07" android:duration="60" />
+    <item android:drawable="@drawable/wait_f08" android:duration="60" />
+    <item android:drawable="@drawable/wait_f09" android:duration="60" />
+    <item android:drawable="@drawable/wait_f10" android:duration="60" />
+    <item android:drawable="@drawable/wait_f11" android:duration="60" />
+    <item android:drawable="@drawable/wait_f12" android:duration="60" />
+    <item android:drawable="@drawable/wait_f13" android:duration="60" />
+    <item android:drawable="@drawable/wait_f14" android:duration="60" />
+    <item android:drawable="@drawable/wait_f15" android:duration="60" />
+    <item android:drawable="@drawable/wait_f16" android:duration="60" />
+    <item android:drawable="@drawable/wait_f17" android:duration="60" />
+    <item android:drawable="@drawable/wait_f18" android:duration="60" />
+    <item android:drawable="@drawable/wait_f19" android:duration="60" />
+    <item android:drawable="@drawable/wait_f20" android:duration="60" />
+    <item android:drawable="@drawable/wait_f21" android:duration="60" />
+    <item android:drawable="@drawable/wait_f22" android:duration="60" />
+    <item android:drawable="@drawable/wait_f23" android:duration="60" />
+    <item android:drawable="@drawable/wait_f24" android:duration="60" />
+</animation-list>

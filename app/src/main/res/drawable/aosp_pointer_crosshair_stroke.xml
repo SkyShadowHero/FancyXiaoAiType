@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AOSP 官方 pointer_crosshair（stroke 层，代码 tint） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportHeight="24"
+    android:viewportWidth="24">
+<path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19.25 10.25h-5.5v-5.5a1.75 1.75 0 0 0-3.5 0v5.5h-5.5a1.75 1.75 0 0 0 0 3.5h5.5v5.5a1.75 1.75 0 0 0 3.5 0v-5.5h5.5a1.75 1.75 0 0 0 0-3.5m0 2.5h-6.5v6.5a.75.75 0 0 1-1.5 0v-6.5h-6.5a.75.75 0 0 1 0-1.5h6.5v-6.5a.75.75 0 0 1 1.5 0v6.5h6.5a.75.75 0 0 1 0 1.5" />
+</vector>

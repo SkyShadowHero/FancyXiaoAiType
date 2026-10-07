@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FancyType</string>
-    <string name="module_description">超级小爱输入法的外观增强：分离键盘宽度、按键圆角与间距、竖屏回落普通键盘、毛玻璃键盘背景（超级材质）。</string>
+    <string name="app_name">FancyPad</string>
+    <string name="module_description">平板体验整合模块：超级小爱输入法外观增强 + 系统光标主题接管 + 平行窗口动画恢复 AOSP。作用域：com.xiaomi.type / system / com.android.systemui。</string>
 </resources>

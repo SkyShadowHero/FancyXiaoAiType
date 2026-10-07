@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- material-cursors（light 变体）箭头描边层：颜色由代码 tint 成「描边色」（默认 #010101） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:pathData="M 3.0133852,1.0014 A 1.9671938,2.0013911 0 0 0 0.99999817,3.0013 V 15.9989 A 1.9671938,2.0013911 0 0 0 3.9505497,17.7328 L 15.015364,11.234 a 1.9671938,2.0013911 0 0 0 0,-3.4677 L 3.9505497,1.2674 A 1.9671938,2.0013911 0 0 0 3.0133852,1.0014 Z" />
+</vector>
