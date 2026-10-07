@@ -82,7 +82,7 @@ enum class AppScope(
         icon = MiuixIcons.HorizontalSplit,
     ),
     TextMenu(
-        label = "文本选择菜单",
+        label = "长按菜单",
         pkg = "com.android.systemui",
         pages = listOf(RouteTextMenu),
         icon = MiuixIcons.SelectAll,
@@ -100,7 +100,7 @@ fun NavKey.title(): String = when (this) {
     RouteCursorImport -> "导入"
     RouteCursorColors -> "颜色设置"
     RouteParallel -> "平行窗口"
-    RouteTextMenu -> "文本选择菜单"
+    RouteTextMenu -> "长按菜单"
     RouteAbout -> "关于"
     else -> ""
 }

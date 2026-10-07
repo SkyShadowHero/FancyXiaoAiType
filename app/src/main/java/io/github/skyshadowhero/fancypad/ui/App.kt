@@ -101,15 +101,10 @@ class AppUiState {
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
 
-    // ---- 文本选择菜单（作用域 com.android.systemui）----
+    // ---- 长按菜单（作用域 com.android.systemui，由 SystemUI 绘制）----
     var toolbarEnabled by mutableStateOf(false)
     var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
     var toolbarTextSp by mutableStateOf(PrefKeys.TOOLBAR_TEXT_DEFAULT)
-
-    // ---- 右键上下文菜单（作用域 = 目标应用自己）----
-    var contextMenuEnabled by mutableStateOf(false)
-    var contextMenuCornerDp by mutableStateOf(PrefKeys.CONTEXTMENU_CORNER_DEFAULT)
-    var contextMenuTextSp by mutableStateOf(PrefKeys.CONTEXTMENU_TEXT_DEFAULT)
 
     /**
      * 是否已从远端把配置读进来。
@@ -368,14 +363,4 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.toolbarTextSp = p.runCatching {
         getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT)
     }.getOrDefault(PrefKeys.TOOLBAR_TEXT_DEFAULT)
-
-    // ---- 右键上下文菜单（默认关闭）----
-    uiState.contextMenuEnabled = p.runCatching { getBoolean(PrefKeys.CONTEXTMENU_ENABLED, false) }
-        .getOrDefault(false)
-    uiState.contextMenuCornerDp = p.runCatching {
-        getFloat(PrefKeys.CONTEXTMENU_CORNER_DP, PrefKeys.CONTEXTMENU_CORNER_DEFAULT)
-    }.getOrDefault(PrefKeys.CONTEXTMENU_CORNER_DEFAULT)
-    uiState.contextMenuTextSp = p.runCatching {
-        getFloat(PrefKeys.CONTEXTMENU_TEXT_SP, PrefKeys.CONTEXTMENU_TEXT_DEFAULT)
-    }.getOrDefault(PrefKeys.CONTEXTMENU_TEXT_DEFAULT)
 }

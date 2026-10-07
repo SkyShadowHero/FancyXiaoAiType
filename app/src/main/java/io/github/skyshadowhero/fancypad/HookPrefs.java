@@ -34,6 +34,16 @@ public final class HookPrefs {
 
     // ---- 快照（Hook 侧只读这些字段） ----
     private static volatile boolean cursorEnabled = false;
+    /**
+     * 摇晃放大（{@link CursorShake}）。
+     *
+     * <p>这几项是 system_server 里最热的一条读路径：鼠标事件可达每秒上千次，
+     * 判定循环里只读这些 volatile，绝不碰 SharedPreferences。
+     */
+    private static volatile boolean cursorShakeEnabled = false;
+    private static volatile float cursorShakeBoost = PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT / 100f;
+    private static volatile int cursorShakeReversals = PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT;
+    private static volatile long cursorShakeHoldMs = PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT;
     private static volatile boolean embeddingEnabled = false;
     private static volatile boolean folmeDisabled = true;
     private static volatile boolean mergeDisabled = true;
@@ -41,9 +51,6 @@ public final class HookPrefs {
     private static volatile boolean toolbarEnabled = false;
     private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
     private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
-    private static volatile boolean contextMenuEnabled = false;
-    private static volatile float contextMenuCornerDp = PrefKeys.CONTEXTMENU_CORNER_DEFAULT;
-    private static volatile float contextMenuTextSp = PrefKeys.CONTEXTMENU_TEXT_DEFAULT;
 
     private HookPrefs() {}
 
@@ -74,6 +81,25 @@ public final class HookPrefs {
         } catch (Throwable ignored) {
         }
         try {
+            cursorShakeEnabled = p.getBoolean(PrefKeys.CURSOR_SHAKE_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            cursorShakeBoost = p.getInt(
+                    PrefKeys.CURSOR_SHAKE_BOOST, PrefKeys.CURSOR_SHAKE_BOOST_DEFAULT) / 100f;
+        } catch (Throwable ignored) {
+        }
+        try {
+            cursorShakeReversals = p.getInt(
+                    PrefKeys.CURSOR_SHAKE_REVERSALS, PrefKeys.CURSOR_SHAKE_REVERSALS_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            cursorShakeHoldMs = p.getInt(
+                    PrefKeys.CURSOR_SHAKE_HOLD_MS, PrefKeys.CURSOR_SHAKE_HOLD_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
             embeddingEnabled = p.getBoolean(PrefKeys.EMBEDDING_ENABLED, false);
         } catch (Throwable ignored) {
         }
@@ -101,24 +127,31 @@ public final class HookPrefs {
             toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
         } catch (Throwable ignored) {
         }
-        try {
-            contextMenuEnabled = p.getBoolean(PrefKeys.CONTEXTMENU_ENABLED, false);
-        } catch (Throwable ignored) {
-        }
-        try {
-            contextMenuCornerDp = p.getFloat(
-                    PrefKeys.CONTEXTMENU_CORNER_DP, PrefKeys.CONTEXTMENU_CORNER_DEFAULT);
-        } catch (Throwable ignored) {
-        }
-        try {
-            contextMenuTextSp = p.getFloat(
-                    PrefKeys.CONTEXTMENU_TEXT_SP, PrefKeys.CONTEXTMENU_TEXT_DEFAULT);
-        } catch (Throwable ignored) {
-        }
     }
 
     public static boolean cursorEnabled() {
         return cursorEnabled;
+    }
+
+    // ---- 摇晃放大 ----
+
+    public static boolean cursorShakeEnabled() {
+        return cursorShakeEnabled;
+    }
+
+    /** 放大倍数（1.0 = 不放大）。*/
+    public static float cursorShakeBoost() {
+        return cursorShakeBoost;
+    }
+
+    /** 触发灵敏度：需要完成的换向次数。*/
+    public static int cursorShakeReversals() {
+        return cursorShakeReversals;
+    }
+
+    /** 放大后保持的时长（毫秒）。*/
+    public static long cursorShakeHoldMs() {
+        return cursorShakeHoldMs;
     }
 
     public static boolean embeddingEnabled() {
@@ -149,19 +182,5 @@ public final class HookPrefs {
 
     public static float toolbarTextSp() {
         return toolbarTextSp;
-    }
-
-    // ---- 右键上下文菜单（应用进程侧） ----
-
-    public static boolean contextMenuEnabled() {
-        return contextMenuEnabled;
-    }
-
-    public static float contextMenuCornerDp() {
-        return contextMenuCornerDp;
-    }
-
-    public static float contextMenuTextSp() {
-        return contextMenuTextSp;
     }
 }

@@ -372,6 +372,41 @@ object PrefKeys {
     const val CURSOR_SCALE_MAX = 3f
     const val CURSOR_SCALE_DEFAULT = 100
 
+    // ---- 摇晃放大（macOS「摇晃鼠标定位指针」） ----
+    //
+    // 判定与渲染都在 system_server 侧：
+    // CursorShake 挂 PointerEventDispatcher.onInputEvent 拿指针位置流做摇晃判定，
+    // 命中后把「放大系数」交给 CursorHooks，后者让已渲染图标失效并 native 重拉。
+    // 放大只在用户设定的 CURSOR_SCALE 之上乘一个临时系数，不改用户设置本身。
+
+    /** 摇晃放大总开关（默认关闭）。需同时开启 [CURSOR_ENABLED] 才有意义。 */
+    const val CURSOR_SHAKE_ENABLED = "cursor_shake_enabled"
+
+    /** 摇晃时的放大倍数（百分比，200 = 2 倍），乘在 [CURSOR_SCALE] 之上 */
+    const val CURSOR_SHAKE_BOOST = "cursor_shake_boost"
+
+    /**
+     * 触发灵敏度：需要完成的「换向」次数，越大越难触发。
+     *
+     * 一次换向 = 摆动方向反转一次（左→右 算一次），5 次换向 ≈ 来回摇 2.5 个周期。
+     */
+    const val CURSOR_SHAKE_REVERSALS = "cursor_shake_reversals"
+
+    /** 放大后保持的时长（毫秒）；期间继续摇晃会顺延，并继续往上加码 */
+    const val CURSOR_SHAKE_HOLD_MS = "cursor_shake_hold_ms"
+
+    const val CURSOR_SHAKE_BOOST_MIN = 1.2f
+    const val CURSOR_SHAKE_BOOST_MAX = 3f
+    const val CURSOR_SHAKE_BOOST_DEFAULT = 200
+
+    const val CURSOR_SHAKE_REVERSALS_MIN = 3
+    const val CURSOR_SHAKE_REVERSALS_MAX = 8
+    const val CURSOR_SHAKE_REVERSALS_DEFAULT = 5
+
+    const val CURSOR_SHAKE_HOLD_MIN = 400
+    const val CURSOR_SHAKE_HOLD_MAX = 3000
+    const val CURSOR_SHAKE_HOLD_DEFAULT = 1200
+
     // ==================================================================
     // FancyPad：平行窗口动画（原 os4平行窗口动画fix模块）
     //
@@ -423,28 +458,4 @@ object PrefKeys {
 
     /** Miuix Body2 = 14.sp（miuix-ui theme/TextStyles.kt） */
     const val TOOLBAR_TEXT_DEFAULT = 14f
-
-    // ==================================================================
-    // FancyPad：右键上下文菜单（多行列表）
-    //
-    // 这个菜单由**应用进程里的框架菜单类**画（ContextMenuBuilder →
-    // MenuPopupHelper → StandardMenuPopup → MenuPopupWindow extends
-    // ListPopupWindow），所以作用域是「目标应用自己」；scope.list 只是推荐列表。
-    // Hook 侧 ContextMenuHooks 读取。
-    // ==================================================================
-
-    /** 右键上下文菜单改用 Miuix 外观（总开关，默认关闭） */
-    const val CONTEXTMENU_ENABLED = "contextmenu_enabled"
-
-    /** 弹出层圆角（dp） */
-    const val CONTEXTMENU_CORNER_DP = "contextmenu_corner_dp"
-
-    /** 菜单文字大小（sp） */
-    const val CONTEXTMENU_TEXT_SP = "contextmenu_text_sp"
-
-    /** Miuix 弹出层圆角 16dp（原版 popup_background_material 只有 2dp） */
-    const val CONTEXTMENU_CORNER_DEFAULT = TOOLBAR_CORNER_DEFAULT
-
-    /** Miuix Body2 = 14.sp */
-    const val CONTEXTMENU_TEXT_DEFAULT = TOOLBAR_TEXT_DEFAULT
 }

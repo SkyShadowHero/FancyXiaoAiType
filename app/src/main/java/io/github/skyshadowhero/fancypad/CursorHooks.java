@@ -30,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import io.github.libxposed.api.XposedInterface;
@@ -51,13 +52,21 @@ import io.github.libxposed.api.XposedInterface;
  *       AOSP 预设用官方矢量拆出的「填充层 + 描边层」，颜色任选；GoogleDot 用 mask 两层染色；
  *       Material / MacOS / BreezeX 用各仓库原色图，缺图统一 AOSP 兜底；</li>
  *   <li>[system] 监听偏好变化 → 清光标缓存 + {@code mNative.reloadPointerIcons()}，即时换肤。</li>
+ *   <li>[system] 摇晃放大：{@link CursorShake} 观测指针位置流判定「摇晃」，这里把放大的
+ *       **目标倍数**一档档往上抬，再由动画线程逐帧逼近目标并重拉图标 —— 见本类的「摇晃放大」段。</li>
  * </ol>
  *
  * <p>总开关 {@code cursor_enabled}（UI：光标页顶部）为 false 时全部 hook 都走原逻辑，
  * 等于模块在这台设备上不接管光标。
  *
  * <p>偏好（Remote Preferences，组名见 {@link PrefKeys#GROUP}）：
- * preset 见 {@link CursorIcons}；scale 百分比（30~300）；fill_&lt;主题&gt; / stroke_&lt;主题&gt;。
+ * preset 见 {@link CursorIcons}；scale 百分比（30~300）；fill_&lt;主题&gt; / stroke_&lt;主题&gt;；
+ * 摇晃放大见 {@code cursor_shake_*}。
+ *
+ * <p><b>为什么摇晃放大不能用框架的缩放</b>：{@code PointerIconCache} 自带
+ * {@code setPointerScale(float)}，但那只影响 {@code PointerIcon.getLoadedSystemIcon()} 内部的
+ * 缩放；本模块已经接管了 {@code getLoadedPointerIcon()}、不调用 {@code chain.proceed()}，
+ * 框架那条链路根本不会执行。放大的唯一落点是本模块自己的 {@link #buildIcon(int)}。
  */
 public final class CursorHooks {
 
@@ -67,6 +76,9 @@ public final class CursorHooks {
 
     /** 由 XposedEntry 传入的模块实例：hook / 偏好 / Remote Files 都走它。 */
     private final XposedInterface module;
+
+    /** 摇晃放大：只读观测指针位置流，命中后回调 {@link #onShake()} / {@link #onShakeIdle()}。 */
+    private final CursorShake shake;
 
     // preset：0=AOSP 1=Material 2=Apple(MacOS) 3=GoogleDot 4=BreezeX 9=自定义(逐项选择) ≥10=导入的主题
     private static final int PRESET_AOSP = 0;
@@ -89,10 +101,23 @@ public final class CursorHooks {
     private static final boolean DEBUG_STATS = false;
     /** 渲染尺寸上限，避免 scale × density 组合出超大位图。 */
     private static final int MAX_ICON_SIZE = 320;
+    /**
+     * 渲染缩放的硬上限（用户设定 × 摇晃放大）。
+     *
+     * <p>用户设定本身最大 3 倍；持续摇晃会一档档往上加，这里兜住总缩放。
+     * 6 倍在 2.0 density 下是 24dp × 6 = 288px，仍在 {@link #MAX_ICON_SIZE} 之内；
+     * density 更高时会先被位图上限截断（热点按截断后的实际缩放算，不会跑偏）。
+     */
+    private static final float MAX_RENDERED_SCALE = 6.0f;
     /** 偏好变化的合并窗口：窗口内的连续变化只做一次 native 重载（拖滑块时很关键）。 */
     private static final long RELOAD_COALESCE_MS = 150L;
     private static final int MASK_CACHE_BYTES = 8 * 1024 * 1024;
     private static final int CUSTOM_CACHE_BYTES = 16 * 1024 * 1024;
+    /**
+     * 矢量超采样栅格缓存的容量。单张 320² × 4B ≈ 410KB，6MB 大约能放 15 个图层，
+     * 覆盖实际会同时用到的光标类型绰绰有余。
+     */
+    private static final int LAYER_CACHE_BYTES = 6 * 1024 * 1024;
 
     private volatile boolean systemHooksInstalled;
     private volatile Resources moduleResources;
@@ -135,6 +160,36 @@ public final class CursorHooks {
                     return value.getByteCount();
                 }
             };
+    /**
+     * 矢量层（AOSP 的填充层 / 描边层）的**超采样栅格缓存**：resId → 已按固定尺寸栅格化并染色的位图。
+     *
+     * <p>这是「摇晃放大动画卡顿」的根因所在：{@link #drawLayer} 原本每次都用
+     * {@code res.getDrawable()} 现场把矢量画进目标尺寸的画布 —— 每张图都要解析矢量 XML +
+     * 重新栅格化。放大动画每一帧都要把当时用到的光标图标全部重建，这一步的开销被放大十几倍，
+     * 直接把 system_server 拖住。
+     *
+     * <p>现在矢量只按固定超采样尺寸栅格化一次（带 tint），之后任何目标尺寸都退化成
+     * {@code drawBitmap} 缩放，比矢量栅格化快一到两个数量级；顺带让平时的换肤/拖动滑块也变便宜。
+     *
+     * <p>颜色被烘进位图，所以**换色必须清这个缓存** —— 见 {@link #refreshCursor()}。
+     */
+    private final LruCache<Integer, Bitmap> layerCache =
+            new LruCache<Integer, Bitmap>(LAYER_CACHE_BYTES) {
+                @Override
+                protected int sizeOf(Integer key, Bitmap value) {
+                    return value.getByteCount();
+                }
+            };
+    /** 画缓存层用的画笔：必须开 FILTER_BITMAP_FLAG，缩放才平滑。 */
+    private final Paint layerPaint = new Paint(
+            Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    /** {@link #layerRasterSize()} 的记忆值（0 = 还没算）。 */
+    private volatile int layerRasterSizePx;
+    /**
+     * material 的 wait 图标（24 帧动画）按「scale × 4」粒度缓存的小 LRU。
+     * 条目数按 8 个封顶：每个条目是一整套 24 帧位图，不按字节算也得有上限。
+     */
+    private final LruCache<Integer, Object> waitIconCache = new LruCache<Integer, Object>(8);
     /** 负缓存：Remote File 不存在的名字，避免每次都为 25 种类型反复走 binder 查询 */
     private final Set<String> missingRemote = ConcurrentHashMap.newKeySet();
     private static final AtomicLong BUILD_COUNT = new AtomicLong();
@@ -147,6 +202,177 @@ public final class CursorHooks {
 
     public CursorHooks(XposedInterface module) {
         this.module = module;
+        this.shake = new CursorShake(module, this);
+    }
+
+    // -------------------------------------------------------- 摇晃放大
+
+    /**
+     * 摇晃放大的「目标」系数：一次摇晃命中就抬一档，停手后回到 1.0。
+     *
+     * <p>1.0 = 不放大。由 {@link CursorShake} 的事件线程写，动画线程读。
+     */
+    private volatile float targetBoost = 1.0f;
+
+    /**
+     * 当前**实际用于渲染**的系数：由动画逐帧逼近 {@link #targetBoost}。
+     *
+     * <p>{@link #buildIcon(int)} 在热点路径上只读这个 volatile。
+     */
+    private volatile float currentBoost = 1.0f;
+
+    /**
+     * 动画帧间隔。
+     *
+     * <p>光标图标是烘焙进位图的，「改大小」只能是离散帧（见类注释）。但每一帧都要让 native
+     * 重拉、把当时用到的图标全部重建，所以帧间隔直接决定动画开销：调大 = 更省更稳、但更"跳"；
+     * 调小 = 更顺、但更容易卡。配合 logcat 的 {@code event=boost_anim_done builds=N} 调：
+     * N 很大就说明该把这个值调大。
+     */
+    private static final long BOOST_STEP_MS = 55L;
+
+    /** 每帧向目标逼近的比例：缓出，起步快、收尾软。 */
+    private static final float BOOST_EASE = 0.55f;
+
+    /** 与目标的差距小于它就认为动画结束，直接落到目标值。 */
+    private static final float BOOST_EPS = 0.05f;
+
+    /**
+     * 持续摇晃时的每档增幅：每再命中一次摇晃，目标倍数就乘这个系数。
+     *
+     * <p>所以「一直摇」会一直变大，直到 {@link #MAX_RENDERED_SCALE}（或位图上限）兜住。
+     */
+    private static final float PROGRESSIVE_GROWTH = 1.35f;
+
+    private final AtomicBoolean boostAnimating = new AtomicBoolean();
+    private volatile ScheduledExecutorService boostExecutor;
+    /** 串行化 native 重载：动画帧与偏好变更的合并重载可能同时到。 */
+    private final Object reloadLock = new Object();
+
+    /**
+     * 诊断：一次放大/缩回动画期间总共重建了多少张光标图标。
+     *
+     * <p>这个数直接反映动画开销：它是「native 每次重拉会来要多少种图标」的上界估计。
+     * 太大就说明该调大 {@link #BOOST_STEP_MS}，或说明 native 确实会全量重拉。
+     */
+    private final AtomicInteger boostAnimBuilds = new AtomicInteger();
+    private volatile boolean boostAnimCounting;
+
+    /**
+     * 一次摇晃命中：抬高目标倍数并启动动画。
+     *
+     * <p>首次给用户配置的倍数（`放大倍数`）；之后每命中一次再乘 {@link #PROGRESSIVE_GROWTH}，
+     * 所以一直摇会持续变大。上限是「渲染总缩放不超过 {@link #MAX_RENDERED_SCALE}」，
+     * 也就是用户把「光标大小」调得越大，留给摇晃放大的余量越小。
+     */
+    void onShake() {
+        float base = HookPrefs.cursorShakeBoost();
+        if (!(base > 1f)) {
+            return;
+        }
+        float max = maxBoost();
+        float next = targetBoost <= 1.001f ? base : targetBoost * PROGRESSIVE_GROWTH;
+        targetBoost = Math.min(next, max);
+        // 只在「摇晃命中」时打一行，调手感时用它可以看清阶梯走到哪一档了
+        Log.i("FancyPad", "event=shake_boost target=" + targetBoost + " max=" + max
+                + " current=" + currentBoost);
+        startBoostAnimation();
+    }
+
+    /** 摇晃停手、保持时长走完：目标回到用户设定的大小，同样走动画。 */
+    void onShakeIdle() {
+        if (targetBoost == 1.0f && currentBoost == 1.0f) {
+            return;
+        }
+        targetBoost = 1.0f;
+        startBoostAnimation();
+    }
+
+    /** 关掉开关 / 关掉光标接管：立刻回到底，不播动画（用户明确要求"别放了"）。 */
+    void resetShakeBoost() {
+        targetBoost = 1.0f;
+        if (currentBoost == 1.0f) {
+            return;
+        }
+        currentBoost = 1.0f;
+        invalidateRenderedIcons();
+    }
+
+    /** 在「渲染总缩放不超过 MAX_RENDERED_SCALE」的前提下，摇晃放大最多还能乘多少。 */
+    private float maxBoost() {
+        SharedPreferences p = prefs;
+        float userScale = p == null ? 1.0f : userScaleOf(p);
+        return Math.max(1.0f, MAX_RENDERED_SCALE / userScale);
+    }
+
+    /**
+     * 启动（或继续）放大/还原动画。
+     *
+     * <p>光标是烘焙进位图的，没有可插值的缩放量；每一帧都是「清掉已渲染图标 → 让 native
+     * 重拉 → 按新尺寸重绘」。所以帧数必须克制，而且每帧的重建成本必须低 ——
+     * 后者靠 {@link #layerCache}（矢量预栅格化）保证，否则矢量栅格化会被帧数放大成明显卡顿。
+     */
+    private void startBoostAnimation() {
+        if (boostAnimating.compareAndSet(false, true)) {
+            boostAnimBuilds.set(0);
+            boostAnimCounting = true;
+            boostExecutor().schedule(this::boostStep, BOOST_STEP_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void boostStep() {
+        try {
+            float target = targetBoost;
+            float cur = currentBoost;
+            float next = cur + (target - cur) * BOOST_EASE;
+            if (Math.abs(target - next) < BOOST_EPS) {
+                next = target;
+            }
+            if (next != cur) {
+                currentBoost = next;
+                // 动画帧直接重载，不走 scheduleReload 的 150ms 合并窗口，
+                // 否则整段动画会被压成两三帧、看起来还是跳变。
+                invalidateFrameNow();
+            }
+            if (next == target) {
+                boostAnimating.set(false);
+                boostAnimCounting = false;
+                Log.i("FancyPad", "event=boost_anim_done builds=" + boostAnimBuilds.get()
+                        + " final=" + next);
+                return;
+            }
+            boostExecutor().schedule(this::boostStep, BOOST_STEP_MS, TimeUnit.MILLISECONDS);
+        } catch (Throwable t) {
+            boostAnimating.set(false);
+            boostAnimCounting = false;
+        }
+    }
+
+    /** 动画帧：失效已渲染图标并立即请 native 重拉。 */
+    private void invalidateFrameNow() {
+        try {
+            iconCache.clear();
+            themeGeneration++;
+        } catch (Throwable ignored) {
+        }
+        doReload();
+    }
+
+    private ScheduledExecutorService boostExecutor() {
+        ScheduledExecutorService e = boostExecutor;
+        if (e != null) {
+            return e;
+        }
+        synchronized (this) {
+            if (boostExecutor == null) {
+                boostExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "dsh-cursor-boost");
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            return boostExecutor;
+        }
     }
 
     // -------------------------------------------------------- system_server
@@ -215,6 +441,12 @@ public final class CursorHooks {
         } catch (Throwable ignored) {
         }
 
+        // 3) 摇晃放大：观测指针位置流（只读，不拦截事件）
+        try {
+            shake.install(cl);
+        } catch (Throwable ignored) {
+        }
+
         systemHooksInstalled = true;
     }
 
@@ -251,6 +483,13 @@ public final class CursorHooks {
                 SharedPreferences p = module.getRemotePreferences(PrefKeys.GROUP);
                 prefs = p;
                 p.registerOnSharedPreferenceChangeListener((sp, key) -> {
+                    // 摇晃放大被关掉（或光标接管被关掉）：立刻还原，不等保持时长走完
+                    if ((PrefKeys.CURSOR_SHAKE_ENABLED.equals(key)
+                            && !sp.getBoolean(PrefKeys.CURSOR_SHAKE_ENABLED, false))
+                            || (PrefKeys.CURSOR_ENABLED.equals(key)
+                            && !sp.getBoolean(PrefKeys.CURSOR_ENABLED, false))) {
+                        resetShakeBoost();
+                    }
                     // 只对真正影响渲染的键重载 native：导入计数、标签之类不该触发全量 sprite 重填
                     if (key == null || key.startsWith("fill_") || key.startsWith("stroke_")
                             || "preset".equals(key) || "scale".equals(key)
@@ -272,13 +511,39 @@ public final class CursorHooks {
      * 缓存清空是立即的，native 重载延迟 150ms 不影响观感。
      */
     private void refreshCursor() {
+        invalidateRenderedIcons();
         try {
-            iconCache.clear();
             customCache.evictAll();
             missingRemote.clear();
+            // 矢量层的颜色是烘进位图里的，换预设/换色必须连它一起丢，否则颜色不跟着变
+            layerCache.evictAll();
+            // wait 动画图标只在 material 预设用到，换预设时没必要留着
+            waitIconCache.evictAll();
+            // density 可能随显示变化，栅格尺寸重算
+            layerRasterSizePx = 0;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 只让「已渲染的图标」失效，并请求 native 重拉 —— 预设与配色都没变时用这个。
+     *
+     * <p>摇晃放大走这条：导入的位图缓存（{@link #customCache}，上限 16MB）与
+     * Remote File 的负缓存都没必要跟着丢，否则每次摇晃都要重走 binder 把 25 张图再读一遍。
+     */
+    private void invalidateRenderedIcons() {
+        try {
+            iconCache.clear();
             themeGeneration++;
         } catch (Throwable ignored) {
         }
+        scheduleReload();
+    }
+
+    /**
+     * 合并 native 重载请求：拖滑块 / 连续摇晃时只做一次「清 sprite + 逐个类型重新要图标」。
+     */
+    private void scheduleReload() {
         if (!reloadScheduled.compareAndSet(false, true)) {
             return;                     // 已经排队，合并掉
         }
@@ -305,18 +570,22 @@ public final class CursorHooks {
 
     private void doReload() {
         reloadScheduled.set(false);
-        try {
-            SparseArray<?> map = iconCacheMap;
-            if (map != null) {
-                synchronized (map) {
-                    map.clear();
+        // 动画帧（dsh-cursor-boost）与偏好变更的合并重载（dsh-cursor-reload）在不同线程上，
+        // 都要求 native 重填 sprite；串行化，避免两处同时清 native 缓存。
+        synchronized (reloadLock) {
+            try {
+                SparseArray<?> map = iconCacheMap;
+                if (map != null) {
+                    synchronized (map) {
+                        map.clear();
+                    }
                 }
+                Method reload = nativeReload;
+                if (reload != null && nativeService != null) {
+                    reload.invoke(nativeService);
+                }
+            } catch (Throwable ignored) {
             }
-            Method reload = nativeReload;
-            if (reload != null && nativeService != null) {
-                reload.invoke(nativeService);
-            }
-        } catch (Throwable ignored) {
         }
     }
 
@@ -351,9 +620,12 @@ public final class CursorHooks {
                 module.log(Log.INFO, "dsh-cursor", "buildIcon x" + n);
             }
         }
+        if (boostAnimCounting) {
+            boostAnimBuilds.incrementAndGet();
+        }
         int preset = p.getInt("preset", 0);
         if (type == TYPE_WAIT && preset == PRESET_MATERIAL) {
-            Object anim = animatedWait(res, scaleOf(p));
+            Object anim = animatedWait(res, renderScaleOf(p));
             if (anim != null) {
                 return anim;
             }
@@ -361,9 +633,13 @@ public final class CursorHooks {
         if (!hasContent(row, preset)) {
             return null;        // 这个预设下该类型没有可画内容，别白建一张位图再丢掉
         }
-        float scale = Math.max(0.3f, Math.min(3.0f, p.getInt("scale", 100) / 100f));
+        float scale = renderScaleOf(p);
         float density = ctx.getResources().getDisplayMetrics().density;
-        int size = Math.max(4, Math.min(MAX_ICON_SIZE, Math.round(24f * density * scale)));
+        float baseSize = 24f * density;
+        int size = Math.max(4, Math.min(MAX_ICON_SIZE, Math.round(baseSize * scale)));
+        // 只有真的被 MAX_ICON_SIZE 截断时才改用截断后的实际缩放来算热点，否则沿用 scale ——
+        // 与改动前的行为逐像素等价（摇晃放大把尺寸推高后才会碰到这个上限）。
+        float effScale = baseSize * scale > MAX_ICON_SIZE ? size / baseSize : scale;
 
         try {
             Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
@@ -464,8 +740,8 @@ public final class CursorHooks {
                 }
             }
 
-            float hotX = hotX10 / 10f * density * scale;
-            float hotY = hotY10 / 10f * density * scale;
+            float hotX = hotX10 / 10f * density * effScale;
+            float hotY = hotY10 / 10f * density * effScale;
             return PointerIcon.create(out, hotX, hotY);
         } catch (Throwable t) {
             return null;
@@ -535,8 +811,19 @@ public final class CursorHooks {
         canvas.drawBitmap(bmp, null, bounds, paint);
     }
 
-    /** material 的 wait 是 24 帧动画：借框架 loadResource + AnimationDrawable 生成多帧图标。 */
+    /**
+     * material 的 wait 是 24 帧动画：借框架 loadResource + AnimationDrawable 生成多帧图标。
+     *
+     * <p>{@code loadResource} 会把 24 帧全部解出来按 scale 缩放，单次就很贵 —— 放到放大动画的
+     * 逐帧重建里就是灾难（每帧 24 张图）。所以按 scale 的 0.25 粒度做个小 LRU：
+     * 阶梯式摇晃会反复经过同一批倍数，第二次起直接命中。
+     */
     private Object animatedWait(Resources res, float scale) {
+        Integer bucket = Math.round(scale * 4f);
+        Object cached = waitIconCache.get(bucket);
+        if (cached != null) {
+            return cached;
+        }
         try {
             Constructor<PointerIcon> ctor = sWaitCtor;
             Method load = sWaitLoad;
@@ -558,15 +845,27 @@ public final class CursorHooks {
                 sWaitLoad = load;
             }
             PointerIcon icon = ctor.newInstance(TYPE_WAIT);
-            load.invoke(icon, res, R.drawable.cursor_wait_icon, null, scale);
+            load.invoke(icon, res, R.drawable.cursor_wait_icon, null, bucket / 4f);
+            waitIconCache.put(bucket, icon);
             return icon;
         } catch (Throwable t) {
             return null;
         }
     }
 
-    private static float scaleOf(SharedPreferences p) {
+    /** 用户自己设定的大小（0.3~3.0），不含摇晃放大。 */
+    private static float userScaleOf(SharedPreferences p) {
         return Math.max(0.3f, Math.min(3.0f, p.getInt("scale", 100) / 100f));
+    }
+
+    /**
+     * 实际用于渲染的缩放 = 用户设定 × 当前动画系数，再夹到 {@link #MAX_RENDERED_SCALE}。
+     *
+     * <p>摇晃放大只是临时乘一个系数，用户设置本身始终不动 —— 动画回落到 1.0 后，
+     * 光标自然回到用户设定的大小。
+     */
+    private float renderScaleOf(SharedPreferences p) {
+        return Math.max(0.3f, Math.min(MAX_RENDERED_SCALE, userScaleOf(p) * currentBoost));
     }
 
     /** 当前预设对应的导入主题名（非主题预设返回 null）。 */
@@ -579,14 +878,63 @@ public final class CursorHooks {
         return (idx >= 0 && idx < names.length && !names[idx].isEmpty()) ? names[idx] : null;
     }
 
-    private static void drawLayer(Canvas canvas, Resources res, int resId, int color, Rect bounds) {
-        Drawable d = res.getDrawable(resId, null);
-        if (d == null) {
-            return;
+    /**
+     * 画一层矢量（AOSP 的填充层 / 描边层）。
+     *
+     * <p>不再每次现场栅格化矢量：改成从 {@link #layerCache} 取「按固定超采样尺寸栅格化好、
+     * 且已染好色」的位图，再 {@code drawBitmap} 缩放到目标 bounds —— 这是放大动画不卡的关键。
+     */
+    private void drawLayer(Canvas canvas, Resources res, int resId, int color, Rect bounds) {
+        Bitmap layer = layerCache.get(resId);
+        if (layer == null) {
+            layer = rasterizeLayer(res, resId, color);
+            if (layer == null) {
+                return;
+            }
+            layerCache.put(resId, layer);
         }
-        d.setTint(color);
-        d.setBounds(bounds);
-        d.draw(canvas);
+        canvas.drawBitmap(layer, null, bounds, layerPaint);
+    }
+
+    /** 把矢量层按固定超采样尺寸栅格化一次（带 tint）。失败返回 null，交回调用方的兜底逻辑。 */
+    private Bitmap rasterizeLayer(Resources res, int resId, int color) {
+        try {
+            Drawable d = res.getDrawable(resId, null);
+            if (d == null) {
+                return null;
+            }
+            int size = layerRasterSize();
+            Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            d.setTint(color);
+            d.setBounds(0, 0, size, size);
+            d.draw(new Canvas(out));
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 矢量层的栅格化边长：按「最大渲染尺寸」算，即 {@code 24dp × density × MAX_RENDERED_SCALE}，
+     * 上限 {@link #MAX_ICON_SIZE}。比它小的目标尺寸都是降采样（清晰），只有摇到顶才是 1:1。
+     */
+    private int layerRasterSize() {
+        int size = layerRasterSizePx;
+        if (size > 0) {
+            return size;
+        }
+        float density = 1f;
+        try {
+            Context ctx = cacheContext;
+            if (ctx != null) {
+                density = ctx.getResources().getDisplayMetrics().density;
+            }
+        } catch (Throwable ignored) {
+        }
+        size = Math.max(4, Math.min(MAX_ICON_SIZE,
+                Math.round(24f * density * MAX_RENDERED_SCALE)));
+        layerRasterSizePx = size;
+        return size;
     }
 
     /** 读模块 App 导入的光标（Remote Files，Hook 侧只读）；没有就返回 null 走兜底。 */

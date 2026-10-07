@@ -215,7 +215,10 @@ fun CursorSizePage(
 ) {
     val state = cursorState
 
-    LaunchedEffect(state.preset, state.scale, state.fill, state.stroke, state.bound) {
+    LaunchedEffect(
+        state.preset, state.scale, state.fill, state.stroke, state.bound,
+        state.shakeBoost, state.shakeReversals, state.shakeHoldMs,
+    ) {
         state.persistDebounced()
     }
 
@@ -236,6 +239,74 @@ fun CursorSizePage(
                     valueRange = PrefKeys.CURSOR_SCALE_MIN..PrefKeys.CURSOR_SCALE_MAX,
                     steps = 26,
                 )
+            }
+        }
+        shakeSection(state)
+    }
+}
+
+/**
+ * 摇晃放大（macOS「摇晃鼠标指针以定位」）。
+ *
+ * 判定与放大都在 system_server 侧（{@code CursorShake} → {@code CursorHooks}）：
+ * 快速左右（或上下）摇晃鼠标，光标放大；**一直摇会一直变大**，停手后自动缩回。
+ * 放大倍数乘在「光标大小」之上，不改动用户设定本身。
+ */
+private fun LazyListScope.shakeSection(state: CursorUiState) {
+    item { SmallTitle("摇晃放大") }
+    item {
+        Card {
+            SwitchPreference(
+                checked = state.shakeEnabled,
+                onCheckedChange = { checked ->
+                    state.shakeEnabled = checked
+                    // 开关即时落盘：不像滑块那样防抖，避免开关状态晚 250ms 才生效
+                    if (state.bound) {
+                        RemoteConfig.edit { it.putBoolean(PrefKeys.CURSOR_SHAKE_ENABLED, checked) }
+                    }
+                },
+                title = "摇晃放大光标",
+                summary = "快速左右摇晃鼠标，光标临时变大（类似 macOS）；需先开启「接管系统光标」",
+            )
+            AnimatedVisibility(
+                visible = state.shakeEnabled,
+                enter = expandVertically(animationSpec = tween(220)) +
+                    fadeIn(animationSpec = tween(220)),
+                exit = shrinkVertically(animationSpec = tween(180)) +
+                    fadeOut(animationSpec = tween(140)),
+            ) {
+                Column {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SliderPreference(
+                        value = state.shakeBoost,
+                        onValueChange = { state.shakeBoost = it },
+                        title = "放大倍数",
+                        summary = "首次摇中时放大到「光标大小」的几倍；继续摇会在此基础上继续变大",
+                        valueText = "${(state.shakeBoost * 100).roundToInt()}%",
+                        valueRange = PrefKeys.CURSOR_SHAKE_BOOST_MIN..PrefKeys.CURSOR_SHAKE_BOOST_MAX,
+                        steps = 17,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SliderPreference(
+                        value = state.shakeReversals.toFloat(),
+                        onValueChange = { state.shakeReversals = it.roundToInt() },
+                        title = "触发灵敏度",
+                        summary = "需要来回换向这么多次才放大；觉得太灵敏就往大调",
+                        valueText = "${state.shakeReversals} 次",
+                        valueRange = PrefKeys.CURSOR_SHAKE_REVERSALS_MIN.toFloat()..PrefKeys.CURSOR_SHAKE_REVERSALS_MAX.toFloat(),
+                        steps = 4,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SliderPreference(
+                        value = state.shakeHoldMs.toFloat(),
+                        onValueChange = { state.shakeHoldMs = it.roundToInt() },
+                        title = "保持时长",
+                        summary = "停手后多久缩回；期间继续摇晃会顺延并继续变大",
+                        valueText = "${state.shakeHoldMs} 毫秒",
+                        valueRange = PrefKeys.CURSOR_SHAKE_HOLD_MIN.toFloat()..PrefKeys.CURSOR_SHAKE_HOLD_MAX.toFloat(),
+                        steps = 25,
+                    )
+                }
             }
         }
     }

@@ -15,19 +15,23 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /**
- * 「文本选择菜单」页：长按 / 选中文字后的选择工具栏。
+ * 「长按菜单」页：长按或选中文字后弹出的那个工具栏（复制 / 粘贴 / 全选 / 分享…）。
  *
- * 它由 SystemUI 的 `RemoteSelectionToolbar` 渲染 —— framework 里
- * `Flags.systemSelectionToolbarEnabled()` 在本机是硬编码 `return true`，应用进程只负责把
- * 菜单项与锚点快照发过去，所以这一域的作用域是 `com.android.systemui`，
- * **不需要把模块注入到各个应用**。
+ * **它由 SystemUI 画，不是在应用里画的** —— framework 里
+ * `Flags.systemSelectionToolbarEnabled()` 在本机是硬编码 `return true`：应用只把
+ * "我有哪些菜单项 + 锚点在哪"打包发给系统，真正的视图由 SystemUI 的
+ * `RemoteSelectionToolbar` 建、画在 SystemUI 进程里，再把画面交给应用显示。
  *
- * 原样式是小圆角 + MD 配色 + 只有 150ms 纯 alpha 淡入；打开后换成 Miuix 的 token：
+ * 所以这一域**只需要 `com.android.systemui` 一个作用域，改一处所有应用一起生效**，
+ * 不用把模块注入到各个应用。
+ *
+ * 原样式是 2dp 小圆角 + MD 配色 + 只有 150ms 纯 alpha 淡入（framework-res 的
+ * `floating_popup_background` 一脉）。打开开关后换成 Miuix 的 token：
  * 弹出层圆角 16dp、底色 `surfaceContainer`（浅色纯白 / 深色 `#242424`）、
  * 文字 `onSurfaceContainer` + `Body2` 14sp，并补上缩放入场。
  *
  * ⚠ 改完即时生效（Hook 侧读的是偏好缓存快照，一变就刷新）；
- * **模块本身的升级 / 作用域变更仍需要重启一次平板**。
+ * **模块本身的升级则需要重启一次平板**（LSPosed 在开机时重新注入）。
  */
 @Composable
 fun TextMenuPage(
@@ -45,7 +49,7 @@ fun TextMenuPage(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SmallTitle("文本选择菜单") }
+        item { SmallTitle("长按菜单") }
         item {
             Card {
                 SwitchPreference(
@@ -54,8 +58,9 @@ fun TextMenuPage(
                         uiState.toolbarEnabled = checked
                         uiState.save { e -> e.putBoolean(PrefKeys.TOOLBAR_ENABLED, checked) }
                     },
-                    title = "Miuix 外观",
-                    summary = "长按文字的工具栏改用 Miuix 的圆角、配色与入场动画（改完即时生效）",
+                    title = "改用 Miuix 样式",
+                    summary = "长按或选中文字的工具栏换成 Miuix 的圆角、配色与字号" +
+                        "（由 SystemUI 绘制，所有应用一起生效；改完即时生效）",
                 )
                 AnimatedVisibility(visible = uiState.toolbarEnabled) {
                     Column {
@@ -84,59 +89,6 @@ fun TextMenuPage(
                             onCommit = {
                                 uiState.save { e ->
                                     e.putFloat(PrefKeys.TOOLBAR_TEXT_SP, uiState.toolbarTextSp)
-                                }
-                            },
-                            commitGuard = { uiState.loaded },
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.contextMenuEnabled,
-                    onCheckedChange = { checked ->
-                        uiState.contextMenuEnabled = checked
-                        uiState.save { e ->
-                            e.putBoolean(PrefKeys.CONTEXTMENU_ENABLED, checked)
-                        }
-                    },
-                    title = "右键上下文菜单",
-                    summary = "右键弹出的多行菜单换成 Miuix 圆角/配色/字号（原版圆角只有 2dp）；" +
-                        "作用域是各个应用自己，需在 LSPosed 里把目标应用加进作用域并重启该应用",
-                )
-                AnimatedVisibility(visible = uiState.contextMenuEnabled) {
-                    Column {
-                        DpSlider(
-                            title = "弹出层圆角",
-                            summary = "默认 ${PrefKeys.CONTEXTMENU_CORNER_DEFAULT.toInt()}dp（原版 2dp）",
-                            value = uiState.contextMenuCornerDp,
-                            range = PrefKeys.TOOLBAR_CORNER_MIN..PrefKeys.TOOLBAR_CORNER_MAX,
-                            keyPoint = PrefKeys.CONTEXTMENU_CORNER_DEFAULT,
-                            onValueChange = { v -> uiState.contextMenuCornerDp = v },
-                            onCommit = {
-                                uiState.save { e ->
-                                    e.putFloat(
-                                        PrefKeys.CONTEXTMENU_CORNER_DP,
-                                        uiState.contextMenuCornerDp,
-                                    )
-                                }
-                            },
-                            commitGuard = { uiState.loaded },
-                        )
-                        DpSlider(
-                            title = "菜单文字大小",
-                            summary = "默认 ${PrefKeys.CONTEXTMENU_TEXT_DEFAULT.toInt()}sp" +
-                                "（原版 16sp，Miuix Body2 = 14sp）",
-                            value = uiState.contextMenuTextSp,
-                            range = PrefKeys.TOOLBAR_TEXT_MIN..PrefKeys.TOOLBAR_TEXT_MAX,
-                            keyPoint = PrefKeys.CONTEXTMENU_TEXT_DEFAULT,
-                            unit = "sp",
-                            onValueChange = { v -> uiState.contextMenuTextSp = v },
-                            onCommit = {
-                                uiState.save { e ->
-                                    e.putFloat(PrefKeys.CONTEXTMENU_TEXT_SP, uiState.contextMenuTextSp)
                                 }
                             },
                             commitGuard = { uiState.loaded },

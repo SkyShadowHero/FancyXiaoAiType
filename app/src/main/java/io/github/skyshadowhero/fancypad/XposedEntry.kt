@@ -43,15 +43,8 @@ class XposedEntry : XposedModule() {
     /** 平行窗口域（com.android.systemui）。 */
     private val embeddingHooks by lazy { EmbeddingHooks(this) }
 
-    /** 文本选择菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
+    /** 长按菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
     private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
-
-    /**
-     * 右键上下文菜单：跑在**目标应用进程**里。
-     * 这个菜单是应用进程内的框架菜单类画的（StandardMenuPopup / ListPopupWindow），
-     * 所以只有把应用加进模块作用域，[onPackageReady] 才会为它触发。
-     */
-    private val contextMenuHooks by lazy { ContextMenuHooks(this) }
 
     @Volatile
     private var processName: String? = null
@@ -90,14 +83,6 @@ class XposedEntry : XposedModule() {
                 HookPrefs.bind(this)
                 embeddingHooks.install(param.classLoader)
                 selectionToolbarHooks.install(param.classLoader)
-            }
-
-            else -> {
-                // 普通应用：右键上下文菜单换皮这类「应用进程内」的功能在这里装。
-                // 没被加进作用域的应用不会走到这个分支，也就完全不受影响。
-                L.i("event=package_ready package=${param.packageName} process=$processName")
-                HookPrefs.bind(this)
-                contextMenuHooks.install(param.classLoader)
             }
         }
     }
