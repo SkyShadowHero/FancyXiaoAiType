@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「功能」一级列表的 scope 图标：aosp-embedding 的 launcher 前景（两层矩形 + 中缝）
+  已归一化到统一度量：viewport 24、内容最长边 20、线宽 1.8（= 24dp 图标上的 dp）。
+  等比缩放 0.4444×，平移居中；strokeWidth 反算过，所以实际渲染线宽和其它图标一致。
+  颜色统一纯黑，App 侧 ColorFilter 染色跟随主题。
+  重新生成：tools/scope-icons/gen_scope_icons.py
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.444444"
+        android:scaleY="0.444444"
+        android:translateX="-12.000"
+        android:translateY="-12.000">
+    <group android:translateY="2.0">
+        <path
+            android:pathData="M35.50,36.00H43.00A4.00,4.00 0 0 1 47.00,40.00V68.00A4.00,4.00 0 0 1 43.00,72.00H35.50A4.00,4.00 0 0 1 31.50,68.00V40.00A4.00,4.00 0 0 1 35.50,36.00Z"
+            android:strokeColor="#12000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M65.00,36.00H72.50A4.00,4.00 0 0 1 76.50,40.00V68.00A4.00,4.00 0 0 1 72.50,72.00H65.00A4.00,4.00 0 0 1 61.00,68.00V40.00A4.00,4.00 0 0 1 65.00,36.00Z"
+            android:strokeColor="#12000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M54.00,43.50V64.50"
+            android:strokeColor="#12000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+    <group android:translateY="1.0">
+        <path
+            android:pathData="M35.50,36.00H43.00A4.00,4.00 0 0 1 47.00,40.00V68.00A4.00,4.00 0 0 1 43.00,72.00H35.50A4.00,4.00 0 0 1 31.50,68.00V40.00A4.00,4.00 0 0 1 35.50,36.00Z"
+            android:strokeColor="#1A000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M65.00,36.00H72.50A4.00,4.00 0 0 1 76.50,40.00V68.00A4.00,4.00 0 0 1 72.50,72.00H65.00A4.00,4.00 0 0 1 61.00,68.00V40.00A4.00,4.00 0 0 1 65.00,36.00Z"
+            android:strokeColor="#1A000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M54.00,43.50V64.50"
+            android:strokeColor="#1A000000"
+            android:strokeWidth="4.050"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+    <path
+        android:pathData="M35.50,36.00H43.00A4.00,4.00 0 0 1 47.00,40.00V68.00A4.00,4.00 0 0 1 43.00,72.00H35.50A4.00,4.00 0 0 1 31.50,68.00V40.00A4.00,4.00 0 0 1 35.50,36.00Z"
+        android:strokeColor="#FF1A1A1A"
+        android:strokeWidth="4.050"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M65.00,36.00H72.50A4.00,4.00 0 0 1 76.50,40.00V68.00A4.00,4.00 0 0 1 72.50,72.00H65.00A4.00,4.00 0 0 1 61.00,68.00V40.00A4.00,4.00 0 0 1 65.00,36.00Z"
+        android:strokeColor="#FF1A1A1A"
+        android:strokeWidth="4.050"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54.00,43.50V64.50"
+        android:strokeColor="#FF1A1A1A"
+        android:strokeWidth="4.050"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    </group>
+</vector>

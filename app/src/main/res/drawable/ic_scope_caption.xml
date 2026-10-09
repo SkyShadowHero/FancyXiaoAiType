@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「功能」一级列表的 scope 图标：控制菜单「小窗」按钮的原版图标（caption_normal_freeform）
+  已归一化到统一度量：viewport 24、内容最长边 20、线宽 1.8（= 24dp 图标上的 dp）。
+  等比缩放 1.0989×，平移居中；strokeWidth 反算过，所以实际渲染线宽和其它图标一致。
+  颜色统一纯黑，App 侧 ColorFilter 染色跟随主题。
+  重新生成：tools/scope-icons/gen_scope_icons.py
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="1.098901"
+        android:scaleY="1.098901"
+        android:translateX="1.011"
+        android:translateY="1.011">
+    <path
+        android:pathData="M4,0.9L16,0.9A3.1,3.1 0,0 1,19.1 4L19.1,16A3.1,3.1 0,0 1,16 19.1L4,19.1A3.1,3.1 0,0 1,0.9 16L0.9,4A3.1,3.1 0,0 1,4 0.9z"
+        android:fillColor="#00000000"
+        android:strokeColor="#ff000000"
+        android:strokeWidth="1.638"
+        android:strokeAlpha="0.3" />
+    <path
+        android:pathData="M11.5,3L15.5,3A1.5,1.5 0,0 1,17 4.5L17,11.5A1.5,1.5 0,0 1,15.5 13L11.5,13A1.5,1.5 0,0 1,10 11.5L10,4.5A1.5,1.5 0,0 1,11.5 3z"
+        android:fillColor="#ff000000" />
+    </group>
+</vector>

@@ -38,6 +38,22 @@ public final class HookPrefs {
     private static volatile boolean folmeDisabled = true;
     private static volatile boolean mergeDisabled = true;
     private static volatile boolean jumpCutDisabled = true;
+    /** 小窗控制器总开关；关掉后这一域所有 Hook 直接放行。 */
+    private static volatile boolean captionEnabled = true;
+    /** 小窗控制菜单里「关闭」按钮的图标 × → −。 */
+    private static volatile boolean captionCloseAsMinus = false;
+    /** 小窗控制菜单里追加红色「彻底关闭」（forceStop）按钮。 */
+    private static volatile boolean captionForceClose = false;
+    /** 控制菜单里隐藏的按钮（逗号分隔的 PrefKeys.CB_*）；空串 = 全显示。 */
+    private static volatile String captionButtonHidden = "";
+    /** 控制菜单的按钮顺序（逗号分隔的 PrefKeys.CB_*）。 */
+    private static volatile String captionButtonOrder = PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER;
+    /** 隐藏「当前状态对应的按钮」（全屏藏全屏 / 小窗藏小窗）。 */
+    private static volatile boolean captionHideCurrentState = false;
+    /** 始终显示「新窗口」按钮（框架只在支持多实例时才加）。 */
+    private static volatile boolean captionAlwaysNewWindow = false;
+    /** 隐藏三个控制点（不画，但点击区域还在）。 */
+    private static volatile boolean captionHideDots = false;
     private static volatile boolean toolbarEnabled = false;
     private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
     private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
@@ -112,6 +128,39 @@ public final class HookPrefs {
         } catch (Throwable ignored) {
         }
         try {
+            captionEnabled = p.getBoolean(PrefKeys.CAPTION_ENABLED, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionCloseAsMinus = p.getBoolean(PrefKeys.CAPTION_CLOSE_AS_MINUS, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionForceClose = p.getBoolean(PrefKeys.CAPTION_FORCE_CLOSE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionButtonHidden = p.getString(PrefKeys.CAPTION_BUTTON_HIDDEN, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionButtonOrder = p.getString(
+                    PrefKeys.CAPTION_BUTTON_ORDER, PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionHideCurrentState = p.getBoolean(PrefKeys.CAPTION_HIDE_CURRENT_STATE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionAlwaysNewWindow = p.getBoolean(PrefKeys.CAPTION_ALWAYS_NEW_WINDOW, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionHideDots = p.getBoolean(PrefKeys.CAPTION_HIDE_DOTS, false);
+        } catch (Throwable ignored) {
+        }
+        try {
             toolbarEnabled = p.getBoolean(PrefKeys.TOOLBAR_ENABLED, false);
         } catch (Throwable ignored) {
         }
@@ -174,6 +223,49 @@ public final class HookPrefs {
     public static boolean jumpCutDisabled() {
         return jumpCutDisabled;
     }
+
+    // ---- 小窗控制菜单（SystemUI 侧） ----
+
+    /** 小窗控制器总开关。 */
+    public static boolean captionEnabled() {
+        return captionEnabled;
+    }
+
+    /** 控制菜单里「关闭」按钮的图标 × → −。 */
+    public static boolean captionCloseAsMinus() {
+        return captionCloseAsMinus;
+    }
+
+    /** 控制菜单里追加红色「彻底关闭」按钮。 */
+    public static boolean captionForceClose() {
+        return captionForceClose;
+    }
+
+    /** 控制菜单里隐藏的按钮（逗号分隔的 key）。 */
+    public static String captionButtonHidden() {
+        return captionButtonHidden;
+    }
+
+    /** 控制菜单的按钮顺序（逗号分隔的 key）。 */
+    public static String captionButtonOrder() {
+        return captionButtonOrder;
+    }
+
+    /** 隐藏「当前状态对应的按钮」。 */
+    public static boolean captionHideCurrentState() {
+        return captionHideCurrentState;
+    }
+
+    /** 始终显示「新窗口」按钮。 */
+    public static boolean captionAlwaysNewWindow() {
+        return captionAlwaysNewWindow;
+    }
+
+    /** 隐藏三个控制点。 */
+    public static boolean captionHideDots() {
+        return captionHideDots;
+    }
+
 
     // ---- 文本选择菜单（SystemUI 侧） ----
 

@@ -25,7 +25,6 @@ import io.github.skyshadowhero.fancypad.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -131,28 +130,6 @@ fun AboutPage(
                         runCatching { uriHandler.openUri(REPO_URL) }
                     },
                 )
-            }
-        }
-        item { SmallTitle("作用域") }
-        item {
-            Card {
-                Column(modifier = Modifier.padding(BasicComponentDefaults.InsideMargin)) {
-                    Text("FancyPad 一个模块带三个功能域，需要同时勾选：", style = MiuixTheme.textStyles.body1)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "• com.xiaomi.type —— 输入法外观（虚拟键盘 / 悬浮键盘 / 超级材质）\n"
-                            + "• system —— 光标主题（system_server 侧接管光标渲染）\n"
-                            + "• com.android.systemui —— 平行窗口动画",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "system 与 com.android.systemui 是开机注入的：首次启用、升级模块或改作用域后需要重启一次平板。",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant,
-                    )
-                }
             }
         }
     }

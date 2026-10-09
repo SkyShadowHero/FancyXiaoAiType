@@ -393,6 +393,87 @@ object PrefKeys {
     const val EMBEDDING_JUMPCUT_DISABLE = "embedding_jumpcut_disable"
 
     // ==================================================================
+    // FancyPad：小窗控制菜单（窗口控制点弹出的那个按钮条）
+    //
+    // 作用域 com.android.systemui，Hook 侧 CaptionHooks 读取。
+    // 平板上窗口顶部居中那三个点（无障碍名 "Window control bar"）点一下会弹出按钮条，
+    // 由 MiuiCaptionContainerView 在 SystemUI 进程里**纯代码**搭出来（没有 layout XML）：
+    // 每个按钮是 MiuiCaptionStateButton，图标是它下面那个子 View 的 background drawable。
+    // ==================================================================
+
+    /**
+     * 小窗控制器**总开关**（默认开）。
+     *
+     * 关掉后这一页所有设置立即失效，完全回到 HyperOS 原样（Hook 侧三处拦截点全部直接放行）。
+     * 默认开是因为下面每个功能各自还有独立开关、默认都关，所以开着总开关也不会改变任何行为，
+     * 但能让单独打开的开关立刻生效，不用再记得先开总闸。
+     */
+    const val CAPTION_ENABLED = "caption_enabled"
+
+    /** 把控制菜单里「关闭」按钮的 × 图标换成 −（只换图标，点击仍然是关闭） */
+    const val CAPTION_CLOSE_AS_MINUS = "caption_close_as_minus"
+
+    /**
+     * 在控制菜单里**追加**一个红色「彻底关闭」按钮。
+     *
+     * 点它的顺序是：代点小米自己的「关闭」（带动画）→ `IActivityTaskManager.removeTask(taskId)`
+     * 摘掉任务（最近任务里的卡片才会消失）→ `IActivityManager.forceStopPackage(pkg, userId)`
+     * 杀进程。所以后台不留进程、也不留卡片，不是普通「关闭」那种只关窗口。
+     */
+    const val CAPTION_FORCE_CLOSE = "caption_force_close"
+
+    // ---- 控制菜单里每个按钮的稳定标识 ----
+    //
+    // `caption_button_hidden` / `caption_button_order` 都是这些 key 拼出来的字符串。
+    // **改名等于丢掉用户已有配置**，别随手改。
+    const val CB_FULLSCREEN = "fullscreen"
+    const val CB_CASTING = "casting"
+    const val CB_SPLIT_LEFT = "split_left"
+    const val CB_SPLIT_RIGHT = "split_right"
+    const val CB_FREEFORM = "freeform"
+    const val CB_NEW_WINDOW = "new_window"
+    const val CB_CLOSE = "close"
+    const val CB_FORCE_CLOSE = "force_close"
+
+    /** 隐藏哪些按钮（逗号分隔的 [CB_FULLSCREEN] 等 key）；空串 = 全部显示 */
+    const val CAPTION_BUTTON_HIDDEN = "caption_button_hidden"
+
+    /** 按钮顺序（逗号分隔的 key）；默认值就是框架自己的自然顺序 */
+    const val CAPTION_BUTTON_ORDER = "caption_button_order"
+
+    /**
+     * 框架的自然顺序 —— 就是 `MiuiCaptionContainerView.init` 里的添加顺序：
+     * 全屏 → 投屏 → 分屏左/上 → 分屏右/下 → 小窗 → 新窗口 → 关闭。
+     * 红色「强制关闭」是模块追加的，排最后。
+     */
+    const val CAPTION_BUTTON_DEFAULT_ORDER =
+        "$CB_FULLSCREEN,$CB_CASTING,$CB_SPLIT_LEFT,$CB_SPLIT_RIGHT," +
+            "$CB_FREEFORM,$CB_NEW_WINDOW,$CB_CLOSE,$CB_FORCE_CLOSE"
+
+    /**
+     * 隐藏「当前状态对应的那个按钮」：已经是全屏就藏「全屏」，已经是小窗就藏「小窗」。
+     * 省得菜单里留一个点了没变化的按钮。
+     */
+    const val CAPTION_HIDE_CURRENT_STATE = "caption_hide_current_state"
+
+    /**
+     * 始终显示「新窗口」按钮。
+     *
+     * 框架只在「支持多实例」时才加它；打开这个开关，模块会自己补一个 —— 补的时候
+     * 复用框架的 id 与 {@code MiuiCaptionClickListener}，所以点击行为跟原生完全一致。
+     */
+    const val CAPTION_ALWAYS_NEW_WINDOW = "caption_always_new_window"
+
+    /**
+     * 隐藏三个控制点。
+     *
+     * 只是不画（hook {@code MiuiDecorationDotView.onDraw}）—— surface 还在，
+     * 所以那块区域仍然点得开控制菜单。
+     */
+    const val CAPTION_HIDE_DOTS = "caption_hide_dots"
+
+
+    // ==================================================================
     // FancyPad：文本选择菜单（右键 / 长按文字弹出的浮动工具栏）
     //
     // 作用域 com.android.systemui，Hook 侧 SelectionToolbarHooks 读取。

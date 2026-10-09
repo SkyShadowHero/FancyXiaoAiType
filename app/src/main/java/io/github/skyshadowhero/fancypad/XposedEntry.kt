@@ -52,6 +52,15 @@ class XposedEntry : XposedModule() {
     private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
 
     /**
+     * 小窗控制菜单域（com.android.systemui）。
+     *
+     * 改的是窗口顶部那三个控制点点开后弹出的按钮条（MiuiCaptionContainerView）里
+     * 「关闭」按钮的图标（× → −）。与 [embeddingHooks] 同进程，但动的是 MIUI 的窗口装饰，
+     * 互不相关。
+     */
+    private val captionHooks by lazy { CaptionHooks(this) }
+
+    /**
      * 右键菜单域（**目标应用自身**的进程，本机先只挂 mark.via）。
      *
      * 与 [selectionToolbarHooks] 是两条完全不同的路径：长按/选中菜单由 SystemUI 画，
@@ -96,6 +105,7 @@ class XposedEntry : XposedModule() {
                 HookPrefs.bind(this)
                 embeddingHooks.install(param.classLoader)
                 selectionToolbarHooks.install(param.classLoader)
+                captionHooks.install(param.classLoader)
             }
 
             /**

@@ -101,6 +101,31 @@ class AppUiState {
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
 
+    // ---- 小窗控制器（作用域 com.android.systemui）----
+    /** 小窗控制器总开关（默认开）：关掉后这一域所有设置全部失效、回到系统原样。 */
+    var captionEnabled by mutableStateOf(true)
+    /** 把控制菜单里「关闭」按钮的 × 图标换成 −（只换图标，点击行为不变）。 */
+    var captionCloseAsMinus by mutableStateOf(false)
+
+    /** 在控制菜单里追加一个红色「彻底关闭」按钮（forceStop，进程不留在后台）。 */
+    var captionForceClose by mutableStateOf(false)
+
+    /** 控制菜单里隐藏的按钮（逗号分隔的 key）；空串 = 全部显示。 */
+    var captionButtonHidden by mutableStateOf("")
+
+    /** 控制菜单的按钮顺序（逗号分隔的 key）。 */
+    var captionButtonOrder by mutableStateOf(PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER)
+
+    /** 隐藏「当前状态对应的按钮」：全屏藏「全屏」、小窗藏「小窗」。 */
+    var captionHideCurrentState by mutableStateOf(false)
+
+    /** 始终显示「新窗口」按钮（框架只在支持多实例时才加）。 */
+    var captionAlwaysNewWindow by mutableStateOf(false)
+
+    /** 隐藏三个控制点（不画，点击区域还在）。 */
+    var captionHideDots by mutableStateOf(false)
+
+
     // ---- AOSP长按菜单（作用域 com.android.systemui，由 SystemUI 绘制）----
     var toolbarEnabled by mutableStateOf(false)
     var toolbarCornerDp by mutableStateOf(PrefKeys.TOOLBAR_CORNER_DEFAULT)
@@ -362,6 +387,32 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.embeddingJumpCutDisable = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true)
     }.getOrDefault(true)
+
+    // ---- 小窗控制器（默认：总开关开、各功能关）----
+    uiState.captionEnabled = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_ENABLED, true)
+    }.getOrDefault(true)
+    uiState.captionCloseAsMinus = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_CLOSE_AS_MINUS, false)
+    }.getOrDefault(false)
+    uiState.captionForceClose = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_FORCE_CLOSE, false)
+    }.getOrDefault(false)
+    uiState.captionButtonHidden = p.runCatching {
+        getString(PrefKeys.CAPTION_BUTTON_HIDDEN, "")
+    }.getOrNull().orEmpty()
+    uiState.captionButtonOrder = p.runCatching {
+        getString(PrefKeys.CAPTION_BUTTON_ORDER, PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER)
+    }.getOrNull().orEmpty().ifBlank { PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER }
+    uiState.captionHideCurrentState = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_HIDE_CURRENT_STATE, false)
+    }.getOrDefault(false)
+    uiState.captionAlwaysNewWindow = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_ALWAYS_NEW_WINDOW, false)
+    }.getOrDefault(false)
+    uiState.captionHideDots = p.runCatching {
+        getBoolean(PrefKeys.CAPTION_HIDE_DOTS, false)
+    }.getOrDefault(false)
 
     // ---- 文本选择菜单（默认关闭）----
     uiState.toolbarEnabled = p.runCatching { getBoolean(PrefKeys.TOOLBAR_ENABLED, false) }

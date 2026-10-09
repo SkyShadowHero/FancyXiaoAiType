@@ -11,6 +11,7 @@ import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Tune
+import io.github.skyshadowhero.fancypad.R
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import androidx.compose.ui.unit.LayoutDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
@@ -30,6 +31,7 @@ import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
  * │              ├── 导入
  * │              └── 颜色设置（二级，AOSP / GoogleDot 可改色时进入）
  * ├── 平行窗口动画 ── 平行窗口
+ * ├── 小窗控制器 ── 小窗控制器（窗口控制点的按钮条：×→− / 红色强制关闭）
  * └── 关于
  * ```
  * 各自对应的 LSPosed 作用域见 [AppScope.pkg]（在「关于」页里列出）。
@@ -47,6 +49,12 @@ data object RouteCursorColors : NavKey
 
 data object RouteParallel : NavKey
 
+/** 小窗控制器 · 功能：总开关 + 各功能开关。 */
+data object RouteCaptionFeatures : NavKey
+
+/** 小窗控制器 · 按钮：每个按钮的显隐与顺序。 */
+data object RouteCaptionButtons : NavKey
+
 data object RouteTextMenu : NavKey
 
 data object RouteAppMenu : NavKey
@@ -59,30 +67,41 @@ data object RouteAbout : NavKey
  * 一级页面只列功能名（[label] + 图标），**不带任何描述** —— 描述都留在各自的页面里。
  * [pkg] 是它对应的 LSPosed 作用域，只在「关于」页里列出来。
  * [pages] 是功能域里的页面：多页时用左侧栏 / 底部菜单切换，单页时不显示多页导航。
+ *
+ * 图标两种来源：[iconRes] 是模块自带的矢量（从系统 / 输入法 / 设计稿提取，生成脚本在
+ * `tools/caption` 与 `tools/scope-icons`），非 0 时优先；否则用 [icon] 那个 Miuix 图标。
  */
 enum class AppScope(
     val label: String,
     val pkg: String,
     val pages: List<NavKey>,
-    val icon: ImageVector,
+    /** 一级列表用的矢量 drawable；0 = 用 [icon]。 */
+    val iconRes: Int = 0,
+    val icon: ImageVector = MiuixIcons.Info,
 ) {
     Ime(
-        label = "键盘外观",
+        label = "小爱输入法",
         pkg = "com.xiaomi.type",
         pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial),
-        icon = MiuixIcons.Tune,
+        iconRes = R.drawable.ic_scope_ime,
     ),
     Cursor(
         label = "光标主题",
         pkg = "system",
         pages = listOf(RouteCursorPreset, RouteCursorSize, RouteCursorImport),
-        icon = MiuixIcons.GridView,
+        iconRes = R.drawable.ic_scope_cursor,
     ),
     Parallel(
         label = "平行窗口动画",
         pkg = "com.android.systemui",
         pages = listOf(RouteParallel),
-        icon = MiuixIcons.HorizontalSplit,
+        iconRes = R.drawable.ic_scope_embedding,
+    ),
+    Caption(
+        label = "小窗控制器",
+        pkg = "com.android.systemui",
+        pages = listOf(RouteCaptionFeatures, RouteCaptionButtons),
+        iconRes = R.drawable.ic_scope_caption,
     ),
     TextMenu(
         label = "AOSP长按菜单",
@@ -109,6 +128,8 @@ fun NavKey.title(): String = when (this) {
     RouteCursorImport -> "导入"
     RouteCursorColors -> "颜色设置"
     RouteParallel -> "平行窗口"
+    RouteCaptionFeatures -> "功能"
+    RouteCaptionButtons -> "按钮"
     RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
     RouteAbout -> "关于"
@@ -124,6 +145,8 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteCursorSize -> MiuixIcons.Tune
     RouteCursorImport -> MiuixIcons.Import
     RouteParallel -> MiuixIcons.HorizontalSplit
+    RouteCaptionFeatures -> MiuixIcons.Tune
+    RouteCaptionButtons -> MiuixIcons.GridView
     RouteTextMenu -> MiuixIcons.SelectAll
     RouteAppMenu -> MiuixIcons.ListView
     RouteAbout -> MiuixIcons.Info

@@ -552,6 +552,24 @@ private fun PageHost(
                             )
                         }
                     }
+                    entry<RouteCaptionFeatures> {
+                        PageSurface {
+                            CaptionFeaturesPage(
+                                uiState = uiState,
+                                padding = padding,
+                                scaffoldPadding = contentPadding,
+                            )
+                        }
+                    }
+                    entry<RouteCaptionButtons> {
+                        PageSurface {
+                            CaptionButtonsPage(
+                                uiState = uiState,
+                                padding = padding,
+                                scaffoldPadding = contentPadding,
+                            )
+                        }
+                    }
                     entry<RouteTextMenu> {
                         PageSurface {
                             TextMenuPage(
