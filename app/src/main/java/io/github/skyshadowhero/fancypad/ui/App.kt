@@ -140,6 +140,21 @@ class AppUiState {
     var appMenuPaddingHDp by mutableStateOf(PrefKeys.APPMENU_PADDING_H_DEFAULT)
     var appMenuPaddingVDp by mutableStateOf(PrefKeys.APPMENU_PADDING_V_DEFAULT)
 
+    // ---- 随手写（触控笔手写，作用域 com.xiaomi.type）----
+    // 「随手写」= AOSP Android 14+ 的触控笔手写：笔直接在输入框上写字、笔迹转文字上屏，
+    // 跟输入法里那个「手写键盘」不是一件事。小爱缺这条线的原因很具体：它的
+    // res/xml/method.xml 里没有 android:supportsStylusHandwriting="true"，
+    // 系统因此从不把手写会话交给它。
+    var stylusEnabled by mutableStateOf(false)
+    var stylusFullscreen by mutableStateOf(false)
+    var stylusDelayMs by mutableStateOf(PrefKeys.STYLUS_DELAY_DEFAULT)
+
+    // 系统侧配合（system_server 进程，作用域 system）。默认开：
+    // 关掉它会让 MIUI 设置页里的随手写开关打不开（死锁），见 PrefKeys 的注释。
+    var stylusWhitelist by mutableStateOf(true)
+
+
+
     /**
      * 是否已从远端把配置读进来。
      * 未装载完成前所有写入都会被 [writePrefs] 丢弃 —— 这是「设置没有记忆」的根因：
@@ -444,4 +459,14 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.appMenuPaddingVDp = p.runCatching {
         getFloat(PrefKeys.APPMENU_PADDING_V_DP, PrefKeys.APPMENU_PADDING_V_DEFAULT)
     }.getOrDefault(PrefKeys.APPMENU_PADDING_V_DEFAULT)
+
+    // ---- 随手写（默认关闭：实验功能，不改变输入法默认行为）----
+    uiState.stylusEnabled = p.runCatching { getBoolean(PrefKeys.STYLUS_ENABLED, false) }
+        .getOrDefault(false)
+    uiState.stylusDelayMs = p.runCatching {
+        getFloat(PrefKeys.STYLUS_DELAY_MS, PrefKeys.STYLUS_DELAY_DEFAULT)
+    }.getOrDefault(PrefKeys.STYLUS_DELAY_DEFAULT)
+    // 这两个默认 true：缺键时必须走"开"，否则系统设置里的随手写打不开（见 PrefKeys 注释）
+    uiState.stylusWhitelist = p.runCatching { getBoolean(PrefKeys.STYLUS_WHITELIST, true) }
+        .getOrDefault(true)
 }

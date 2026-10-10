@@ -3,6 +3,7 @@ package io.github.skyshadowhero.fancypad.ui
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Background
+import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.GridView
 import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Import
@@ -23,15 +24,19 @@ import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
  * 层级只有三层，一级页面按功能名列出，点进去才看到该功能域里的设置：
  * ```
  * 功能（一级）
- * ├── 键盘外观 ──┬── 虚拟键盘
- * │              ├── 悬浮键盘
- * │              └── 超级材质
+ * ├── 小爱输入法 ──┬── 虚拟键盘
+ * │                ├── 悬浮键盘
+ * │                ├── 超级材质
+ * │                └── 随手写（触控笔手写）
  * ├── 光标主题 ──┬── 主题预设
  * │              ├── 大小
  * │              ├── 导入
  * │              └── 颜色设置（二级，AOSP / GoogleDot 可改色时进入）
  * ├── 平行窗口动画 ── 平行窗口
- * ├── 小窗控制器 ── 小窗控制器（窗口控制点的按钮条：×→− / 红色强制关闭）
+ * ├── 小窗控制器 ──┬── 功能
+ * │                └── 按钮
+ * ├── AOSP长按菜单 ── AOSP长按菜单
+ * ├── 右键菜单 ── 右键菜单
  * └── 关于
  * ```
  * 各自对应的 LSPosed 作用域见 [AppScope.pkg]（在「关于」页里列出）。
@@ -41,6 +46,9 @@ data object RouteScopes : NavKey
 data object RouteImeVirtual : NavKey
 data object RouteImeFloating : NavKey
 data object RouteImeMaterial : NavKey
+
+/** 随手写（触控笔手写）：AOSP Android 14+ 的 stylus handwriting，不是「手写键盘」。 */
+data object RouteImeStylus : NavKey
 
 data object RouteCursorPreset : NavKey
 data object RouteCursorSize : NavKey
@@ -82,7 +90,7 @@ enum class AppScope(
     Ime(
         label = "小爱输入法",
         pkg = "com.xiaomi.type",
-        pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial),
+        pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial, RouteImeStylus),
         iconRes = R.drawable.ic_scope_ime,
     ),
     Cursor(
@@ -123,6 +131,7 @@ fun NavKey.title(): String = when (this) {
     RouteImeVirtual -> "虚拟键盘"
     RouteImeFloating -> "悬浮键盘"
     RouteImeMaterial -> "超级材质"
+    RouteImeStylus -> "随手写"
     RouteCursorPreset -> "主题预设"
     RouteCursorSize -> "大小"
     RouteCursorImport -> "导入"
@@ -141,6 +150,7 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteImeVirtual -> MiuixIcons.Tune
     RouteImeFloating -> MiuixIcons.Layers
     RouteImeMaterial -> MiuixIcons.Background
+    RouteImeStylus -> MiuixIcons.Edit
     RouteCursorPreset -> MiuixIcons.GridView
     RouteCursorSize -> MiuixIcons.Tune
     RouteCursorImport -> MiuixIcons.Import

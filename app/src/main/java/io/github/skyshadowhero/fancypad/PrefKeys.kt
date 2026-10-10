@@ -573,4 +573,54 @@ object PrefKeys {
     /** miuix-ui basic/Dropdown.kt → DropdownDefaults.MiddleVerticalPadding = 12.dp */
     const val APPMENU_PADDING_V_DEFAULT = 12f
 
+    // ==================================================================
+    // FancyPad：随手写（触控笔手写）
+    //
+    // 作用域 com.xiaomi.type，Hook 侧 StylusHandwritingHooks 读取。
+    //
+    // 「随手写」= AOSP Android 14+ 的**触控笔手写**（stylus handwriting）：
+    // 笔直接在输入框上写字、笔迹转文字上屏 —— 和输入法里那个「手写键盘」不是一件事。
+    //
+    // 小爱输入法缺这条线的原因很具体：它的 `res/xml/method.xml` 里没有
+    // `android:supportsStylusHandwriting="true"`，系统的 InputMethodInfo 判定它
+    // 「不支持随手写」，于是从不把手写会话交给它（MIUI 侧会直接弹「输入法不支持」）。
+    //
+    // 识别能力也不用另找引擎：小爱自带讯飞手写核心（libgeneralcore-jni 里的
+    // `XFHWRCore` / `ProcessStroke`，Java 层 `XFInputHwrCore`），系统另外还带一份
+    // 小米笔引擎（`/system_ext/framework/xiaomi-pencilengine-pad.jar` + 本地
+    // `/system_ext/etc/ocr_model.tflite`），两条路都能出字。
+    // ==================================================================
+
+    /** 随手写**总开关**（默认关闭：属于实验功能，默认不改变输入法任何行为） */
+    const val STYLUS_ENABLED = "stylus_enabled"
+
+    /**
+     * 停笔后触发识别的延迟（毫秒）。
+     * 量程与默认值对齐输入法自带的 `handwriting_recognition_delay`（50~1000，默认 500）。
+     */
+    const val STYLUS_DELAY_MS = "stylus_delay_ms"
+
+    const val STYLUS_DELAY_MIN = 300f
+    const val STYLUS_DELAY_MAX = 1000f
+    const val STYLUS_DELAY_DEFAULT = 500f
+
+    /**
+     * **让小爱进入系统的「随手写白名单」**（默认**开启**）。
+     *
+     * 对应 system_server 侧两个 hook：`InputMethodInfo.supportsStylusHandwriting()`
+     * 与 `InputMethodBindingController.getSupportsStylusHandwriting()` —— 也就是
+     * 「让系统认定小爱支持随手写」这件事。
+     *
+     * HyperOS 自己有一份硬编码的 IME 白名单
+     * （`InputMethodManagerStubImpl.sHandwritingSupportedInputMethodPkgName`
+     * = 百度 / 搜狗 / 讯飞，**不含小爱**），系统据此决定谁能接随手写、以及"不支持"时把用户切给谁。
+     * 打开这个开关等于把小爱补进那份白名单的效果。
+     *
+     * ⚠ 默认**开**是有原因的，不是随手定的：真机验证过「关掉它 → 死锁」——
+     * 小爱被标为不支持 → MIUI 设置页里那个「随手写」开关**根本打不开** →
+     * 用户也就不会去动这个开关 → 回到不支持的起点。所以声明必须是默认开的。
+     */
+    const val STYLUS_WHITELIST = "stylus_whitelist"
+
+
 }

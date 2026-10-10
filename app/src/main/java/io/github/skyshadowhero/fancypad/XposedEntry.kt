@@ -3,6 +3,7 @@ package io.github.skyshadowhero.fancypad
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
+import java.io.File
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -68,11 +69,48 @@ class XposedEntry : XposedModule() {
      */
     private val appMenuHooks by lazy { AppMenuHooks(this) }
 
+    /** 随手写 · system_server 侧两道闸（与光标域同进程，作用域 system）。 */
+    private val stylusSystemHooks by lazy { StylusSystemHooks(this) }
+
+    /** 随手写 · 输入法进程侧（补 AOSP 的四个 stylus 回调，作用域 com.xiaomi.type）。 */
+    private val stylusImeHooks by lazy { StylusImeHooks(this) }
+
     @Volatile
     private var processName: String? = null
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
         processName = param.processName
+        // 本机 logd 不收集常规缓冲区（logcat -b main -d 恒为 0 行），模块日志等于失效；
+        // 镜像一份到 LSPosed 自己的日志（不经过 logd，落在 /data/adb/lspd/log/）。
+        L.attach { priority, msg -> log(priority, L.TAG, "[${param.processName}] $msg") }
         L.i("event=module_loaded process=${param.processName} api=$apiVersion framework=$frameworkName")
+        dumpInjectionMarker(param.processName)
+    }
+
+    /**
+     * 注入痕迹落盘（诊断用）。
+     *
+     * system_server 是**开机注入**的：更新 APK 之后必须重启一次，新代码才会进去。
+     * 而本机 logcat 三个常规缓冲区全空、LSPosed 日志也不一定收得到模块日志 ——
+     * 所以「新代码到底有没有注入这个进程」需要一个不依赖日志的取证通道：
+     * 在进程的数据目录里写一行标记，root 侧 `cat` 即可。
+     *
+     * | 进程 | 落盘位置 |
+     * |---|---|
+     * | system_server | `/data/system/fancypad_module.txt` |
+     * | 普通应用进程 | `/data/data/<包名>/files/fancypad_module.txt` |
+     */
+    private fun dumpInjectionMarker(processName: String) {
+        try {
+            val host = processName.substringBefore(':')
+            val system = host == "system" || host == "android"
+            val dir = if (system) File("/data/system") else File("/data/data/$host/files")
+            if (!system && !dir.isDirectory) dir.mkdirs()
+            File(dir, "fancypad_module.txt").writeText(
+                "process=$processName\napi=$apiVersion\nframework=$frameworkName\n"
+            )
+        } catch (t: Throwable) {
+            L.e("event=marker_write_failed", t)
+        }
     }
 
     /**
@@ -84,20 +122,28 @@ class XposedEntry : XposedModule() {
         HookPrefs.bind(this)
         L.i("event=system_server_starting process=$processName")
         cursorHooks.installSystemHooks(param.classLoader)
+        stylusSystemHooks.install(param.classLoader)
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
         when (param.packageName) {
             Target.PACKAGE -> {
                 L.i("event=package_ready package=${param.packageName} process=$processName")
+                // 必须在装 hook 之前绑定：随手写那边有若干**不带 module 参数**的快照读取
+                // （stylusFullscreen 等），不 bind 就会拿到字段默认值 —— 真机踩过：
+                // 表现为"设置了全屏书写区域但手写窗口还是中间那一条"。
+                HookPrefs.bind(this)
                 ConfigLoader.attach(getRemotePreferences(PrefKeys.GROUP))
                 installHooks(param.classLoader)
+                // 随手写：与输入法外观那批 hook 独立，单独装（installHooks 有自己的幂等守卫）
+                stylusImeHooks.install(param.classLoader)
             }
 
             Target.SYSTEM_PACKAGE -> {
                 L.i("event=package_ready package=system process=$processName")
                 HookPrefs.bind(this)
                 cursorHooks.installSystemHooks(param.classLoader)
+                stylusSystemHooks.install(param.classLoader)
             }
 
             Target.SYSTEM_UI_PACKAGE -> {
@@ -106,6 +152,18 @@ class XposedEntry : XposedModule() {
                 embeddingHooks.install(param.classLoader)
                 selectionToolbarHooks.install(param.classLoader)
                 captionHooks.install(param.classLoader)
+            }
+
+            /**
+             * 安全中心：这里就是「打开随手写被切到搜狗」的真实发生地 ——
+             * `MiuiHandwritingSettingsFragment.p(true)` 会直接改写
+             * `Settings.Secure.default_input_method`。它改写前先问当前输入法
+             * `supportsStylusHandwriting()`，所以在这个进程装上声明 hook，它自己就早退了。
+             */
+            Target.SECURITY_CENTER_PACKAGE -> {
+                L.i("event=package_ready package=${param.packageName} process=$processName")
+                HookPrefs.bind(this)
+                stylusSystemHooks.installForSecurityCenter(param.classLoader)
             }
 
             /**

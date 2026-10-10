@@ -65,14 +65,25 @@ public final class HookPrefs {
     private static volatile float appMenuTextSp = PrefKeys.APPMENU_TEXT_DEFAULT;
     private static volatile float appMenuPaddingHDp = PrefKeys.APPMENU_PADDING_H_DEFAULT;
     private static volatile float appMenuPaddingVDp = PrefKeys.APPMENU_PADDING_V_DEFAULT;
+    /** 随手写总开关（system_server 与 com.xiaomi.type 两个进程都读）。 */
+    private static volatile boolean stylusEnabled = false;
+    /** 停笔识别延迟（毫秒）：停笔多久之后把攒下的笔迹送去识别。 */
+    private static volatile float stylusDelayMs = PrefKeys.STYLUS_DELAY_DEFAULT;
+    /**
+     * 让小爱进入随手写白名单。默认**开** —— 缺键必须走"开"：
+     * 否则系统设置里的随手写开关会因为「小爱不支持」而打不开（死锁）。
+     */
+    private static volatile boolean stylusWhitelist = true;
+    /** 上次刷新的时刻（uptimeMillis），供 {@link #refreshIfStale} 判断快照新旧。 */
+    private static volatile long lastRefreshAt = 0L;
 
-    private HookPrefs() {}
+    /** 随手写偏好的低频自愈刷新间隔（毫秒）。 */
+    private static final long STYLUS_REFRESH_MS = 3000L;
 
-    /** 每个进程绑定一次。可重复调用。 */
+    /**
+     * 绑定偏好（首次调用）：读一次快照并注册变更监听。
+     */
     public static synchronized void bind(XposedInterface module) {
-        if (bound) {
-            return;
-        }
         bound = true;
         try {
             SharedPreferences p = module.getRemotePreferences(PrefKeys.GROUP);
@@ -104,6 +115,7 @@ public final class HookPrefs {
     }
 
     private static void refresh(SharedPreferences p) {
+        lastRefreshAt = android.os.SystemClock.uptimeMillis();
         if (p == null) {
             return;
         }
@@ -202,6 +214,20 @@ public final class HookPrefs {
                     PrefKeys.APPMENU_PADDING_V_DP, PrefKeys.APPMENU_PADDING_V_DEFAULT);
         } catch (Throwable ignored) {
         }
+        try {
+            stylusEnabled = p.getBoolean(PrefKeys.STYLUS_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusDelayMs = p.getFloat(PrefKeys.STYLUS_DELAY_MS, PrefKeys.STYLUS_DELAY_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        // 注意默认值是 true：缺键时必须走"开"，否则系统设置里的随手写会因为
+        // 「小爱不支持」而根本打不开（死锁），详见 PrefKeys.STYLUS_WHITELIST。
+        try {
+            stylusWhitelist = p.getBoolean(PrefKeys.STYLUS_WHITELIST, true);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -280,6 +306,57 @@ public final class HookPrefs {
     public static float toolbarTextSp() {
         return toolbarTextSp;
     }
+
+    // ---- 随手写（system_server + com.xiaomi.type） ----
+
+    /**
+     * 随手写总开关。关掉时两处 hook 都直接放行，等于模块不碰随手写。
+     *
+     * <p>带低频自愈刷新：注入进程不一定收得到偏好变更通知，见 {@link #STYLUS_REFRESH_MS}。
+     */
+    public static boolean stylusEnabled(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return stylusEnabled;
+    }
+
+    /** 距上次刷新超过 {@code maxAgeMs} 才真正重读一次偏好（跨线程安全）。 */
+    public static void refreshIfStale(XposedInterface module, long maxAgeMs) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastRefreshAt < maxAgeMs) {
+            return;
+        }
+        synchronized (HookPrefs.class) {
+            if (now - lastRefreshAt < maxAgeMs) {
+                return;
+            }
+            rebind(module);
+            lastRefreshAt = now;
+        }
+    }
+
+    /** 随手写总开关（读快照，不触发刷新）。 */
+    public static boolean stylusEnabled() {
+        return stylusEnabled;
+    }
+
+
+    /** 停笔后触发识别的延迟（毫秒，clamp 到输入法自己的 50~1000 量程）。 */
+    public static float stylusDelayMs() {
+        return stylusDelayMs;
+    }
+
+    /**
+     * 让小爱进入随手写白名单（system_server 侧两个「声明」hook）。默认**开**。
+     *
+     * <p>带低频自愈刷新：system_server 是开机注入的，注入进程不一定收得到偏好变更通知。
+     */
+    public static boolean stylusWhitelist(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return stylusWhitelist;
+    }
+
+
+
 
     // ---- 右键菜单（目标应用进程侧） ----
 

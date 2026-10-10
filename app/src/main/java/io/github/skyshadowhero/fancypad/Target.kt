@@ -22,6 +22,19 @@ object Target {
     /** SystemUI ——平行窗口（Activity Embedding）动画域在这里生效。 */
     const val SYSTEM_UI_PACKAGE = "com.android.systemui"
 
+    /**
+     * 安全中心（同一个 APK 里带 `com.miui.miinput.*` 那套输入法设置页）。
+     *
+     * 随手写必须把它加进作用域：系统设置里打开「随手写」时真正**改写
+     * `Settings.Secure.default_input_method`**（也就是"把你切到搜狗"）的代码就在这里 ——
+     * `MiuiHandwritingSettingsActivity` 的 fragment 里的
+     * `p(boolean)`：它先问 `getCurrentInputMethodInfo().supportsStylusHandwriting()`，
+     * 只有当前输入法"不支持"才去挑一个支持者改写。
+     *
+     * 所以让这个进程也装上"小爱支持随手写"的声明 hook，它自己就早退了 —— 比打补丁干净。
+     */
+    const val SECURITY_CENTER_PACKAGE = "com.miui.securitycore"
+
     // ---- 分离键盘几何 / 开关 ----
     // 这里的常量都**与输入法版本无关**：包名、prefs 键、资源名、默认 dp 值。
     // 「按混淆类名定位」的目标不放在这里 —— R8 每次发版都会改名，

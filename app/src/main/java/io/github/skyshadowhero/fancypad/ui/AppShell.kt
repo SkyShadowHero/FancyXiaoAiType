@@ -505,6 +505,15 @@ private fun PageHost(
                             )
                         }
                     }
+                    entry<RouteImeStylus> {
+                        PageSurface {
+                            StylusPage(
+                                uiState = uiState,
+                                padding = padding,
+                                scaffoldPadding = contentPadding,
+                            )
+                        }
+                    }
                     entry<RouteCursorPreset> {
                         PageSurface {
                             CursorPresetPage(
