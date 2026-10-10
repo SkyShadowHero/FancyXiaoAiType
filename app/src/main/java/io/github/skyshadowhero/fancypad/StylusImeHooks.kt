@@ -142,6 +142,26 @@ class StylusImeHooks(private val module: XposedModule) {
     // ------------------------------------------------------------------
     private var toolbar: StylusToolbarWindow? = null
 
+    /**
+     * 工具条诊断：**只记生命周期**（开关状态 / 创建结果 / 失败原因），一个文件几行。
+     *
+     * 为什么必须留这一点：本机 logcat 三个缓冲区都是死的，窗口创建失败时
+     * `WindowManager.addView` 抛的异常除了这里没有别的出口 —— 没有它就完全查不到原因。
+     * 与之前删掉的那种"每笔都写"的诊断不同，这里一次会话最多写两三行。
+     */
+    private val toolbarLog = ArrayDeque<String>()
+
+    private fun recordToolbar(line: String) {
+        val dir = sessionIme?.filesDir ?: return
+        synchronized(toolbarLog) {
+            toolbarLog.addLast(line)
+            while (toolbarLog.size > 10) toolbarLog.removeFirst()
+            runCatching {
+                File(dir, "stylus_toolbar.txt").writeText(toolbarLog.joinToString("\n") + "\n")
+            }
+        }
+    }
+
     /** 手写**自己**落过的字，供"撤回 / 恢复"（键盘打的字不在这个历史里）。 */
     private val committedHistory = ArrayDeque<String>()
     private val undoneHistory = ArrayDeque<String>()
@@ -429,8 +449,14 @@ class StylusImeHooks(private val module: XposedModule) {
 
         // ★ 工具条在**第一个真实笔事件到达时**才创建：那个事件证明会话已经建立，
         // 此时再建 Compose 视图，不可能把 IMMS 那个只有 200ms 的手势窗口拖过去。
-        if (sessionStrokeCount == 0 && HookPrefs.stylusToolbarEnabled() && !usingHcr) {
-            mainHandler.post { showToolbar() }
+        if (sessionStrokeCount == 0) {
+            recordToolbar(
+                "trigger enabled=${HookPrefs.stylusToolbarEnabled()} usingHcr=$usingHcr " +
+                    "ime=${sessionIme != null}"
+            )
+            if (HookPrefs.stylusToolbarEnabled() && !usingHcr) {
+                mainHandler.post { showToolbar() }
+            }
         }
 
         synchronized(stateLock) {
@@ -839,12 +865,13 @@ class StylusImeHooks(private val module: XposedModule) {
         if (!HookPrefs.stylusToolbarEnabled()) return
         runCatching {
             val t = toolbar ?: StylusToolbarWindow(ime).also { toolbar = it }
-            t.show(toolbarActions, canUndo, canRedo)
+            recordToolbar("show -> ${t.show(toolbarActions, canUndo, canRedo)}")
         }.onFailure { L.e("event=stylus_toolbar_show_exception", it) }
     }
 
     private fun hideToolbar() {
-        runCatching { toolbar?.hide() }.onFailure { L.e("event=stylus_toolbar_hide_exception", it) }
+        runCatching { recordToolbar("hide -> ${toolbar?.hide()}") }
+            .onFailure { L.e("event=stylus_toolbar_hide_exception", it) }
     }
 
     /** 撤回/恢复按钮的可用状态（Compose state，可从任意线程写）。 */

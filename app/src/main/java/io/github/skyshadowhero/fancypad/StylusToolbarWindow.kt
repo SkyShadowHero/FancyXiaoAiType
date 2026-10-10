@@ -81,15 +81,22 @@ internal class StylusToolbarWindow(private val ime: InputMethodService) {
     private var lastX = Int.MIN_VALUE
     private var lastY = Int.MIN_VALUE
 
-    fun show(actions: Actions, canUndo: State<Boolean>, canRedo: State<Boolean>) {
-        if (added) return
+    /**
+     * 建窗口并显示。
+     *
+     * @return 状态字符串（给调用方落盘用）：成功时形如 `ok type=2011 ownToken=true`，
+     *         失败时带上异常消息 —— 本机 logcat 是死的，不返回它就查不到失败原因。
+     */
+    fun show(actions: Actions, canUndo: State<Boolean>, canRedo: State<Boolean>): String {
+        if (added) return "already"
         canUndoState = canUndo
         canRedoState = canRedo
-        val w = ime.getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        val w = ime.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            ?: return "fail: no WindowManager"
         wm = w
         val view = runCatching { buildView(actions) }.onFailure {
             L.e("event=toolbar_build_failed", it)
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return "fail: buildView threw"
 
         val params = baseParams()
         // 首选：token 留空（WMS 新建 token，绝不碰输入法主窗口的 token）
@@ -105,8 +112,10 @@ internal class StylusToolbarWindow(private val ime: InputMethodService) {
                 w.addView(view, params)
             }
             if (ok.isFailure) {
-                L.e("event=toolbar_add_failed_both", ok.exceptionOrNull()!!)
-                return
+                val m = ok.exceptionOrNull()
+                L.e("event=toolbar_add_failed_both", m!!)
+                return "fail: ${first.exceptionOrNull()?.javaClass?.simpleName}:" +
+                    "${first.exceptionOrNull()?.message} / ${m.javaClass.simpleName}:${m.message}"
             }
         }
         root = view
@@ -117,10 +126,11 @@ internal class StylusToolbarWindow(private val ime: InputMethodService) {
             "event=toolbar_shown type=${params.type} ownToken=${params.token == null} " +
                 "x=${params.x} y=${params.y}"
         )
+        return "ok type=${params.type} ownToken=${params.token == null} x=${params.x} y=${params.y}"
     }
 
-    fun hide() {
-        if (!added) return
+    fun hide(): String {
+        if (!added) return "notShown"
         val w = wm
         root?.let { v -> runCatching { w?.removeViewImmediate(v) } }
         root = null
@@ -128,6 +138,7 @@ internal class StylusToolbarWindow(private val ime: InputMethodService) {
         added = false
         punctuationOpen.value = false
         L.i("event=toolbar_hidden")
+        return "ok"
     }
 
     val isShown: Boolean get() = added
