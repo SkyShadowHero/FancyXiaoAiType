@@ -58,6 +58,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * **三、系统侧配合**（system_server 进程，作用域 `system`）
  * - [PrefKeys.STYLUS_WHITELIST]：让系统认定小爱支持随手写（默认开）
  *
+ * 总开关 [PrefKeys.STYLUS_ENABLED] 关掉时，**除它以外的全部内容都不显示**。
+ *
  * ⚠ 生效条件：模块作用域要勾上 `com.xiaomi.type`、`system`、`com.miui.securitycore`；
  * `system` 侧是**开机注入**的，改完这个开关需要重启一次平板（输入法侧只需重启输入法进程）。
  * 笔迹的颜色/粗细在**每次起笔时**读取，改完下一次落笔生效。
@@ -116,94 +118,98 @@ fun StylusPage(
             }
         }
 
-        item { SmallTitle("笔迹显示") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.stylusInkEnabled,
-                    onCheckedChange = { checked ->
-                        uiState.stylusInkEnabled = checked
-                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_INK_ENABLED, checked) }
-                    },
-                    title = "显示笔迹",
-                    summary = "实时画线；关闭则只看得到识别结果",
-                )
-                AnimatedVisibility(visible = uiState.stylusInkEnabled) {
-                    Column {
-                        DpSlider(
-                            title = "笔迹粗细",
-                            summary = "默认 ${PrefKeys.STYLUS_INK_WIDTH_DEFAULT.toInt()} 像素",
-                            value = uiState.stylusInkWidthPx,
-                            range = PrefKeys.STYLUS_INK_WIDTH_MIN..PrefKeys.STYLUS_INK_WIDTH_MAX,
-                            keyPoint = PrefKeys.STYLUS_INK_WIDTH_DEFAULT,
-                            unit = "px",
-                            onValueChange = { v -> uiState.stylusInkWidthPx = v },
-                            onCommit = {
-                                uiState.save { e ->
-                                    e.putFloat(
-                                        PrefKeys.STYLUS_INK_WIDTH_PX,
-                                        uiState.stylusInkWidthPx,
-                                    )
-                                }
-                            },
-                            commitGuard = { uiState.loaded },
-                            stepDp = 1f,
-                        )
-                        InkColorSection(uiState)
+        // 总开关关掉时，这一页其余内容**全部隐藏**：没有作用对象时留着它们只会
+        // 让人误以为改了有用（与「平行菜单」页同一处理）。
+        if (uiState.stylusEnabled) {
+            item { SmallTitle("笔迹显示") }
+            item {
+                Card {
+                    SwitchPreference(
+                        checked = uiState.stylusInkEnabled,
+                        onCheckedChange = { checked ->
+                            uiState.stylusInkEnabled = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_INK_ENABLED, checked) }
+                        },
+                        title = "显示笔迹",
+                        summary = "实时画线；关闭则只看得到识别结果",
+                    )
+                    AnimatedVisibility(visible = uiState.stylusInkEnabled) {
+                        Column {
+                            DpSlider(
+                                title = "笔迹粗细",
+                                summary = "默认 ${PrefKeys.STYLUS_INK_WIDTH_DEFAULT.toInt()} 像素",
+                                value = uiState.stylusInkWidthPx,
+                                range = PrefKeys.STYLUS_INK_WIDTH_MIN..PrefKeys.STYLUS_INK_WIDTH_MAX,
+                                keyPoint = PrefKeys.STYLUS_INK_WIDTH_DEFAULT,
+                                unit = "px",
+                                onValueChange = { v -> uiState.stylusInkWidthPx = v },
+                                onCommit = {
+                                    uiState.save { e ->
+                                        e.putFloat(
+                                            PrefKeys.STYLUS_INK_WIDTH_PX,
+                                            uiState.stylusInkWidthPx,
+                                        )
+                                    }
+                                },
+                                commitGuard = { uiState.loaded },
+                                stepDp = 1f,
+                            )
+                            InkColorSection(uiState)
+                        }
                     }
                 }
             }
-        }
 
-        item { SmallTitle("书写手势") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.stylusGestureEnabled,
-                    onCheckedChange = { checked ->
-                        uiState.stylusGestureEnabled = checked
-                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, checked) }
-                    },
-                    title = "书写手势",
-                    summary = "圈选＝选中，划掉＝删除，画尖尖（^）＝在光标处插入",
-                )
+            item { SmallTitle("书写手势") }
+            item {
+                Card {
+                    SwitchPreference(
+                        checked = uiState.stylusGestureEnabled,
+                        onCheckedChange = { checked ->
+                            uiState.stylusGestureEnabled = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, checked) }
+                        },
+                        title = "书写手势",
+                        summary = "圈选＝选中，划掉＝删除，画尖尖（^）＝在光标处插入",
+                    )
+                }
             }
-        }
 
-        item { SmallTitle("识别引擎") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.stylusIflytek,
-                    onCheckedChange = { checked ->
-                        uiState.stylusIflytek = checked
-                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_IFLYTEK, checked) }
-                    },
-                    title = "用讯飞引擎识别",
-                    summary = "用小爱自带的讯飞引擎识别（不切你的键盘）\n"
-                        + "关闭则退回系统笔引擎，识别率会明显下降",
-                )
+            item { SmallTitle("识别引擎") }
+            item {
+                Card {
+                    SwitchPreference(
+                        checked = uiState.stylusIflytek,
+                        onCheckedChange = { checked ->
+                            uiState.stylusIflytek = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_IFLYTEK, checked) }
+                        },
+                        title = "用讯飞引擎识别",
+                        summary = "用小爱自带的讯飞引擎识别（不切你的键盘）\n"
+                            + "关闭则退回系统笔引擎，识别率会明显下降",
+                    )
+                }
             }
-        }
 
-        item { SmallTitle("系统侧配合") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.stylusWhitelist,
-                    onCheckedChange = { checked ->
-                        uiState.stylusWhitelist = checked
-                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_WHITELIST, checked) }
-                    },
-                    title = "让小爱进入随手写白名单",
-                    summary = if (uiState.stylusWhitelist) {
-                        "系统已把小爱当作支持随手写的输入法"
-                    } else {
-                        "⚠ 关闭后系统设置里的随手写会打不开，并会把你切到搜狗"
-                    },
-                )
+            item { SmallTitle("系统侧配合") }
+            item {
+                Card {
+                    SwitchPreference(
+                        checked = uiState.stylusWhitelist,
+                        onCheckedChange = { checked ->
+                            uiState.stylusWhitelist = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_WHITELIST, checked) }
+                        },
+                        title = "让小爱进入随手写白名单",
+                        summary = if (uiState.stylusWhitelist) {
+                            "系统已把小爱当作支持随手写的输入法"
+                        } else {
+                            "⚠ 关闭后系统设置里的随手写会打不开"
+                        },
+                    )
+                }
             }
-        }
+    }
     }
 }
 
