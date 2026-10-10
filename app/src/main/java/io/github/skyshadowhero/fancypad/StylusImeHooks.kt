@@ -10,7 +10,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.DeleteGesture
 import android.view.inputmethod.HandwritingGesture
+import android.view.inputmethod.InsertGesture
+import android.view.inputmethod.InsertModeGesture
+import android.view.inputmethod.JoinOrSplitGesture
+import android.view.inputmethod.SelectGesture
 import java.util.concurrent.Executor
 import java.util.function.IntConsumer
 import io.github.libxposed.api.XposedInterface
@@ -130,6 +135,14 @@ class StylusImeHooks(private val module: XposedModule) {
 
     /** 上一笔抬起的时刻（事件时间）。判断这一笔是不是"单独画的"要用（见 [looksLikeGesture]）。 */
     @Volatile private var lastStrokeUpTime = 0L
+
+    /**
+     * 因为**轻点**而立刻收会话时，把这批还没到识别延迟的笔迹带走（见 [carryStrokes]）。
+     *
+     * [endSession] 会清空 [strokes]，而这个字段跨会话保留；[recognizeAndCommit] 优先取它。
+     */
+    @Volatile
+    private var carriedStrokes: List<List<PencilEngine.Pt>>? = null
 
     /** 本次落笔距上一笔抬起过了多久（ms）；第一笔、或隔了很久没写时是 [Long.MAX_VALUE]。 */
     @Volatile private var idleBeforeStroke = Long.MAX_VALUE
@@ -336,6 +349,8 @@ class StylusImeHooks(private val module: XposedModule) {
                 // 距上一笔抬起多久 —— "单独画的一笔"的判据（连接·拆分那种改动型笔势只认它）
                 idleBeforeStroke =
                     if (lastStrokeUpTime > 0L) time - lastStrokeUpTime else Long.MAX_VALUE
+                // 又落笔了：把轻点"带走"的那批笔迹并回累积，识别继续等真正停笔
+                mergeCarriedBack()
                 // 落笔时同步一次画布/窗口的真实位置（上一笔之后可能发生过布局变化）。
                 // 每个 MOVE 都去问 View 的位置没必要 —— 每秒上百次；整笔沿用这次的结果。
                 ink.sync()
@@ -402,9 +417,17 @@ class StylusImeHooks(private val module: XposedModule) {
         // ACTION_MOVE 分支里的 `largerThanTouchSlop(...)`）—— 也就是说"位移不到 touchSlop 的手势"
         // 在系统眼里本来就不是画线。用同一个阈值，才能保证"我们判成点击"与"系统判成没画线"一致。
         //
-        // 不再掺时间判据，也不再掺会话状态：早先那版加了"本会话写过没有"，
-        // 结果是写完字之后再点一下就被当成写字送去识别（点一下变成一个字的经典 bug）。
-        val isTap = action == MotionEvent.ACTION_UP && maxDist <= tapSlop(ime)
+        // 不再掺**会话状态**：早先那版加了"本会话写过没有"，结果是写完字之后再点一下就被当
+        // 写字送去识别（点一下变成一个字的经典 bug）—— 那是"整场会话"级别的状态，一次误判就
+        // 一直错下去。这里用的是**本笔落笔前停了多久**，是局部量，不会有那个后遗症。
+        //
+        // 为什么必须加这个时间条件：写字途中笔尖难免蜻蜓点水地碰一下（笔画之间、写「点」画、
+        // 手抖），这些触碰的位移常常也小于 touchSlop。只看位移的话它们会被判成"点击" → 立刻
+        // 收会话 → 攒了半个字的笔迹被送去识别，真机反馈就是"字还没写完就被中断然后出字了"。
+        // 加上它之后：只有**停下来之后**的轻触才算点击，写字途中的触碰算普通笔画。
+        val isTap = action == MotionEvent.ACTION_UP &&
+            maxDist <= tapSlop(ime) &&
+            idleBeforeStroke >= TAP_IDLE_MS
 
         // 墨迹：边收边画。轻点不留墨（它只是搬光标/交回笔）。
         if (HookPrefs.stylusInkEnabled() && !isTap) {
@@ -422,6 +445,8 @@ class StylusImeHooks(private val module: XposedModule) {
                     }
                     // 每次落笔重新探测：小爱可能在这期间切到了手写键盘
                     usingHcr = hcrEngineAvailable(ime)
+                    // 又落笔了 → 把还没到点的"抬手"撤掉（用户还在写，不能出字）
+                    workerHandler?.removeCallbacks(hcrLiftTask)
                 }
 
                 MotionEvent.ACTION_MOVE -> current?.add(PencilEngine.Pt(rawX, rawY, ACTION_MOVE, time))
@@ -466,8 +491,13 @@ class StylusImeHooks(private val module: XposedModule) {
                 runCatching { hcrFeed?.invoke(null, ime, feedX.toInt(), feedY.toInt(), ACTION_UP) }
                 runCatching { hcrClear?.invoke(null, ime) }
             } else {
-                // 立刻把前面攒下的字送识别，别让这次点击把它拖到会话结束
-                flushRecognition()
+                // 轻点要立刻收会话（把笔交回系统），但**不能**因此提前识别。
+                //
+                // 早先这里是 flushRecognition()：立即把攒下的笔迹送去识别。真机表现就是
+                // "字还没写完就被中断然后出字了" —— 而且它走的是 `dispatchRecognition()`，
+                // 也就是**系统笔引擎**，不是用户在设置里选的讯飞，所以出的字还常常是错的。
+                // 现在改成"带走这批笔迹 + 按停笔延迟到点再识别"，见 [carryStrokes]。
+                carryStrokes()
             }
             // ★ 必须**post 出去**，不能在这里同步收会话。
             //
@@ -505,12 +535,21 @@ class StylusImeHooks(private val module: XposedModule) {
             val stroke = justFinished
             if (stroke != null && looksLikeGesture(ime, stroke, prevStroke)) {
                 val g = gestureEngine.recognize(ime, stroke.map { PointF(it.x, it.y) })
-                if (g != null) {
+                // ★ 模型说了不算：形状对不上就不执行（见 [gestureShapeOk]）。
+                //   真机反馈"横线也被识别为圈选"就是缺了这一步。
+                if (g != null && gestureShapeOk(g, stroke, prevStroke)) {
                     performGesture(ime, g, feedX.toInt(), feedY.toInt())
                     prevStroke = stroke
                     return
                 }
-                L.i("event=stylus_gesture_not_recognized points=${stroke.size}")
+                if (g != null) {
+                    L.i(
+                        "event=stylus_gesture_shape_mismatch type=${g.javaClass.simpleName} " +
+                            "pts=${stroke.size}",
+                    )
+                } else {
+                    L.i("event=stylus_gesture_not_recognized points=${stroke.size}")
+                }
             }
         }
         if (action == MotionEvent.ACTION_UP && justFinished != null) {
@@ -527,13 +566,14 @@ class StylusImeHooks(private val module: XposedModule) {
 
         // ⓪ 我们**自己拉起来**的讯飞 HCR（与小爱那条链共用引擎，所以互斥：usingHcr 时走它那条）
         //
-        // 节奏：**攒一段 → 停笔识别 → 直接落字（commitText）→ 清空累积**。
+        // 节奏：**攒一段 → 停笔重认整段 → 组词态上屏（可被替换）→ 会话结束时落定**。
         //
         // 一路试下来的取舍（都踩过）：
         //   · 每笔就 commit：第一笔被认成别的字就落定了，后面越写越乱；
-        //   · setComposingText（组词态）能让中间结果被替换，但用户看到的是
-        //     "文字下面有横线、还会被后面写的字改掉" —— 明确不要；
-        //   · 所以现在是落字 + **每次落字后清空 [iflytekStrokes]**，后面的笔画不再回头改前面的字。
+        //   · 每次识别后**清空累积**再 commit：中间结果同样落了定 —— 写「好」会变成「女」+「子」，
+        //     写「家」会变成上下两个独立字（真机反馈的原始现象）；
+        //   · 所以现在是：**累积不清空**，每次把整段重认一遍，用 `setComposingText`
+        //     覆盖上一轮结果（自动优化文字），只在会话结束时 `finishComposingText` 落定。
         if (iflytek.isActive && !usingHcr) {
             if (action == MotionEvent.ACTION_CANCEL) {
                 iflytek.reset()
@@ -544,13 +584,13 @@ class StylusImeHooks(private val module: XposedModule) {
                 justFinished?.let {
                     synchronized(stateLock) { iflytekStrokes.add(it) }
                 }
-                // 停笔后识别并**直接落字**（不做组词态）：
-                // 组词态虽然能让中间结果被替换，但用户看到的是"文字下面有横线、还会被
-                // 后面写的字改掉" —— 明确不要。改成落字 + 每次落字后清空累积，
-                // 后面的笔画就不会再回头改前面已经定下的字。
+                // 停笔后把**整段**送去重认，结果走组词态（见 [showComposing]）。
+                // 这里**不清空** [iflytekStrokes]：下一次识别要把整段重新认一遍，
+                // 上一轮的中间结果（「女」）才能被更好的结果（「好」）替换 ——
+                // 这就是「自动优化文字」。落定只在会话结束时（[finishComposing]）。
                 val h = workerHandler()
                 h.removeCallbacks(recognizeTask)
-                h.postDelayed(recognizeTask, HookPrefs.stylusDelayMs().toLong().coerceIn(200L, 1500L))
+                h.postDelayed(recognizeTask, recognizeDelayMs())
             }
             return
         }
@@ -560,7 +600,12 @@ class StylusImeHooks(private val module: XposedModule) {
             runCatching { hcrFeed?.invoke(null, ime, feedX.toInt(), feedY.toInt(), action) }
                 .onFailure { L.w("event=stylus_hcr_feed_failed msg=${it.message}") }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                runCatching { hcrLift?.invoke(null, ime) }
+                // ★ 抬手**不立刻** lift。小爱那条链的抬手（`v4.x.e`）会直接去取候选并上屏，
+                //   等于"没停笔就出字" —— 它完全绕过下面的停笔延迟，真机反馈里的"提前出字"
+                //   最可能就是这里。改成按同一个延迟再抬手；中间又落笔就在 DOWN 分支里撤掉。
+                val h = workerHandler()
+                h.removeCallbacks(hcrLiftTask)
+                h.postDelayed(hcrLiftTask, recognizeDelayMs())
                 synchronized(stateLock) { strokes.clear() }   // HCR 自己上屏，别重复处理
                 // 字出来之后墨迹就该退场。延迟一小会儿是为了让「笔迹→文字」看起来是接续的；
                 // 期间又落笔了（strokeActive）就不清，免得把新写的那一笔抹掉。
@@ -574,13 +619,44 @@ class StylusImeHooks(private val module: XposedModule) {
         if (action == MotionEvent.ACTION_UP) {
             val h = workerHandler()
             h.removeCallbacks(recognizeTask)
-            h.postDelayed(recognizeTask, HookPrefs.stylusDelayMs().toLong().coerceIn(50L, 1000L))
+            h.postDelayed(recognizeTask, recognizeDelayMs())
         }
     }
 
     /** 延后清墨迹的任务（HCR 上屏之后；若期间又落笔则跳过）。 */
     private val inkFadeTask = Runnable {
         if (!strokeActive) ink.clear()
+    }
+
+    /**
+     * 新落笔时，把轻点**带走**的那批笔迹并回当前累积，并撤掉那次提前排的识别。
+     *
+     * 不这么做的话：写完两笔 → 停一下 → 笔尖轻触（按轻点判据算点击）→ 半个字被"带走"、
+     * 延迟到点就落字了 —— 而用户其实还在写同一个字，看到的又是"还没写完就出字"。
+     * 并回来之后，识别只会在**真正停笔**之后发生。
+     */
+    private fun mergeCarriedBack() {
+        val carried = carriedStrokes ?: return
+        carriedStrokes = null
+        synchronized(stateLock) {
+            strokes.addAll(carried)
+            // 讯飞那条路用的是另一份累积（它每个识别周期要重喂整段），所以两边都要并
+            if (iflytek.isActive && !usingHcr) iflytekStrokes.addAll(carried)
+        }
+        workerHandler?.removeCallbacks(recognizeTask)
+        L.i("event=stylus_carry_merged strokes=${carried.size}")
+    }
+
+    /**
+     * 停笔延迟到点后才让小爱 HCR 那条链"抬手"（见 [onStylusMotion] 的 `usingHcr` 分支）。
+     *
+     * 抬手动作（`v4.x.e`）会取候选并**直接上屏**，所以必须等停笔 —— 否则就是"没写完就出字"。
+     */
+    private val hcrLiftTask = Runnable {
+        val ime = sessionIme ?: return@Runnable
+        runCatching { hcrLift?.invoke(null, ime) }
+            .onFailure { L.w("event=stylus_hcr_lift_failed msg=${it.message}") }
+        L.i("event=stylus_hcr_lift")
     }
 
     /** 小爱当前是否挂着讯飞手写引擎（`v4.x.g()` 非空表示是 `r9.j`）。 */
@@ -612,70 +688,165 @@ class StylusImeHooks(private val module: XposedModule) {
         prev: List<PencilEngine.Pt>?,
     ): Boolean {
         if (stroke.size < 6) return false
-        var minX = Float.MAX_VALUE
-        var maxX = -Float.MAX_VALUE
-        var minY = Float.MAX_VALUE
-        var maxY = -Float.MAX_VALUE
-        for (p in stroke) {
-            if (p.x < minX) minX = p.x
-            if (p.x > maxX) maxX = p.x
-            if (p.y < minY) minY = p.y
-            if (p.y > maxY) maxY = p.y
+        val g = Geometry(stroke)
+        if (g.w < MIN_GESTURE_PX && g.h < MIN_GESTURE_PX) return false
+
+        if (isLoopShape(g)) return true                       // ① 圈选
+        if (isStrikeShape(g)) return true                     // ② 划掉删除
+        if (isVerticalShape(g) && isMarkBetweenText(ime)) return true   // ②b 连接·拆分
+        if (isCaretShape(stroke, g, prev)) return true         // ③ 尖尖插入
+        if (isPolylineShape(stroke, g)) return true            // ④ 折线换行
+
+        // 诊断用：形状上"已经很像删除线"、却还是被预筛挡掉的笔画，采样记一笔。
+        if (g.w > MIN_STRIKE_PX * 0.7f && g.w > 1.3f * g.h) {
+            L.sampled("strike_rejected", limit = 8) {
+                "event=stylus_gesture_rejected w=${g.w.toInt()} h=${g.h.toInt()} pts=${stroke.size}"
+            }
         }
-        val w = maxX - minX
-        val h = maxY - minY
-        if (w < MIN_GESTURE_PX && h < MIN_GESTURE_PX) return false
+        return false
+    }
 
-        val first = stroke.first()
-        val last = stroke.last()
-        val gap = kotlin.math.hypot((last.x - first.x).toDouble(), (last.y - first.y).toDouble()).toFloat()
+    /**
+     * 引擎给出的手势**再验一遍形状** —— 每种手势必须对得上自己那条形状判据。
+     *
+     * 为什么必须有这一步：判形状的是引擎里的小模型（`one_gesture_model.tflite`），它会认错。
+     * 真机反馈"横线也被识别为圈选"就是它：预筛按"长横线"把这一笔放行去问模型，模型却回了
+     * SELECT，于是这一横把文字选上了。预筛只决定"要不要问"，**问出来的答案还得对得上形状**，
+     * 否则一次误判就直接改坏用户的东西（圈选会动选区、删除会删字、换行会插换行符）。
+     *
+     * 用的判据与预筛**同一套函数**，不会出现两处阈值各说各话。
+     */
+    private fun gestureShapeOk(
+        gesture: HandwritingGesture,
+        stroke: List<PencilEngine.Pt>,
+        prev: List<PencilEngine.Pt>?,
+    ): Boolean {
+        val g = Geometry(stroke)
+        return when (gesture) {
+            is SelectGesture -> isLoopShape(g)
+            is DeleteGesture -> isStrikeShape(g)
+            is JoinOrSplitGesture -> isVerticalShape(g)
+            is InsertGesture -> isPolylineShape(stroke, g)
+            is InsertModeGesture -> isCaretShape(stroke, g, prev)
+            else -> true
+        }
+    }
 
-        // ① 闭合环（圈选）：首尾相接 + 两个方向都张得开。
-        //    比例放宽过两次（0.25 → 0.30 → 0.40）：圈得不圆、留个口子的也放行。
-        if (gap < SELECT_GAP_RATIO * maxOf(w, h) && w > MIN_GESTURE_PX && h > MIN_GESTURE_PX) return true
+    /** 一笔的几何特征（包围盒 / 首尾间距）。五个形状判据共用，省得每处各算一遍。 */
+    private class Geometry(val stroke: List<PencilEngine.Pt>) {
+        val first: PencilEngine.Pt = stroke.first()
+        val last: PencilEngine.Pt = stroke.last()
+        val minX: Float
+        val maxX: Float
+        val minY: Float
+        val maxY: Float
 
-        // ② 长横线（划掉删除）
-        if (w > STRIKE_ASPECT * h && w > MIN_STRIKE_PX) return true
-
-        // ②b 短竖线（连接·拆分）：引擎里模型 type 3/4 → `JoinOrSplitGesture`。
-        //
-        //     这条**必须严**。初版只判形状（够竖 + 长度合适），真机结果就是
-        //     "竖线被识别成手势的概率太大，写字被打断"：中文里竖笔太常见，写带竖的字几乎每次
-        //     都去问一次模型，而模型一旦判成 JoinOrSplit，正在写的那个字就被连接/拆分了。
-        //     所以除形状外还要过 [isMarkBetweenText]：**单独画的** + **落在已有文字之间**。
-        if (h > SPLIT_ASPECT * w && h > MIN_SPLIT_PX && h < MAX_SPLIT_PX &&
-            isMarkBetweenText(ime)
-        ) {
-            return true
+        init {
+            var loX = Float.MAX_VALUE
+            var hiX = -Float.MAX_VALUE
+            var loY = Float.MAX_VALUE
+            var hiY = -Float.MAX_VALUE
+            for (p in stroke) {
+                if (p.x < loX) loX = p.x
+                if (p.x > hiX) hiX = p.x
+                if (p.y < loY) loY = p.y
+                if (p.y > hiY) hiY = p.y
+            }
+            minX = loX
+            maxX = hiX
+            minY = loY
+            maxY = hiY
         }
 
-        // ③ 尖尖（插入）· 两笔版：两笔头尾相接成 V
-        //
-        // 阈值放宽过（真机反馈"画尖尖识别概率低"）：原来是每笔上下都要超过
-        // MIN_GESTURE_PX(90px)、总宽 >200px、相接误差 <35% —— 小一点的 ^ 全被漏掉。
+        val w: Float get() = maxX - minX
+        val h: Float get() = maxY - minY
+        val gap: Float
+            get() = kotlin.math
+                .hypot((last.x - first.x).toDouble(), (last.y - first.y).toDouble())
+                .toFloat()
+    }
+
+    /**
+     * 闭合环（**画框框**）→ 圈选。
+     *
+     * 首尾相接 + 两个方向都张得开。比例放宽过两次（0.25 → 0.30 → 0.40）：圈得不圆、
+     * 留个口子的也放行 —— 真判形状的是模型，预筛只管别把候选漏掉；而**执行前**的
+     * [gestureShapeOk] 会用同一条判据再验一次，所以放宽不会让"横线变成圈选"。
+     */
+    private fun isLoopShape(g: Geometry): Boolean =
+        g.gap < SELECT_GAP_RATIO * maxOf(g.w, g.h) &&
+            g.w > MIN_GESTURE_PX && g.h > MIN_GESTURE_PX
+
+    /** 长横线（划掉）→ 删除。 */
+    private fun isStrikeShape(g: Geometry): Boolean =
+        g.w > STRIKE_ASPECT * g.h && g.w > MIN_STRIKE_PX
+
+    /**
+     * 短竖线 → 连接·拆分。
+     *
+     * 这条**必须严**：初版只判形状，真机结果就是"竖线被识别成手势的概率太大，写字被打断"。
+     * 所以形状之外还要过 [isMarkBetweenText]（**单独画的** + **落在已有文字之间**），
+     * 那道门在 [looksLikeGesture] 里把关。
+     */
+    private fun isVerticalShape(g: Geometry): Boolean =
+        g.h > SPLIT_ASPECT * g.w && g.h > MIN_SPLIT_PX && g.h < MAX_SPLIT_PX
+
+    /**
+     * 直角折线（一横一竖）→ 换行。
+     *
+     * 与尖尖的区别很清楚：尖尖两条腿**都是竖的**（上-下折返），折线是**一横一竖** ——
+     * 所以按"两段的主导轴不同"判，顺带也排除了直线（两段同轴）与闭合环（弦退化）。
+     */
+    private fun isPolylineShape(stroke: List<PencilEngine.Pt>, g: Geometry): Boolean {
+        if (stroke.size < MIN_NEWLINE_POINTS) return false
+        val corner = cornerIndex(stroke, g.first, g.last)
+        if (corner !in 1 until stroke.size - 1) return false
+        val c = stroke[corner]
+        val leg1x = c.x - g.first.x
+        val leg1y = c.y - g.first.y
+        val leg2x = g.last.x - c.x
+        val leg2y = g.last.y - c.y
+        val leg1 = kotlin.math.hypot(leg1x.toDouble(), leg1y.toDouble()).toFloat()
+        val leg2 = kotlin.math.hypot(leg2x.toDouble(), leg2y.toDouble()).toFloat()
+        if (leg1 <= MIN_NEWLINE_LEG_PX || leg2 <= MIN_NEWLINE_LEG_PX) return false
+        val leg1Horizontal = kotlin.math.abs(leg1x) > kotlin.math.abs(leg1y)
+        val leg2Horizontal = kotlin.math.abs(leg2x) > kotlin.math.abs(leg2y)
+        return leg1Horizontal != leg2Horizontal
+    }
+
+    /**
+     * 尖尖（^ / V）→ 在光标处插入。
+     *
+     * 两种画法都认：**两笔相接**成 V（上一笔向上、这一笔向下），或**一笔画出** ^/V
+     * （折返点在笔画中段、两端朝同侧张开）。
+     *
+     * 阈值放宽过几次（真机反馈"画尖尖识别概率低"）：原来是每笔上下都要超过
+     * MIN_GESTURE_PX(90px)、总宽 >200px、相接误差 <35% —— 小一点的 ^ 全被漏掉。
+     */
+    private fun isCaretShape(
+        stroke: List<PencilEngine.Pt>,
+        g: Geometry,
+        prev: List<PencilEngine.Pt>?,
+    ): Boolean {
         if (prev != null && prev.size >= 4) {
             val pFirst = prev.first()
             val pLast = prev.last()
-            val join = kotlin.math.hypot(
-                (pLast.x - first.x).toDouble(),
-                (pLast.y - first.y).toDouble(),
-            ).toFloat()
+            val join = kotlin.math
+                .hypot((pLast.x - g.first.x).toDouble(), (pLast.y - g.first.y).toDouble())
+                .toFloat()
             val prevUp = pLast.y < pFirst.y - MIN_CARET_LEG_PX   // 上一笔向上
-            val curDown = last.y > first.y + MIN_CARET_LEG_PX    // 这一笔向下
-            val wide = (maxOf(maxX, pLast.x) - minOf(minX, pFirst.x)) > MIN_CARET_PX
-            if (join < CARET_JOIN_RATIO * maxOf(w, h) && prevUp && curDown && wide) return true
+            val curDown = g.last.y > g.first.y + MIN_CARET_LEG_PX // 这一笔向下
+            val wide = (maxOf(g.maxX, pLast.x) - minOf(g.minX, pFirst.x)) > MIN_CARET_PX
+            if (join < CARET_JOIN_RATIO * maxOf(g.w, g.h) && prevUp && curDown && wide) return true
         }
 
-        // ③b 尖尖（插入）· **一笔版**：一笔画出 ^ 或 V，折返点在笔画中段、两端朝同侧张开。
-        //
-        // 这条是主要的漏检来源：大家写 ^ 常常一笔画成，而上面那条要求"两笔相接"。
-        if (w > MIN_CARET_PX && h > MIN_CARET_LEG_PX && stroke.size >= 6) {
+        if (g.w > MIN_CARET_PX && g.h > MIN_CARET_LEG_PX && stroke.size >= 6) {
             // ^（尖端朝上）：最高点在中间，两端都比它低
             var turnIdx = 0
             for (i in stroke.indices) if (stroke[i].y < stroke[turnIdx].y) turnIdx = i
             val apexY = stroke[turnIdx].y
             if (turnIdx in 1 until stroke.size - 1 &&
-                first.y > apexY + MIN_CARET_LEG_PX && last.y > apexY + MIN_CARET_LEG_PX
+                g.first.y > apexY + MIN_CARET_LEG_PX && g.last.y > apexY + MIN_CARET_LEG_PX
             ) {
                 return true
             }
@@ -684,41 +855,9 @@ class StylusImeHooks(private val module: XposedModule) {
             for (i in stroke.indices) if (stroke[i].y > stroke[turnIdx].y) turnIdx = i
             val bottomY = stroke[turnIdx].y
             if (turnIdx in 1 until stroke.size - 1 &&
-                first.y < bottomY - MIN_CARET_LEG_PX && last.y < bottomY - MIN_CARET_LEG_PX
+                g.first.y < bottomY - MIN_CARET_LEG_PX && g.last.y < bottomY - MIN_CARET_LEG_PX
             ) {
                 return true
-            }
-        }
-
-        // ④ 直角折线（换行）：引擎里模型 type 7 → `InsertGesture`（插入换行符）。
-        //    形状是**一笔画出一个折线**（像 ↵ / ⌐ 那种"画折线换行"）。
-        //    与尖尖的区别很清楚：尖尖两条腿**都是竖的**（上-下折返），
-        //    折线是**一横一竖**，所以这里按"两段的主导轴不同"来判 —— 顺带也就排除了
-        //    直线（两段同轴）和闭合环（首尾重合、弦退化）。
-        if (stroke.size >= MIN_NEWLINE_POINTS) {
-            val corner = cornerIndex(stroke, first, last)
-            if (corner in 1 until stroke.size - 1) {
-                val c = stroke[corner]
-                val leg1x = c.x - first.x
-                val leg1y = c.y - first.y
-                val leg2x = last.x - c.x
-                val leg2y = last.y - c.y
-                val leg1 = kotlin.math.hypot(leg1x.toDouble(), leg1y.toDouble()).toFloat()
-                val leg2 = kotlin.math.hypot(leg2x.toDouble(), leg2y.toDouble()).toFloat()
-                if (leg1 > MIN_NEWLINE_LEG_PX && leg2 > MIN_NEWLINE_LEG_PX) {
-                    val leg1Horizontal = kotlin.math.abs(leg1x) > kotlin.math.abs(leg1y)
-                    val leg2Horizontal = kotlin.math.abs(leg2x) > kotlin.math.abs(leg2y)
-                    if (leg1Horizontal != leg2Horizontal) return true
-                }
-            }
-        }
-
-        // 诊断用：形状上"已经很像删除线"、却还是被预筛挡掉的笔画，采样记一笔。
-        // 真机拿这条日志判断删除识别率还有多少是被**几何**挡掉的（而不是被模型否掉的）——
-        // 只记宽高比接近删除线的，正常汉字的横画不会刷屏。
-        if (w > MIN_STRIKE_PX * 0.7f && w > 1.3f * h) {
-            L.sampled("strike_rejected", limit = 8) {
-                "event=stylus_gesture_rejected w=${w.toInt()} h=${h.toInt()} pts=${stroke.size}"
             }
         }
         return false
@@ -827,34 +966,59 @@ class StylusImeHooks(private val module: XposedModule) {
             android.view.ViewConfiguration.get(ime).scaledTouchSlop.toFloat()
         }.getOrDefault(FALLBACK_TAP_SLOP)
 
-    /** 延迟任务到点：讯飞 HCR 优先，其次系统笔引擎。 */
+    /**
+     * 延迟任务到点：讯飞 HCR 优先，其次系统笔引擎。
+     *
+     * **不清空累积** —— 每次都要把"到目前为止的整段字迹"重认一遍，中间结果才能被替换
+     *（见 [showComposing]）。累积由会话结束/开始来清（那时才落定）。
+     */
     private fun recognizeAndCommit() {
         val ime = sessionIme ?: return
 
-        // ⓪ 讯飞 HCR：整段字迹归一化后重喂 → 取候选 → **直接落字**（无组词态、无下划线）
+        // ⓪ 轻点收会话时"带走"的那批笔迹（见 [carryStrokes]）：先并回对应的累积里
+        carriedStrokes?.let { carried ->
+            carriedStrokes = null
+            synchronized(stateLock) {
+                strokes.addAll(carried)
+                if (iflytek.isActive && !usingHcr) iflytekStrokes.addAll(carried)
+            }
+        }
+
+        // ① 讯飞 HCR：整段字迹归一化后重喂 → 取候选 → **组词态**上屏
         if (iflytek.isActive && !usingHcr) {
             val all = synchronized(stateLock) { iflytekStrokes.map { ArrayList(it) } }
             if (all.isEmpty()) return
             val top = iflytek.recognize(all).firstOrNull()
-            synchronized(stateLock) { iflytekStrokes.clear() }
             if (top.isNullOrEmpty()) {
                 L.i("event=stylus_iflytek_empty")
                 return
             }
-            commitText(ime, top)
+            showComposing(ime, top)
             return
         }
 
-        val snapshot = takeStrokes() ?: return
+        // ② 系统笔引擎：同样整段重认、组词态上屏
+        val snapshot = synchronized(stateLock) {
+            if (strokes.isEmpty()) null else strokes.map { ArrayList(it) }
+        } ?: return
         dispatchRecognition(ime, snapshot)
     }
+
+    /**
+     * 停笔识别延迟（ms）—— **唯一入口**。
+     *
+     * 早先三条路各写各的 clamp（`coerceIn(200,1500)` / `coerceIn(50,1000)`），同一份设置
+     * 在不同路径下等的时间还不一样（就是"没有按照我的设置"）。现在统一按设置走，只做下限保护。
+     */
+    private fun recognizeDelayMs(): Long =
+        HookPrefs.stylusDelayMs().toLong().coerceIn(50L, 5000L)
 
     /**
      * 会话空闲超时：比停笔识别延迟长一点，免得正在识别时把会话收掉。
      *
      * 会话越短越好 —— 会话活着的时候笔被输入法攥着（见 [beginSession]）。
      */
-    private fun sessionTimeoutMs(): Long = maxOf(1200L, HookPrefs.stylusDelayMs().toLong() + 600L)
+    private fun sessionTimeoutMs(): Long = maxOf(1200L, recognizeDelayMs() + 600L)
 
     /** 把当前设置下发给讯飞引擎（间隔取自滑块；写区域固定为归一化方框）。 */
     private fun reconfigureIflytek(ime: InputMethodService) {
@@ -869,30 +1033,53 @@ class StylusImeHooks(private val module: XposedModule) {
         )
     }
 
-    /** 上屏 + 墨迹退场 + 字出来了就收会话（讯飞与系统笔引擎共用）。 */
-    private fun commitText(ime: InputMethodService, text: String) {
+    /**
+     * 把识别结果放成**组词态**上屏 —— 这就是「自动优化文字」。
+     *
+     * 只 `setComposingText`、**不 commit**：中间结果（比如刚写完「女」）先显示出来，后面
+     * 重认得更好时**整段被替换**（「女」→「好」，「宀」+「豕」→「家」）。用 `commitText`
+     * 出不来这个效果 —— 每次都落了定，后面的笔画再也改不回来，于是「好」变成「女」+「子」、
+     * 「家」变成上下两个独立字。
+     *
+     * 落定交给 [finishComposing]（会话结束时）—— 那时才真正提交，文字下面的横线也随之消失。
+     *
+     * 注意这里**不再**像以前那样"字一上屏就收会话"：会话必须活着，累积与组词区才能继续被
+     * 优化；会话由框架的空闲超时（[sessionTimeoutMs]）或用户轻点来收。
+     */
+    private fun showComposing(ime: InputMethodService, text: String) {
         mainHandler.post {
-            runCatching { ime.currentInputConnection?.commitText(text, 1) }
-                .onFailure { L.w("event=stylus_commit_failed msg=${it.message}") }
-            if (!strokeActive) {
-                ink.clear()
-                runCatching { ime.finishStylusHandwriting() }
-                    .onFailure { L.w("event=stylus_finish_after_commit_failed msg=${it.message}") }
-            }
+            runCatching { ime.currentInputConnection?.setComposingText(text, 1) }
+                .onFailure { L.w("event=stylus_composing_failed msg=${it.message}") }
+            // 文字已经在组词态显示出来了，墨迹就该退场（留着会跟文字糊在一起）
+            if (!strokeActive) ink.clear()
         }
     }
 
+    /** 落定组词态：把文字真正提交给编辑器、下划线消失。会话结束时调（见 [endSession]）。 */
+    private fun finishComposing(ime: InputMethodService) {
+        runCatching { ime.currentInputConnection?.finishComposingText() }
+            .onFailure { L.w("event=stylus_finish_composing_failed msg=${it.message}") }
+    }
+
     /**
-     * 立刻识别攒下的笔迹（轻点收笔时用）。
+     * 轻点收会话时，把已经攒下、还没到识别延迟的笔迹**带走**，并重新排识别。
      *
-     * 一定要在主线程**同步取走快照**再交后台：紧接着 `finishStylusHandwriting()` 会走
-     * [endSession]，那里会把 `strokes` 清掉 —— 要是还等后台线程自己去取，就什么也取不到了。
+     * 为什么不能就地识别：`flushRecognition()`（旧实现）会**立即**出字 —— 真机表现就是
+     * "字还没写完就被中断然后出字了"，而且走的是系统笔引擎、无视用户选的讯飞。
+     * 为什么不能不管：紧接着的 `finishStylusHandwriting()` 会走 [endSession]，那里会把
+     * `strokes` 清掉，字就丢了。
+     *
+     * 所以：**主线程同步取走快照**存进 [carriedStrokes]（跨会话保留），再按用户设的停笔
+     * 延迟重新排 [recognizeTask]；`endSession` 见到 [carriedStrokes] 非空时不会撤掉它。
      */
-    private fun flushRecognition() {
-        val ime = sessionIme ?: return
+    private fun carryStrokes() {
         val snapshot = takeStrokes() ?: return
-        L.i("event=stylus_flush strokes=${snapshot.size}")
-        dispatchRecognition(ime, snapshot)
+        carriedStrokes = snapshot
+        val delay = recognizeDelayMs()
+        val h = workerHandler()
+        h.removeCallbacks(recognizeTask)
+        h.postDelayed(recognizeTask, delay)
+        L.i("event=stylus_carry strokes=${snapshot.size} delay=${delay}ms")
     }
 
     /** 取出并清空待识别笔迹；没有就返回 null。 */
@@ -916,20 +1103,9 @@ class StylusImeHooks(private val module: XposedModule) {
                 return@post
             }
             L.i("event=stylus_recognize_ok strokes=${snapshot.size} text=$text")
-            mainHandler.post {
-                runCatching { ime.currentInputConnection?.commitText(text, 1) }
-                    .onFailure { L.w("event=stylus_commit_failed msg=${it.message}") }
-                if (!strokeActive) {
-                    // 字上屏了，墨迹退场（与 HCR 那条路一致：笔迹→文字是接续关系）
-                    ink.clear()
-                    // 并把会话收掉：会话在的时候笔是"被输入法拿走"的（framework 的
-                    // pilferPointers），用户这时点界面点不动。收掉之后下一次落笔如果只是点一下，
-                    // 系统自己的 HandwritingInitiator 不会开新会话，那一下就能落到界面上。
-                    // 会话空闲超时也会做这件事，这里只是把它提前到"字已经出来了"这一刻。
-                    runCatching { ime.finishStylusHandwriting() }
-                        .onFailure { L.w("event=stylus_finish_after_commit_failed msg=${it.message}") }
-                }
-            }
+            // 组词态上屏（自动优化文字那条路，见 [showComposing]）：这里**不收会话**，
+            // 让累积与组词区活着，下一笔重认时把这段结果替换掉。
+            showComposing(ime, text)
         }
     }
 
@@ -1050,7 +1226,12 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     private fun endSession(ime: InputMethodService) {
-        workerHandler?.removeCallbacks(recognizeTask)
+        // ★ 落定组词态：会话结束才算"写完了"，这时才把文字真正交给编辑器（下划线消失）。
+        //   必须放在清累积**之前** —— 清累积是为了下一次会话从空开始重认。
+        finishComposing(ime)
+        // 有"带走"的笔迹时**不能**撤掉识别回调 —— 那批字还等着到点识别（轻点会走到这里）
+        if (carriedStrokes == null) workerHandler?.removeCallbacks(recognizeTask)
+        workerHandler?.removeCallbacks(hcrLiftTask)
         mainHandler.removeCallbacks(inkFadeTask)
         runCatching { hcrClear?.invoke(null, ime) }
         synchronized(stateLock) {
@@ -1154,6 +1335,15 @@ class StylusImeHooks(private val module: XposedModule) {
          * 只有取不到时才用这个数。
          */
         const val FALLBACK_TAP_SLOP = 20f
+
+        /**
+         * 判成"轻点（点击）"还要求**落笔前已经停了这么久**（ms）。
+         *
+         * 写字途中笔尖蜻蜓点水地碰一下的位移也常常小于 touchSlop，只看位移会把它们误判成
+         * 点击 → 立刻收会话 → 半个字被送去识别（"字还没写完就被中断然后出字了"）。
+         * 只有停下来之后的轻触才是真的想点（搬光标 / 把笔交回系统）。
+         */
+        const val TAP_IDLE_MS = 300L
 
 
         /** 手势预筛：一个方向至少要这么大（px）才可能是手势。原 90，为了"更容易触发"降到 72。 */

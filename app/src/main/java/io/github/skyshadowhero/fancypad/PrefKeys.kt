@@ -597,14 +597,16 @@ object PrefKeys {
     /**
      * 停笔后触发识别的延迟（毫秒）。
      *
-     * 输入法自己的 `handwriting_recognition_delay` 量程是 50~1000（默认 500），
-     * Hook 侧也按 50~1000 夹取；但**界面只放开 300~1000** —— 延迟太短会在
-     * 笔画之间（比如写完「氵」的间隔）就把笔迹送出去，反而容易认错。
+     * 输入法自己的 `handwriting_recognition_delay` 量程是 50~1000（默认 500）；
+     * 我们这边由 `StylusImeHooks.recognizeDelayMs()` 统一夹取（50~5000），**界面放开 300~2000**。
+     *
+     * 上限特意开到 2000：延迟太短就会在**笔画之间**（比如写完「氵」的间隔）把笔迹送出去 ——
+     * 真机反馈的"字还没写完就被中断然后出字了"有一部分就是这个，得能把它调得更长。
      */
     const val STYLUS_DELAY_MS = "stylus_delay_ms"
 
     const val STYLUS_DELAY_MIN = 300f
-    const val STYLUS_DELAY_MAX = 1000f
+    const val STYLUS_DELAY_MAX = 2000f
     const val STYLUS_DELAY_DEFAULT = 500f
 
     /**
