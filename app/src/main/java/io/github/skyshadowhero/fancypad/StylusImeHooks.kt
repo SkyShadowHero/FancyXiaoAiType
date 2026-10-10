@@ -143,6 +143,9 @@ class StylusImeHooks(private val module: XposedModule) {
     /** 工具条诊断（落盘，见 [recordToolbar]）。 */
     private val toolbarLog = ArrayDeque<String>()
 
+    /** 当前这条笔画是否归属工具条（按下时判定，整条笔画有效）。 */
+    @Volatile private var toolbarGesture = false
+
     /** 正在用笔拖动工具条。 */
     @Volatile private var toolbarDragging = false
     @Volatile private var lastPenX = 0f
@@ -454,32 +457,36 @@ class StylusImeHooks(private val module: XposedModule) {
         // 命中时直接 return，所以不会在工具条上画出笔迹、也不会把它当字识别。
         run {
             val tb = toolbar
-            if (tb != null && tb.isShown && tb.contains(rawX, rawY)) {
+            if (tb != null && tb.isShown) {
+                // 手势归属：**按下时**若命中工具条，整条笔画都交给工具条处理（直到抬笔）。
+                // 不能每个事件都重新判断"是否在框内"——笔一滑出工具条就会掉进写字逻辑，
+                // 于是拖动工具条的同时在屏幕上画出一道线。
                 if (action == MotionEvent.ACTION_DOWN) {
+                    toolbarGesture = tb.contains(rawX, rawY)
                     toolbarDragging = false
                     lastPenX = rawX
                     lastPenY = rawY
+                    recordToolbar("down hit=$toolbarGesture at=(${rawX.toInt()},${rawY.toInt()})")
                 }
-                val consumed = tb.dispatchPen(action, rawX, rawY)
-                if (!consumed && !toolbarDragging && action == MotionEvent.ACTION_DOWN) {
-                    toolbarDragging = true
-                }
-                if (toolbarDragging) {
-                    if (action == MotionEvent.ACTION_MOVE) {
+                if (toolbarGesture) {
+                    val consumed = tb.dispatchPen(action, rawX, rawY)
+                    // 按钮会消费按下；空处不消费 → 视为拖动（按住空白处拖走工具条）
+                    if (!consumed && action == MotionEvent.ACTION_DOWN) toolbarDragging = true
+                    if (toolbarDragging && action == MotionEvent.ACTION_MOVE) {
                         tb.moveBy(rawX - lastPenX, rawY - lastPenY)
                     }
                     lastPenX = rawX
                     lastPenY = rawY
                     if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                        toolbarDragging = false
-                        tb.rememberPosition()
+                        if (toolbarDragging) {
+                            toolbarDragging = false
+                            tb.rememberPosition()
+                        }
+                        toolbarGesture = false
+                        recordToolbar("up consumed=$consumed drag=$toolbarDragging")
                     }
+                    return
                 }
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                    tb.dispatchPen(action, rawX, rawY)
-                }
-                recordToolbar("hit act=$action consumed=$consumed drag=$toolbarDragging at=(${rawX.toInt()},${rawY.toInt()})")
-                return
             }
         }
 
@@ -1102,6 +1109,8 @@ class StylusImeHooks(private val module: XposedModule) {
         }
         sessionStrokeCount = 0
         strokeActive = false
+        toolbarGesture = false
+        toolbarDragging = false
         synchronized(stateLock) { iflytekStrokes.clear() }
         recordSessionState(ime, "begin")
         // 记录本次回调耗时：IMMS 的窗口只有 200ms，超过就有风险（诊断文件里可查）

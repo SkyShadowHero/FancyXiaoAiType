@@ -470,16 +470,17 @@ public final class HookPrefs {
     /**
      * 手写工具条是否启用。
      *
-     * **当前硬性关闭（实验特性，暂停）**：它连续四轮都让手写会话出问题
-     * （最近一次真机数据：两轮会话连一个笔事件都收不到、`INTERCEPTS_STYLUS` 残留），
-     * 而我在没有可用触控笔的情况下无法自行验证。代码与开关位保留，
-     * 等能在设备上闭环验证之后再打开。
-     *
-     * 之所以直接返回 false 而不是读偏好：要保证**任何设置都不可能**让这条路复活，
-     * 否则手写会再次被拖垮。
+     * 它的两条**硬约束**（都是真机踩出来的，改代码时别破坏）：
+     *  1. **不新开窗口**：用输入法 window token 另开窗口会让 token 重新"可见"，
+     *     IMMS 因此中止手写会话（`req=false`），还留下僵尸 `INTERCEPTS_STYLUS` 把笔吃掉；
+     *     输入法也没有悬浮窗权限（`SYSTEM_ALERT_WINDOW` / `INTERNAL_SYSTEM_WINDOW` 均 granted=0）。
+     *     所以工具条是挂进框架手写窗口容器的子 View。
+     *  2. **绝不改手写窗口的 `FLAG_NOT_TOUCHABLE`**：那块窗口是全屏的，一旦可触摸就会把笔的
+     *     后续事件当普通触摸接走，笔画永远完不成（真机：`down req=true` 之后什么都没有）。
+     *     所以工具条用**笔**操作：命中判定 + 合成事件派发，见 `StylusToolbarWindow.dispatchPen`。
      */
     public static boolean stylusToolbarEnabled() {
-        return false;
+        return stylusToolbar;
     }
 
     /** 笔迹颜色（ARGB）。 */

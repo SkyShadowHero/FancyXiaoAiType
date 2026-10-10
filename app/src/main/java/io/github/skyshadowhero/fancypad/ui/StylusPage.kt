@@ -191,7 +191,24 @@ fun StylusPage(
                 }
             }
 
-            item { SmallTitle("系统侧配合") }
+            item { SmallTitle("书写工具条") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.stylusToolbar,
+                    onCheckedChange = { checked ->
+                        uiState.stylusToolbar = checked
+                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_TOOLBAR, checked) }
+                    },
+                    title = "手写工具条",
+                    summary = "写字时浮出一排按钮，**用笔点按**、按住空白处可拖动：\n"
+                        + "撤回 / 恢复 / 删除 / 发送 / 标点 / 键盘\n"
+                        + "「撤回 / 恢复」只管手写落的字，键盘打的字不在历史里",
+                )
+            }
+        }
+
+        item { SmallTitle("系统侧配合") }
             item {
                 Card {
                     SwitchPreference(
