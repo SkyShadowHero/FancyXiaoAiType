@@ -130,8 +130,8 @@ class XposedEntry : XposedModule() {
             Target.PACKAGE -> {
                 L.i("event=package_ready package=${param.packageName} process=$processName")
                 // 必须在装 hook 之前绑定：随手写那边有若干**不带 module 参数**的快照读取
-                // （stylusFullscreen 等），不 bind 就会拿到字段默认值 —— 真机踩过：
-                // 表现为"设置了全屏书写区域但手写窗口还是中间那一条"。
+                // （笔迹颜色/粗细/书写区高度等 `HookPrefs.stylusXxx()`），不 bind 就会拿到
+                // 字段默认值 —— 真机踩过：表现为"设置了但落笔时还是默认的样子"。
                 HookPrefs.bind(this)
                 ConfigLoader.attach(getRemotePreferences(PrefKeys.GROUP))
                 installHooks(param.classLoader)

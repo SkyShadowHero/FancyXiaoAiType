@@ -74,11 +74,24 @@ public final class HookPrefs {
      * 否则系统设置里的随手写开关会因为「小爱不支持」而打不开（死锁）。
      */
     private static volatile boolean stylusWhitelist = true;
+    /** 是否显示笔迹（输入法进程的画布用）。 */
+    private static volatile boolean stylusInkEnabled = true;
+    /** 笔迹颜色（ARGB）。 */
+    private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
+    /** 笔迹线宽（px）。 */
+    private static volatile float stylusInkWidthPx = PrefKeys.STYLUS_INK_WIDTH_DEFAULT;
     /** 上次刷新的时刻（uptimeMillis），供 {@link #refreshIfStale} 判断快照新旧。 */
     private static volatile long lastRefreshAt = 0L;
 
     /** 随手写偏好的低频自愈刷新间隔（毫秒）。 */
     private static final long STYLUS_REFRESH_MS = 3000L;
+
+    /** 同一时刻只允许有一次刷新在途，避免 Hook 热点把 binder 调用堆起来。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean refreshInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 刷新专用后台线程（守护线程，只在真的需要刷新时才建）。 */
+    private static volatile java.util.concurrent.Executor refreshExecutor;
 
     /**
      * 绑定偏好（首次调用）：读一次快照并注册变更监听。
@@ -228,6 +241,18 @@ public final class HookPrefs {
             stylusWhitelist = p.getBoolean(PrefKeys.STYLUS_WHITELIST, true);
         } catch (Throwable ignored) {
         }
+        try {
+            stylusInkEnabled = p.getBoolean(PrefKeys.STYLUS_INK_ENABLED, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusInkColor = p.getInt(PrefKeys.STYLUS_INK_COLOR, PrefKeys.STYLUS_INK_COLOR_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusInkWidthPx = p.getFloat(PrefKeys.STYLUS_INK_WIDTH_PX, PrefKeys.STYLUS_INK_WIDTH_DEFAULT);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static boolean cursorEnabled() {
@@ -319,18 +344,70 @@ public final class HookPrefs {
         return stylusEnabled;
     }
 
-    /** 距上次刷新超过 {@code maxAgeMs} 才真正重读一次偏好（跨线程安全）。 */
-    public static void refreshIfStale(XposedInterface module, long maxAgeMs) {
+    /**
+     * 距上次刷新超过 {@code maxAgeMs} 时，安排一次**后台**重读。
+     *
+     * <p>为什么必须放后台：这个方法的调用点在 system_server 的
+     * {@code InputMethodInfo.supportsStylusHandwriting()} 与
+     * {@code InputMethodBindingController.getSupportsStylusHandwriting()} 里面 ——
+     * 前者是 MIUI 设置页与 {@code HandwritingConfigManager} 都会调的方法，可能是主线程。
+     * 而 {@link #rebind} 要 {@code getRemotePreferences()} 走一次 binder 到 lspd；
+     * 在 system_server 主线程上等 binder，一旦 lspd 卡住就是整机卡顿（甚至 watchdog）。
+     *
+     * <p>所以这里只**触发**刷新：立刻打时间戳（避免每次调用都往下走）、
+     * 同一时刻只允许一次在途（避免热点路径把调用堆起来），真正的 binder 读放到独立线程。
+     * 代价是调用方这一次读到的仍是上一份快照 —— 快照本来就是低频自愈用的，可接受。
+     */
+    public static void refreshIfStale(final XposedInterface module, long maxAgeMs) {
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastRefreshAt < maxAgeMs) {
             return;
         }
+        lastRefreshAt = now;
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            executor().execute(() -> {
+                try {
+                    rebind(module);
+                } catch (Throwable ignored) {
+                    // rebind 内部已各自兜底；这里只保证 in-flight 标志一定被放开
+                } finally {
+                    refreshInFlight.set(false);
+                }
+            });
+        } catch (Throwable t) {
+            // 线程建不出来（极端情况）也不能让标志卡住，否则以后再也不刷新
+            refreshInFlight.set(false);
+        }
+    }
+
+    /**
+     * 显式触发一次后台刷新，不等节流。
+     *
+     * <p>给「会话开始」这类低频时机用：注入进程不一定收得到偏好变更通知，
+     * 靠 Hook 热点里的节流刷新又可能刚好卡在两次之间。
+     */
+    public static void refreshSoon(XposedInterface module) {
+        refreshIfStale(module, 0L);
+    }
+
+    /** 刷新线程：单线程、守护线程，名字带 fancypad 便于在 ps/日志里认出来。 */
+    private static java.util.concurrent.Executor executor() {
+        java.util.concurrent.Executor e = refreshExecutor;
+        if (e != null) {
+            return e;
+        }
         synchronized (HookPrefs.class) {
-            if (now - lastRefreshAt < maxAgeMs) {
-                return;
+            if (refreshExecutor == null) {
+                refreshExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "fancypad-prefs");
+                    t.setDaemon(true);
+                    return t;
+                });
             }
-            rebind(module);
-            lastRefreshAt = now;
+            return refreshExecutor;
         }
     }
 
@@ -353,6 +430,23 @@ public final class HookPrefs {
     public static boolean stylusWhitelist(XposedInterface module) {
         refreshIfStale(module, STYLUS_REFRESH_MS);
         return stylusWhitelist;
+    }
+
+    // ---- 随手写 · 笔迹显示（输入法进程的画布读这些） ----
+
+    /** 是否显示笔迹。 */
+    public static boolean stylusInkEnabled() {
+        return stylusInkEnabled;
+    }
+
+    /** 笔迹颜色（ARGB）。 */
+    public static int stylusInkColor() {
+        return stylusInkColor;
+    }
+
+    /** 笔迹线宽（px，直接用，不乘 density）。 */
+    public static float stylusInkWidthPx() {
+        return stylusInkWidthPx;
     }
 
 

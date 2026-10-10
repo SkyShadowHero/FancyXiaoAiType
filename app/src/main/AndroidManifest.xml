@@ -39,12 +39,15 @@
 
         <!--
           笔引擎自检页（调试用）：验证系统 xiaomi-pencilengine-pad 能否在本进程里出字。
-          exported 是为了让 shell 能直接 `am start -n <pkg>/.PencilEngineSelfTest` 触发起来自检，
-          结果同时写 logcat（event=pencil_selftest_*），无需看屏幕。
+          **不导出**：这个页面会加载 17MB 模型并反复跑 OCR，导出就等于任何一个应用都能拉起来。
+          需要触发时走 root（本机有 KernelSU）：
+              su -c 'am start -n io.github.skyshadowhero.fancypad/.PencilEngineSelfTest'
+          root uid 在组件权限检查里是放行的，非导出组件一样起得来。
+          结果同时落在 files/selftest.txt 与模块日志里，不看屏幕也能取到结论。
         -->
         <activity
             android:name=".PencilEngineSelfTest"
-            android:exported="true"
+            android:exported="false"
             android:label="笔引擎自检"
             android:theme="@style/Theme.Miuix" />
     </application>

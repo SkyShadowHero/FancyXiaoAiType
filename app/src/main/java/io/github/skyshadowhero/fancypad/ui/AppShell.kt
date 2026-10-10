@@ -107,8 +107,9 @@ fun AppShell(
         summary = "本模块依赖 LSPosed 框架才能生效，当前未能连接到框架服务。\n\n" +
             "请检查：\n" +
             "1. 已在 LSPosed 管理器中启用本模块\n" +
-            "2. 作用域已勾选 com.xiaomi.type、system、com.android.systemui\n" +
-            "3. 启用后已重启输入法进程（system / SystemUI 的作用域变更需重启平板）\n\n" +
+            "2. 作用域已勾选 com.xiaomi.type、system、com.android.systemui、com.miui.securitycore\n" +
+            "   （只在用「右键菜单」功能时才需要再加 mark.via）\n" +
+            "3. 启用后已重启输入法进程（system / SystemUI / 安全中心的作用域变更需重启平板）\n\n" +
             "在框架就绪前，此处的改动不会被保存，也不会生效。",
         onDismissRequest = { },
         content = {

@@ -146,8 +146,12 @@ class AppUiState {
     // res/xml/method.xml 里没有 android:supportsStylusHandwriting="true"，
     // 系统因此从不把手写会话交给它。
     var stylusEnabled by mutableStateOf(false)
-    var stylusFullscreen by mutableStateOf(false)
     var stylusDelayMs by mutableStateOf(PrefKeys.STYLUS_DELAY_DEFAULT)
+
+    // ---- 笔迹显示（画布挂在框架的手写窗口里，满宽一条横带、跟着落笔点走）----
+    var stylusInkEnabled by mutableStateOf(true)
+    var stylusInkColor by mutableIntStateOf(PrefKeys.STYLUS_INK_COLOR_DEFAULT)
+    var stylusInkWidthPx by mutableStateOf(PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
 
     // 系统侧配合（system_server 进程，作用域 system）。默认开：
     // 关掉它会让 MIUI 设置页里的随手写开关打不开（死锁），见 PrefKeys 的注释。
@@ -469,4 +473,14 @@ private fun loadConfigInto(uiState: AppUiState) {
     // 这两个默认 true：缺键时必须走"开"，否则系统设置里的随手写打不开（见 PrefKeys 注释）
     uiState.stylusWhitelist = p.runCatching { getBoolean(PrefKeys.STYLUS_WHITELIST, true) }
         .getOrDefault(true)
+
+    // ---- 笔迹显示 ----
+    uiState.stylusInkEnabled = p.runCatching { getBoolean(PrefKeys.STYLUS_INK_ENABLED, true) }
+        .getOrDefault(true)
+    uiState.stylusInkColor = p.runCatching {
+        getInt(PrefKeys.STYLUS_INK_COLOR, PrefKeys.STYLUS_INK_COLOR_DEFAULT)
+    }.getOrDefault(PrefKeys.STYLUS_INK_COLOR_DEFAULT)
+    uiState.stylusInkWidthPx = p.runCatching {
+        getFloat(PrefKeys.STYLUS_INK_WIDTH_PX, PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
+    }.getOrDefault(PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
 }

@@ -596,7 +596,10 @@ object PrefKeys {
 
     /**
      * 停笔后触发识别的延迟（毫秒）。
-     * 量程与默认值对齐输入法自带的 `handwriting_recognition_delay`（50~1000，默认 500）。
+     *
+     * 输入法自己的 `handwriting_recognition_delay` 量程是 50~1000（默认 500），
+     * Hook 侧也按 50~1000 夹取；但**界面只放开 300~1000** —— 延迟太短会在
+     * 笔画之间（比如写完「氵」的间隔）就把笔迹送出去，反而容易认错。
      */
     const val STYLUS_DELAY_MS = "stylus_delay_ms"
 
@@ -622,5 +625,47 @@ object PrefKeys {
      */
     const val STYLUS_WHITELIST = "stylus_whitelist"
 
+    // ==================================================================
+    // 随手写 · 笔迹显示
+    //
+    // 画布挂在框架自己的手写窗口里（`InputMethodService.getStylusHandwritingWindow()`
+    // 返回的就是框架的 `InkWindow`：透明、MATCH_PARENT、NOT_TOUCHABLE）。
+    // 窗口本身看不见，**可见的只有容器里那一条横带** ——
+    // 所以「书写区域高度」是那条带子的高度，不是窗口高度。
+    // ==================================================================
+
+    /** 是否显示笔迹（默认开启：没有笔迹反馈的随手写很难用）。 */
+    const val STYLUS_INK_ENABLED = "stylus_ink_enabled"
+
+    /**
+     * 笔迹颜色（ARGB int）。
+     *
+     * 默认给 HyperOS 蓝：笔迹叠在**宿主应用**的内容上，深浅背景都可能遇到，
+     * 纯黑在深色底上看不见、纯白在浅色底上看不见，所以默认用一个两侧都看得见的彩色。
+     */
+    const val STYLUS_INK_COLOR = "stylus_ink_color"
+
+    /**
+     * 默认笔迹色 `0xFF3482FF`。
+     *
+     * 用 `@JvmField val` 而不是 `const val`：`const` 的初始化式不接受
+     * `0xFF3482FF.toInt()` 这类带方法调用的写法（`0xFF3482FF` 超出 Int 范围，
+     * 在 Kotlin 里是 Long 字面量）。`@JvmField` 让 Java 侧照样能写成
+     * `PrefKeys.STYLUS_INK_COLOR_DEFAULT`。
+     */
+    @JvmField
+    val STYLUS_INK_COLOR_DEFAULT = 0xFF3482FF.toInt()
+
+    /**
+     * 笔迹线宽（**px**，不是 dp）。
+     *
+     * 画布是裸 Canvas，`Paint.strokeWidth` 本来就是 px；这条线画在系统的手写窗口上，
+     * 不需要跟着密度缩放（而且这台机器 density 2.58，按 dp 走会粗得离谱）。
+     */
+    const val STYLUS_INK_WIDTH_PX = "stylus_ink_width_px"
+
+    const val STYLUS_INK_WIDTH_DEFAULT = 2f
+    const val STYLUS_INK_WIDTH_MIN = 1f
+    const val STYLUS_INK_WIDTH_MAX = 12f
 
 }

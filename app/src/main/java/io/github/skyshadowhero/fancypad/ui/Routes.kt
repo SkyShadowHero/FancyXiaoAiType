@@ -39,7 +39,8 @@ import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
  * ├── 右键菜单 ── 右键菜单
  * └── 关于
  * ```
- * 各自对应的 LSPosed 作用域见 [AppScope.pkg]（在「关于」页里列出）。
+ * 各自对应的 LSPosed 作用域见 [AppScope.pkg]。（界面上没有单独的作用域页：
+ * 需要用户去勾作用域的地方只有 `AppShell` 里那个「未连接到 LSPosed」提示。）
  */
 data object RouteScopes : NavKey
 
