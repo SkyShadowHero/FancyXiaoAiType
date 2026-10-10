@@ -39,16 +39,15 @@ import java.lang.reflect.Method
  * ## 墨迹画在哪
  *
  * 画布挂在**框架自己的手写窗口** `getStylusHandwritingWindow()` 里（见 [StylusInkOverlay]），
- * 形状是**整屏**（屏幕宽 × 屏幕高，写哪儿都有笔迹），
- * 并且会**跟着落笔点上下移动** —— 一直写在原地就不动，写到别处就跟过去。
+ * 尺寸是**整屏**（屏幕宽 × 屏幕高），写哪儿都有笔迹。
  *
- * 早先那版把整屏画布塞进这个窗口、真机发现窗口是 `Requested w=1497 h=1084`、
+ * 早先那版往这个窗口里塞的是一条满宽横带，真机发现窗口是 `Requested w=1497 h=1084`、
  * `frame=[851,526][2348,1610]`（屏幕 3200×2136），其实是"**窗口按内容 wrap**"的结果：
  * 那条 1497 就是当时塞进去的 `MATCH_PARENT` 带子被量出来的宽度。
- * 而 `stylus_geom.txt` 记下的事实是：第一次落笔在 `raw=(630,230)`、当时区域是
+ * 而当时记下的事实是：第一次落笔在 `raw=(630,230)`、区域是
  * `[851,526][2348,1610]` —— **笔在区域外，事件照样收得到**。
  * 所以"只有中间一片有笔迹"纯粹是画布被自己那条带子裁掉了，不是系统不给事件。
- * 现在的做法：区域尺寸由我们显式给（满宽 × 固定带高），位置跟着落笔点走。
+ * 现在：尺寸由我们显式给**整屏**，没有带子，也不需要位置跟随。
  *
  * ## 点击 vs 画线（以及"会话"为什么必须短命）
  *
@@ -669,10 +668,9 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     /**
-     * 会话空闲超时。
+     * 会话空闲超时：比停笔识别延迟长一点，免得正在识别时把会话收掉。
      *
-     * 开了工具条就多留一会儿：落字后我们不再立刻收会话，否则工具条刚出现就消失，
-     * 「撤回 / 恢复」根本来不及点。
+     * 会话越短越好 —— 会话活着的时候笔被输入法攥着（见 [beginSession]）。
      */
     private fun sessionTimeoutMs(): Long = maxOf(1200L, HookPrefs.stylusDelayMs().toLong() + 600L)
 
@@ -758,9 +756,9 @@ class StylusImeHooks(private val module: XposedModule) {
     private fun beginSession(ime: InputMethodService) {
         // ★ 这个函数是在 **IMMS 的手势窗口里**被回调的，必须尽快返回。
         //
-        // 真机踩了两个大坑，症状一模一样（笔写不了、工具条不出现、还留下僵尸拦截面）：
+        // 真机踩了两个大坑，症状一模一样（笔写不了、还留下僵尸拦截面）：
         //   ① 这里同步读一次 RemotePreferences（binder）；
-        //   ② 这里同步建 Miuix/Compose 工具条（首次组合 + 主题/字体加载是几百毫秒级）。
+        //   ② 这里同步建 Miuix/Compose 视图（首次组合 + 主题/字体加载是几百毫秒级）。
         // 两次都是**在回调里做了耗时的事**。
         //
         // 为什么这么敏感：IMMS 里 `AFTER_STYLUS_UP_ALLOW_PERIOD_MS` 只有 **200ms**，
@@ -776,7 +774,7 @@ class StylusImeHooks(private val module: XposedModule) {
         // beginSession 是在 IMMS 的手势窗口里被回调的（`canStartStylusHandwriting`），
         // 在这里同步等一次 binder（读 RemotePreferences）有把窗口拖过去的风险 ——
         // 一旦拖过去，IMMS 那边 `startHandwritingSession` 就会失败：会话建不起来、
-        // 墨迹与工具条都不出现，而那个手势的 stylus 拦截面还会残留下来把笔吃掉。
+        // 墨迹也不出现，而那个手势的 stylus 拦截面还会残留下来把笔吃掉。
         // 所以：后台刷新，落地后再把新值下发给讯飞引擎（第一次识别在几百毫秒之后，来得及）。
         workerHandler().post {
             runCatching { HookPrefs.rebind(module) }
@@ -860,13 +858,12 @@ class StylusImeHooks(private val module: XposedModule) {
         synchronized(stateLock) { iflytekStrokes.clear() }
         // 记录本次回调耗时：IMMS 的窗口只有 200ms，超过就有风险（诊断文件里可查）
         val costMs = (System.nanoTime() - t0) / 1_000_000
-        // ★ 工具条**不在这里建**。
+        // ★ 重活一律**不在这里做**。
         //
-        // 这里建过两次都出事（同步建、post 建都试过）：只要在会话建立前后碰
-        // Compose/Miuix（首次组合 + 主题字体加载是几百毫秒级）或去改手写窗口的触摸标志，
-        // 就可能把 IMMS 那个 200ms 的手势窗口拖过去 → 会话建不起来 → 僵尸拦截面吃笔。
-        // 现在改成**等第一个真实笔事件到达时再建**（见 onStylusMotion）：那个事件本身
-        // 就证明会话已经建好了，此时再做重活不可能影响会话建立。
+        // 会话建立前后只要碰 Compose/Miuix（首次组合 + 主题字体加载是几百毫秒级），
+        // 或去改手写窗口的触摸标志，就可能把 IMMS 那个 200ms 的手势窗口拖过去
+        // → 会话建不起来 → 僵尸拦截面吃笔。所以这里只做上面那些轻活，
+        // 需要建视图 / 加载资源的活等会话真的起来之后再做。
         L.i("event=stylus_session_begin ink=${if (HookPrefs.stylusInkEnabled()) ink.isAttached else false}")
     }
 

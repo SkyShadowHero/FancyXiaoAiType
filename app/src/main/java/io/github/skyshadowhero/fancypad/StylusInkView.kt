@@ -124,7 +124,7 @@ internal class StylusInkView(context: Context) : View(context) {
      * 只重绘线段包围盒。
      *
      * 局部重绘的这两个重载在 SDK 35+ 都被标了 deprecated（官方倾向直接 `invalidate()`），
-     * 但这里必须保留：书写带是 3200×400 这个量级，每个 MOVE 整带重绘会明显掉帧，
+     * 但这里必须保留：画布是**整屏**（本机 3200×2136），每个 MOVE 整屏重绘会明显掉帧，
      * 而局部重绘在真机上照旧生效。所以按下不表、只抑制告警。
      */
     @Suppress("DEPRECATION")

@@ -576,7 +576,7 @@ object PrefKeys {
     // ==================================================================
     // FancyPad：随手写（触控笔手写）
     //
-    // 作用域 com.xiaomi.type，Hook 侧 StylusHandwritingHooks 读取。
+    // 作用域 com.xiaomi.type，Hook 侧 StylusImeHooks 读取。
     //
     // 「随手写」= AOSP Android 14+ 的**触控笔手写**（stylus handwriting）：
     // 笔直接在输入框上写字、笔迹转文字上屏 —— 和输入法里那个「手写键盘」不是一件事。

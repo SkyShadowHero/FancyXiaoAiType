@@ -51,9 +51,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * - [PrefKeys.STYLUS_INK_ENABLED]：画不画笔迹
  * - [PrefKeys.STYLUS_INK_COLOR] / [PrefKeys.STYLUS_INK_WIDTH_PX]：颜色与粗细（px）
  *
- * 书写区是**满宽的一条横带**（高度固定，不给用户调），会跟着落笔点上下移动 ——
- * 一直写在原地就不动，写到别处就跟过去。这样既不会占满屏挡住正文，
- * 也不会出现"只有屏幕中间一小块能写出笔迹"。
+ * 书写区就是**整屏**（屏幕宽 × 高，不给用户调）：写哪儿都有笔迹。
+ * 早先那版是满宽一条横带、跟着落笔点上下移动，已废弃 —— 带子会在书写中途跳一下。
  *
  * **三、系统侧配合**（system_server 进程，作用域 `system`）
  * - [PrefKeys.STYLUS_WHITELIST]：让系统认定小爱支持随手写（默认开）

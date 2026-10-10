@@ -90,7 +90,6 @@ app/src/main/
 │   ├── StylusInkOverlay.kt   # 笔迹画布：挂进框架手写窗口，可见部分是一条横带
 │   ├── StylusInkView.kt      # 笔迹绘制（按线段包围盒重绘，不整屏刷）
 │   ├── PencilEngine.kt       # 系统笔引擎（xiaomi-pencilengine-pad）访问层
-│   ├── PencilEngineSelfTest.kt  # 【调试】笔引擎自检页（未导出，root 触发）
 │   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
 │   ├── SelectionToolbarHooks.kt  # [SystemUI] 文本选择工具栏
@@ -110,11 +109,11 @@ tools/cursor/                 # 光标素材生成器（gen_themes.py / gen_icon
 - **非白名单应用拿不到「真实背景模糊」**：宿主窗口能否被穿透由 system_server 侧云端下发的 `PassWindowBlurFilterData` 名单决定，模块能解除默认的单应用限制、给出圆角与半透明叠加，但给不了真模糊。
 - 光标预设里 Material / MacOS / BreezeX 用各仓库**原色图**，不可改色（只有 AOSP 与 GoogleDot 能改）；缺图统一用 AOSP 兜底。
 - `wait`（忙碌）光标在部分主题里没有素材，交回系统的动画光标。
-- **笔迹画布挂在系统给小爱的手写窗口里**（那个窗口是按内容 wrap 出来的，所以尺寸由我们给）。书写区是**满宽的一条横带**，高度固定；落笔点跑出带子中间一半时，带子会挪到以该点为中心 —— 写在一处不动，写到别处就跟过去。起笔时会把区域位置/大小与三套坐标写进 `/data/data/com.xiaomi.type/files/stylus_geom.txt`，root `cat` 即可核对。
+- **笔迹画布挂在系统给小爱的手写窗口里**（那个窗口是按内容 wrap 出来的，所以尺寸由我们给）。书写区就是**整屏**（屏幕宽 × 高），写哪儿都有笔迹。早先那版是满宽一条横带、跟着落笔点上下移动，已废弃 —— 带子会在书写中途跳一下，屏幕边缘也写不出笔迹。
 - 随手写的识别有两条路：小爱当前挂着讯飞手写引擎时走它（**逐点流式**，喂的是手写窗口坐标），否则走系统笔引擎（**攒一批**、按包围盒归零后识别）。两条都失败只会留下日志，不会让输入法崩。
 - 笔迹的颜色 / 粗细在**每次起笔时**读取，改完下一次落笔生效（不是即时刷新画布）。
 - **书写会话会短暂"接管"触控笔**：会话活着的时候系统把笔的事件从宿主应用抢给输入法（framework 的 `HandwritingModeController.pilferPointers`），所以这段时间里点界面是没反应的。模块把会话空闲超时压到秒级、并在字上屏后主动收会话 —— 一停笔笔就交回系统；之后"点一下"不会开手写会话（系统只在位移超过 touchSlop 时才开），只有画线才进入书写。
-- **点击 vs 画线的判据**与框架一致：整笔位移不超过系统 `touchSlop`（本机 ≈21px）就算点击，不识别、只把会话收掉。若发现汉字的「点」画被吃掉、或点一下仍会出字，看 `files/stylus_stroke_stats.txt`（记录最近 8 笔的 `dx/dy/max/dur/moves`），按它调阈值即可。
+- **点击 vs 画线的判据**与框架一致：整笔位移不超过系统 `touchSlop`（本机 ≈21px）就算点击，不识别、只把会话收掉。若发现汉字的「点」画被吃掉、或点一下仍会出字，看 LSPosed 日志里 `event=stylus_` 的行（本机 logd 不收集常规缓冲区，`L` 把日志镜像到 `/data/adb/lspd/log/`）；阈值定义在 `StylusImeHooks.tapSlop()`，取的就是系统 `touchSlop`，正常不需要调。
 
 ## 许可
 
