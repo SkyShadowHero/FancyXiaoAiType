@@ -669,7 +669,7 @@ object PrefKeys {
     const val STYLUS_INK_WIDTH_MAX = 12f
 
     // ==================================================================
-    // 随手写 · 书写手势（圈选 / 尖尖插入 / 划掉删除）
+    // 随手写 · 书写手势（圈选选中 / 划掉删除 / 尖尖插入 / 折线换行 / 短竖线连接·拆分）
     //
     // 识别不自己写：直接复用系统笔引擎里的
     // `com.miui.penengine.impl.algorithm.gesture.GestureFacade` ——

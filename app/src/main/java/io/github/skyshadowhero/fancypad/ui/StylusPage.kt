@@ -169,7 +169,8 @@ fun StylusPage(
                             uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, checked) }
                         },
                         title = "书写手势",
-                        summary = "圈选＝选中，划掉＝删除，画尖尖（^）＝在光标处插入",
+                        summary = "圈选＝选中，划掉＝删除，画尖尖（^）＝在光标处插入\n"
+                            + "画折线（先横后竖）＝换行，短竖线＝连接 / 拆分",
                     )
                 }
             }

@@ -282,6 +282,34 @@ class StylusImeHooks(private val module: XposedModule) {
 
     // ------------------------------------------------------------------ 笔迹
 
+    /**
+     * 把一个**历史采样点**补进三处：笔迹画布、当前笔画的点集、HCR 的逐点流式喂入。
+     *
+     * 与主流程里"当前点"的处理是同一件事，区别只是它来得更早
+     *（见 [onStylusMotion] 里关于 `getHistoricalX/Y` 的说明）。
+     * 单独抽出来是为了**不碰主流程**那段已经很脆的判定逻辑。
+     */
+    private fun acceptExtraPoint(
+        ime: InputMethodService,
+        rawX: Float,
+        rawY: Float,
+        time: Long,
+        canvasX: Float,
+        canvasY: Float,
+        feedX: Float,
+        feedY: Float,
+    ) {
+        if (HookPrefs.stylusInkEnabled()) {
+            ink.view?.addPoint(canvasX, canvasY, ACTION_MOVE)
+        }
+        synchronized(stateLock) {
+            current?.add(PencilEngine.Pt(rawX, rawY, ACTION_MOVE, time))
+        }
+        if (usingHcr) {
+            runCatching { hcrFeed?.invoke(null, ime, feedX.toInt(), feedY.toInt(), ACTION_MOVE) }
+        }
+    }
+
     private fun onStylusMotion(ime: InputMethodService, ev: MotionEvent) {
         val action = ev.actionMasked
         // 手写事件是屏幕坐标（框架从输入通道直接给过来，没有经过 View 变换）。
@@ -320,6 +348,40 @@ class StylusImeHooks(private val module: XposedModule) {
         val canvasY = if (canvasLoc != null) rawY - canvasLoc[1] else rawY
         val feedX = if (windowLoc != null) rawX - windowLoc[0] else rawX
         val feedY = if (windowLoc != null) rawY - windowLoc[1] else rawY
+
+        // ---- 补上 MotionEvent 里的**历史点** ----
+        //
+        // 高刷笔（本机是 240Hz 级的数字笔）的事件是**批处理**的：一次 MOVE 往往还带着
+        // 1~3 个更早的采样点（`getHistoricalX/Y`），只有当前点是"最新"那个。
+        // 只取当前点 = 把轨迹抽稀，引擎看到的折线比用户实际写的粗糙 ——
+        // 这是识别率上一个**白捡的损失**：补上只会更准，不会更不准。
+        // 三处都要补：笔迹画布、当前笔画的点集（识别用）、HCR 的逐点流式喂入。
+        if (action == MotionEvent.ACTION_MOVE && ev.historySize > 0) {
+            // getHistoricalX/Y 给的是**窗口局部坐标**，而这一路上一直用 rawX/rawY（屏幕坐标）。
+            // 两者的差就是事件的 raw 偏移：拿当前这一点的差值当偏移量，把历史点换算过去，
+            // 这样三条链路（画布 / 识别点集 / HCR）拿到的坐标系完全一致。
+            val rawShiftX = rawX - ev.x
+            val rawShiftY = rawY - ev.y
+            for (i in 0 until ev.historySize) {
+                val hx = ev.getHistoricalX(0, i) + rawShiftX
+                val hy = ev.getHistoricalY(0, i) + rawShiftY
+                val hdx = hx - downX
+                val hdy = hy - downY
+                val hd = kotlin.math.hypot(hdx.toDouble(), hdy.toDouble()).toFloat()
+                if (hd > maxDist) maxDist = hd
+                moveEvents++
+                acceptExtraPoint(
+                    ime = ime,
+                    rawX = hx,
+                    rawY = hy,
+                    time = ev.getHistoricalEventTime(i),
+                    canvasX = if (canvasLoc != null) hx - canvasLoc[0] else hx,
+                    canvasY = if (canvasLoc != null) hy - canvasLoc[1] else hy,
+                    feedX = if (windowLoc != null) hx - windowLoc[0] else hx,
+                    feedY = if (windowLoc != null) hy - windowLoc[1] else hy,
+                )
+            }
+        }
 
         // ---- 轻点判定：只看这一笔有没有"画线" ----
         //
@@ -420,7 +482,7 @@ class StylusImeHooks(private val module: XposedModule) {
             sessionStrokeCount++
         }
 
-        // ---- 书写手势（圈选 / 尖尖插入 / 划掉删除 / 换行）----
+        // ---- 书写手势（圈选 / 划掉删除 / 尖尖插入 / 折线换行 / 短竖线连接·拆分）----
         //
         // 识别复用系统笔引擎的 `GestureFacade`，它直接产出框架的 HandwritingGesture
         //（见 [StylusGestureEngine]）。这里只做两件事：**便宜的几何预筛** + 交给框架执行。
@@ -520,11 +582,15 @@ class StylusImeHooks(private val module: XposedModule) {
     /**
      * 便宜的几何预筛：这一笔（配合上一笔）像不像手势。
      *
-     * 只看包围盒、首尾距离、方向这些 O(n) 的量，不碰引擎。三类：
-     * - **闭合环**（圈选）：首尾几乎相接，且包围盒不是一条细线；
-     * - **长横线**（划掉删除）：明显又宽又扁；
-     * - **尖尖**（插入）：这一笔的起点接在上一笔的终点上，且上一笔向上、这一笔向下（V 形），
-     *   并要求够宽 —— 太小的 V 就是「人」「八」这类字，不能当手势。
+     * 只看包围盒、首尾距离、方向这些 O(n) 的量，不碰引擎。五类：
+     * - **闭合环**（圈选）→ `SelectGesture`；
+     * - **长横线**（划掉删除）→ `DeleteGesture`；
+     * - **短竖线**（连接·拆分）→ `JoinOrSplitGesture`；
+     * - **直角折线**（换行）→ `InsertGesture`（插换行符）；
+     * - **尖尖**（在光标处插入）→ `InsertModeGesture`：两笔相接成 V，或一笔画出 ^/V。
+     *
+     * 这里**故意偏宽松**：假阳性只是白问一次模型（模型说不像时这一笔照常当文字识别），
+     * 假阴性才是功能直接失效。所以每条分支的阈值都按"宁可多放行"来定。
      */
     private fun looksLikeGesture(stroke: List<PencilEngine.Pt>, prev: List<PencilEngine.Pt>?): Boolean {
         if (stroke.size < 6) return false
@@ -546,11 +612,17 @@ class StylusImeHooks(private val module: XposedModule) {
         val last = stroke.last()
         val gap = kotlin.math.hypot((last.x - first.x).toDouble(), (last.y - first.y).toDouble()).toFloat()
 
-        // ① 闭合环（圈选）：首尾相接 + 两个方向都张得开
-        if (gap < 0.30f * maxOf(w, h) && w > MIN_GESTURE_PX && h > MIN_GESTURE_PX) return true
+        // ① 闭合环（圈选）：首尾相接 + 两个方向都张得开。
+        //    比例放宽过两次（0.25 → 0.30 → 0.40）：圈得不圆、留个口子的也放行。
+        if (gap < SELECT_GAP_RATIO * maxOf(w, h) && w > MIN_GESTURE_PX && h > MIN_GESTURE_PX) return true
 
         // ② 长横线（划掉删除）
-        if (w > 2.2f * h && w > 2f * MIN_GESTURE_PX) return true
+        if (w > STRIKE_ASPECT * h && w > MIN_STRIKE_PX) return true
+
+        // ②b 短竖线（连接·拆分）：引擎里模型 type 3/4 → `JoinOrSplitGesture`。
+        //     在两个字中间点一竖就是"连接 / 拆分"。只判"够竖 + 长度合适"，其余交给模型；
+        //     上限是怕把正常的长竖（撇/竖笔）也问一遍 —— 太长了就不像"点一下"。
+        if (h > SPLIT_ASPECT * w && h > MIN_SPLIT_PX && h < MAX_SPLIT_PX) return true
 
         // ③ 尖尖（插入）· 两笔版：两笔头尾相接成 V
         //
@@ -566,7 +638,7 @@ class StylusImeHooks(private val module: XposedModule) {
             val prevUp = pLast.y < pFirst.y - MIN_CARET_LEG_PX   // 上一笔向上
             val curDown = last.y > first.y + MIN_CARET_LEG_PX    // 这一笔向下
             val wide = (maxOf(maxX, pLast.x) - minOf(minX, pFirst.x)) > MIN_CARET_PX
-            if (join < 0.5f * maxOf(w, h) && prevUp && curDown && wide) return true
+            if (join < CARET_JOIN_RATIO * maxOf(w, h) && prevUp && curDown && wide) return true
         }
 
         // ③b 尖尖（插入）· **一笔版**：一笔画出 ^ 或 V，折返点在笔画中段、两端朝同侧张开。
@@ -577,7 +649,7 @@ class StylusImeHooks(private val module: XposedModule) {
             var turnIdx = 0
             for (i in stroke.indices) if (stroke[i].y < stroke[turnIdx].y) turnIdx = i
             val apexY = stroke[turnIdx].y
-            if (turnIdx in 2 until stroke.size - 2 &&
+            if (turnIdx in 1 until stroke.size - 1 &&
                 first.y > apexY + MIN_CARET_LEG_PX && last.y > apexY + MIN_CARET_LEG_PX
             ) {
                 return true
@@ -586,13 +658,74 @@ class StylusImeHooks(private val module: XposedModule) {
             turnIdx = 0
             for (i in stroke.indices) if (stroke[i].y > stroke[turnIdx].y) turnIdx = i
             val bottomY = stroke[turnIdx].y
-            if (turnIdx in 2 until stroke.size - 2 &&
+            if (turnIdx in 1 until stroke.size - 1 &&
                 first.y < bottomY - MIN_CARET_LEG_PX && last.y < bottomY - MIN_CARET_LEG_PX
             ) {
                 return true
             }
         }
+
+        // ④ 直角折线（换行）：引擎里模型 type 7 → `InsertGesture`（插入换行符）。
+        //    形状是**一笔画出一个折线**（像 ↵ / ⌐ 那种"画折线换行"）。
+        //    与尖尖的区别很清楚：尖尖两条腿**都是竖的**（上-下折返），
+        //    折线是**一横一竖**，所以这里按"两段的主导轴不同"来判 —— 顺带也就排除了
+        //    直线（两段同轴）和闭合环（首尾重合、弦退化）。
+        if (stroke.size >= MIN_NEWLINE_POINTS) {
+            val corner = cornerIndex(stroke, first, last)
+            if (corner in 1 until stroke.size - 1) {
+                val c = stroke[corner]
+                val leg1x = c.x - first.x
+                val leg1y = c.y - first.y
+                val leg2x = last.x - c.x
+                val leg2y = last.y - c.y
+                val leg1 = kotlin.math.hypot(leg1x.toDouble(), leg1y.toDouble()).toFloat()
+                val leg2 = kotlin.math.hypot(leg2x.toDouble(), leg2y.toDouble()).toFloat()
+                if (leg1 > MIN_NEWLINE_LEG_PX && leg2 > MIN_NEWLINE_LEG_PX) {
+                    val leg1Horizontal = kotlin.math.abs(leg1x) > kotlin.math.abs(leg1y)
+                    val leg2Horizontal = kotlin.math.abs(leg2x) > kotlin.math.abs(leg2y)
+                    if (leg1Horizontal != leg2Horizontal) return true
+                }
+            }
+        }
+
+        // 诊断用：形状上"已经很像删除线"、却还是被预筛挡掉的笔画，采样记一笔。
+        // 真机拿这条日志判断删除识别率还有多少是被**几何**挡掉的（而不是被模型否掉的）——
+        // 只记宽高比接近删除线的，正常汉字的横画不会刷屏。
+        if (w > MIN_STRIKE_PX * 0.7f && w > 1.3f * h) {
+            L.sampled("strike_rejected", limit = 8) {
+                "event=stylus_gesture_rejected w=${w.toInt()} h=${h.toInt()} pts=${stroke.size}"
+            }
+        }
         return false
+    }
+
+    /**
+     * 折角的下标：离"首尾连线"最远的那个点（点到弦的垂距最大处）。
+     *
+     * 首尾几乎重合（闭合环）时弦退化，返回 -1 —— 那种形状已经被闭合环那条判过了。
+     * 折线（换行）预筛用它把一笔拆成两条腿，再比两条腿的主导轴。
+     */
+    private fun cornerIndex(
+        stroke: List<PencilEngine.Pt>,
+        first: PencilEngine.Pt,
+        last: PencilEngine.Pt,
+    ): Int {
+        val chordX = last.x - first.x
+        val chordY = last.y - first.y
+        val chord = kotlin.math.hypot(chordX.toDouble(), chordY.toDouble()).toFloat()
+        if (chord < 1f) return -1
+        var best = 0f
+        var index = -1
+        for (i in 1 until stroke.size - 1) {
+            val d = kotlin.math.abs(
+                chordY * (stroke[i].x - first.x) - chordX * (stroke[i].y - first.y),
+            ) / chord
+            if (d > best) {
+                best = d
+                index = i
+            }
+        }
+        return index
     }
 
     /**
@@ -974,15 +1107,52 @@ class StylusImeHooks(private val module: XposedModule) {
         const val FALLBACK_TAP_SLOP = 20f
 
 
-        /** 手势预筛：一个方向至少要这么大（px）才可能是手势。 */
-        const val MIN_GESTURE_PX = 90f
+        /** 手势预筛：一个方向至少要这么大（px）才可能是手势。原 90，为了"更容易触发"降到 72。 */
+        const val MIN_GESTURE_PX = 72f
 
-        /** 尖尖（插入）预筛要求的最小宽度：太小就是「人」「八」，不是手势。 */
-        /** 尖尖（插入）手势的最小宽度。原为 200，实测偏严：小一点的 ^ 会被漏掉。 */
-        const val MIN_CARET_PX = 110f
+        /** 闭合环（圈选）：首尾间距要小于「包围盒长边 × 这个比例」才算圈上了（原 0.30，放宽到 0.40）。 */
+        const val SELECT_GAP_RATIO = 0.40f
 
-        /** 尖尖两侧"腿"至少要有这么高（px）。 */
-        const val MIN_CARET_LEG_PX = 45f
+        /**
+         * 划掉删除（长横线）预筛的最小宽度（px）。
+         *
+         * 演变：`2f * MIN_GESTURE_PX`（180px）/ 宽高比 2.2 → 108px / 1.7 → 现在 **90px / 1.5**。
+         * 真机反馈是"划掉识别不出来"，而引擎里判形状的是 `one_gesture_model.tflite`
+         * （`DeleteGestureParser` 自己只按包围盒建手势、不做形状校验）—— 所以我们这边
+         * 每收紧一分，就是直接把候选丢掉。
+         *
+         * 放松的代价只是"多问模型几次"，**不会删错东西**：模型说不像删除时这一笔照常当
+         * 文字识别。唯一要守的底线是别放成"任何横线都问一次" —— `GestureFacade` 与文字
+         * 识别共用引擎状态（`P2PManager`），早先"每次抬笔都调它"实测会让识别率越用越差。
+         */
+        const val MIN_STRIKE_PX = 90f
+
+        /** 划掉删除预筛的宽高比下限（原 2.2 → 1.7 → 1.5：容许画得斜一点）。 */
+        const val STRIKE_ASPECT = 1.5f
+
+        /** 连接·拆分（短竖线）：至少这么长（px）。 */
+        const val MIN_SPLIT_PX = 70f
+
+        /** 连接·拆分（短竖线）：最长到这里（px）—— 再长就不像"两字之间点一竖"，当普通笔画。 */
+        const val MAX_SPLIT_PX = MIN_SPLIT_PX * 3f
+
+        /** 连接·拆分：高要是宽的这么多倍才算"够竖"。 */
+        const val SPLIT_ASPECT = 1.4f
+
+        /** 换行（折线钩）：笔画至少要这么多点才去找折角。 */
+        const val MIN_NEWLINE_POINTS = 8
+
+        /** 换行（折线钩）：两条腿各自的最小长度（px）。 */
+        const val MIN_NEWLINE_LEG_PX = 40f
+
+        /** 尖尖（插入）手势的最小宽度。原为 200 → 110，现在 90：小一点的 ^ 也要放行。 */
+        const val MIN_CARET_PX = 90f
+
+        /** 尖尖两侧"腿"至少要有这么高（px）。原 90 → 45 → 36。 */
+        const val MIN_CARET_LEG_PX = 36f
+
+        /** 尖尖（两笔版）允许的"两笔相接"误差比例（原 0.35 → 0.5，现在 0.6）。 */
+        const val CARET_JOIN_RATIO = 0.6f
 
         /** HCR 上屏后延迟多久收掉墨迹（留一点"笔迹→文字"的接续感）。 */
         const val INK_FADE_MS = 400L

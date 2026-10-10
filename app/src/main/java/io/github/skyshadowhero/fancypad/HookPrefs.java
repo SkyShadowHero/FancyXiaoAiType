@@ -76,7 +76,7 @@ public final class HookPrefs {
     private static volatile boolean stylusWhitelist = true;
     /** 是否显示笔迹（输入法进程的画布用）。 */
     private static volatile boolean stylusInkEnabled = true;
-    /** 书写手势总开关（圈选/尖尖插入/划掉删除）。 */
+    /** 书写手势总开关（圈选选中 / 划掉删除 / 尖尖插入 / 折线换行 / 短竖线连接·拆分）。 */
     private static volatile boolean stylusGestureEnabled = false;
     /** 是否优先用讯飞 HCR 引擎识别（而不是系统笔引擎）。默认开。 */
     private static volatile boolean stylusIflytek = true;
