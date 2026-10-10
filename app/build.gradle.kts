@@ -75,6 +75,14 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // ONNX Runtime 的 native 库**不打进 APK**：本机系统里本来就有同版本的
+        // `/system_ext/lib64/libonnxruntime.so` + `libonnxruntime4j_jni.so`（都是 1.15.1），
+        // 实测普通应用进程按名字/绝对路径都能 dlopen。这里只保留 AAR 里的 Java 绑定类（约 95KB），
+        // 否则 arm64 的两个 .so 会白白多占 ~15MB。
+        jniLibs {
+            excludes += "**/libonnxruntime.so"
+            excludes += "**/libonnxruntime4j_jni.so"
+        }
     }
 }
 
@@ -113,4 +121,8 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
+
+    // 识别模型功能：ONNX Runtime 的 **Java 绑定**（native 库由系统提供，见上面的 packaging 排除）。
+    // 版本必须跟系统里那份 .so 一致（1.15.1），否则 JNI 签名对不上会 UnsatisfiedLinkError。
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.15.1")
 }

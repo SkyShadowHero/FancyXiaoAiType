@@ -50,6 +50,19 @@
             android:exported="false"
             android:label="笔引擎自检"
             android:theme="@style/Theme.Miuix" />
+
+        <!--
+          ONNX Runtime 自检页（调试用）：验证"换更好的识别模型"这条路能不能走通 ——
+          运行时（系统自带的 libonnxruntime）能否挂上、以及 files/models/*.onnx 的输入输出规格。
+          同样**不导出**，root 触发：
+              su -c 'am start -n io.github.skyshadowhero.fancypad/.OrtSelfTest'
+          结论落在 files/ort_selftest.txt。
+        -->
+        <activity
+            android:name=".OrtSelfTest"
+            android:exported="false"
+            android:label="ONNX 自检"
+            android:theme="@style/Theme.Miuix" />
     </application>
 
 </manifest>

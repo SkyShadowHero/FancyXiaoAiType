@@ -88,7 +88,7 @@ fun StylusPage(
                         uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_ENABLED, checked) }
                     },
                     title = "随手写（触控笔手写）",
-                    summary = "笔直接在输入框上写字、笔迹转文字上屏；关闭则落笔不作任何处理",
+                    summary = "笔直接在输入框上写字，笔迹转文字上屏",
                 )
                 // 依赖项跟随总开关显隐：总开关关掉时这些参数没有作用对象，
                 // 留在界面上只会让人误以为改了有用（与「平行窗口」页同一处理）。
@@ -126,7 +126,7 @@ fun StylusPage(
                         uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_INK_ENABLED, checked) }
                     },
                     title = "显示笔迹",
-                    summary = "笔尖划过时实时画线；关闭后只看得到识别结果，看不到自己写了什么",
+                    summary = "实时画线；关闭则只看得到识别结果",
                 )
                 AnimatedVisibility(visible = uiState.stylusInkEnabled) {
                     Column {
@@ -155,6 +155,37 @@ fun StylusPage(
             }
         }
 
+        item { SmallTitle("书写手势") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.stylusGestureEnabled,
+                    onCheckedChange = { checked ->
+                        uiState.stylusGestureEnabled = checked
+                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, checked) }
+                    },
+                    title = "书写手势",
+                    summary = "圈选＝选中，划掉＝删除，画尖尖（^）＝在光标处插入",
+                )
+            }
+        }
+
+        item { SmallTitle("识别引擎") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.stylusIflytek,
+                    onCheckedChange = { checked ->
+                        uiState.stylusIflytek = checked
+                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_IFLYTEK, checked) }
+                    },
+                    title = "用讯飞引擎识别",
+                    summary = "用小爱自带的讯飞引擎识别（不切你的键盘）\n"
+                        + "关闭则退回系统笔引擎，识别率会明显下降",
+                )
+            }
+        }
+
         item { SmallTitle("系统侧配合") }
         item {
             Card {
@@ -166,9 +197,9 @@ fun StylusPage(
                     },
                     title = "让小爱进入随手写白名单",
                     summary = if (uiState.stylusWhitelist) {
-                        "系统已把小爱当作支持随手写的输入法（不这么做设置里的随手写会打不开）"
+                        "系统已把小爱当作支持随手写的输入法"
                     } else {
-                        "⚠ 关闭后系统设置里的随手写开关会打不开，并会把你切到搜狗"
+                        "⚠ 关闭后系统设置里的随手写会打不开，并会把你切到搜狗"
                     },
                 )
             }

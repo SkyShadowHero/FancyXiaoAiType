@@ -159,7 +159,13 @@ class PencilEngine private constructor(private val j: J) {
          * 调用方是 `com.xiaomi.type`（不在白名单里）或本模块 App，所以直接改成 true。
          *
          * 这是引擎自己类的普通字段，不在 Android 隐藏 API 名单里，反射不受限。
+         *
+         * 手势那条路（[StylusGestureEngine]）也在同一个引擎上，而 `GestureFacade` 的构造
+         * 会再调一次 `initWhitelist()`，所以它构造完还要再顶一次 —— 因此这里是
+         * `internal` 而不是 `private`。
          */
+        internal fun applyWhitelistBypass(cl: ClassLoader) = bypassWhitelist(cl)
+
         private fun bypassWhitelist(cl: ClassLoader) {
             try {
                 val field = cl.loadClass(CLS_MANAGER).getDeclaredField("whitelistResult")

@@ -668,4 +668,41 @@ object PrefKeys {
     const val STYLUS_INK_WIDTH_MIN = 1f
     const val STYLUS_INK_WIDTH_MAX = 12f
 
+    // ==================================================================
+    // 随手写 · 书写手势（圈选 / 尖尖插入 / 划掉删除）
+    //
+    // 识别不自己写：直接复用系统笔引擎里的
+    // `com.miui.penengine.impl.algorithm.gesture.GestureFacade` ——
+    // 它的 `getGoogleGestureResult(List<PointF>)` 会**直接返回框架的 HandwritingGesture**
+    //（SelectGesture / InsertModeGesture / DeleteGesture / JoinOrSplitGesture / NewLine），
+    // 我们再交给 `InputConnection.performHandwritingGesture()` 由宿主应用执行。
+    //
+    // ⚠ 这个门面构造时会给全局 P2PManager 注册 MotionPoint 解析器，与文字识别共用引擎状态；
+    // 早先"每次抬笔都调它"导致识别越来越差。所以现在是**懒建 + 几何预筛**：
+    // 只有形状上像手势的笔画才真正进这条路，正常写字完全不碰。
+    // ==================================================================
+
+    /** 书写手势总开关（默认关：它会改动宿主应用里的选区/文本，属于要用户明确开启的行为）。 */
+    const val STYLUS_GESTURE_ENABLED = "stylus_gesture_enabled"
+
+    // ==================================================================
+    // 随手写 · 识别引擎选择
+    //
+    // 小爱自带两条识别路线：**讯飞 HCR**（商用、输入原始笔迹、逐点喂）与
+    // **系统笔引擎**（`ocr_model.tflite`，实测输入是 64 个整数的定长序列、只出 top-4，
+    // 拿它做 3755 类汉字识别天花板很低）。讯飞那条平时只有小爱切到手写键盘才被初始化，
+    // 打开这个开关我们**自己把它拉起来**（不切键盘），识别立刻换成它。
+    // ==================================================================
+
+    /** 优先使用小爱自带的讯飞手写引擎（默认开：这是识别质量的关键）。 */
+    const val STYLUS_IFLYTEK = "stylus_iflytek"
+
+    /**
+     * 手写工具条（撤回/恢复/删除/发送/标点/键盘，可拖拽）。
+     *
+     * **默认关**：它是在随手写会话里再开一个 `TYPE_INPUT_METHOD` 窗口，
+     * 真机出现过"开了工具条之后手写会话建不起来"的问题，先用开关隔离，
+     * 确认不影响手写之后再默认打开。
+     */
+    const val STYLUS_TOOLBAR = "stylus_toolbar"
 }

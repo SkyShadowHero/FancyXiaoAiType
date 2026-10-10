@@ -5,7 +5,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.Process
+import android.graphics.PointF
+import androidx.compose.runtime.mutableStateOf
 import android.view.MotionEvent
+import android.view.inputmethod.HandwritingGesture
+import java.util.concurrent.Executor
+import java.util.function.IntConsumer
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import java.io.File
@@ -120,6 +125,119 @@ class StylusImeHooks(private val module: XposedModule) {
 
     /** 最近若干条会话状态，供排查"笔被咬住"（落盘到 `stylus_session_state.txt`）。 */
     private val sessionLog = ArrayDeque<String>()
+
+    // ---- 书写手势 ----
+    /** 手势识别门面（懒建：只有真的出现"像手势"的笔画才会构造，见 [StylusGestureEngine]）。 */
+    private val gestureEngine = StylusGestureEngine()
+
+    /** 上一笔的点集：判断"尖尖插入"那种两笔相接的形状要用。 */
+    @Volatile private var prevStroke: List<PencilEngine.Pt>? = null
+
+    // ---- 识别后端：优先讯飞 HCR（小爱自带），失败自动退回系统笔引擎 ----
+    private val iflytek = IflytekHcrEngine()
+
+    // ---- 手写工具条（独立小窗口，可拖拽）----
+    /** 懒建：只有真的进过随手写会话才创建窗口。 */
+    private var toolbar: StylusToolbarWindow? = null
+
+    /** 工具条诊断（落盘，见 [recordToolbar]）。 */
+    private val toolbarLog = ArrayDeque<String>()
+
+    /** 正在用笔拖动工具条。 */
+    @Volatile private var toolbarDragging = false
+    @Volatile private var lastPenX = 0f
+    @Volatile private var lastPenY = 0f
+
+    /**
+     * 手写**自己**落过的字（用于工具条的"撤回 / 恢复"）。
+     *
+     * 只用模块自己的历史：输入法拿不到宿主编辑器的撤销栈，所以"撤回"的语义是
+     * "删掉上一次手写落的这段文本"，键盘打的字不在此列 —— 这一点在 UI 文案里说明了。
+     */
+    private val committedHistory = ArrayDeque<String>()
+    private val undoneHistory = ArrayDeque<String>()
+    private val canUndo = mutableStateOf(false)
+    private val canRedo = mutableStateOf(false)
+
+    /** 工具条回调实现。 */
+    private val toolbarActions = object : StylusToolbarWindow.Actions {
+        override fun onUndo() {
+            val ime = sessionIme ?: return
+            val last = committedHistory.removeLastOrNull() ?: return
+            mainHandler.post {
+                runCatching { ime.currentInputConnection?.deleteSurroundingText(last.length, 0) }
+                    .onFailure { L.w("event=stylus_undo_failed msg=${it.message}") }
+                undoneHistory.addLast(last)
+                refreshToolbarState()
+                L.i("event=stylus_toolbar_undo len=${last.length}")
+            }
+        }
+
+        override fun onRedo() {
+            val ime = sessionIme ?: return
+            val text = undoneHistory.removeLastOrNull() ?: return
+            mainHandler.post {
+                runCatching { ime.currentInputConnection?.commitText(text, 1) }
+                    .onFailure { L.w("event=stylus_redo_failed msg=${it.message}") }
+                committedHistory.addLast(text)
+                refreshToolbarState()
+                L.i("event=stylus_toolbar_redo len=${text.length}")
+            }
+        }
+
+        override fun onDelete() {
+            val ime = sessionIme ?: return
+            mainHandler.post {
+                runCatching { ime.currentInputConnection?.deleteSurroundingText(1, 0) }
+                    .onFailure { L.w("event=stylus_delete_failed msg=${it.message}") }
+            }
+        }
+
+        override fun onSend() {
+            val ime = sessionIme ?: return
+            mainHandler.post {
+                // 与多数手写工具条一致：发回车（宿主是"发送"就等同于发送）
+                runCatching {
+                    val ic = ime.currentInputConnection ?: return@runCatching
+                    ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
+                    ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+                }.onFailure { L.w("event=stylus_send_failed msg=${it.message}") }
+                L.i("event=stylus_toolbar_send")
+            }
+        }
+
+        override fun onPunctuation(text: String) {
+            val ime = sessionIme ?: return
+            mainHandler.post {
+                runCatching { ime.currentInputConnection?.commitText(text, 1) }
+                    .onFailure { L.w("event=stylus_punct_failed msg=${it.message}") }
+                committedHistory.addLast(text)
+                refreshToolbarState()
+            }
+        }
+
+        override fun onShowKeyboard() {
+            val ime = sessionIme ?: return
+            // 展开虚拟键盘：把键盘叫回来，并收掉手写会话与工具条（否则会话还攥着笔）
+            mainHandler.post {
+                runCatching { ime.requestShowSelf(0) }
+                    .onFailure { L.w("event=stylus_show_self_failed msg=${it.message}") }
+                hideToolbar()
+                runCatching { ime.finishStylusHandwriting() }
+            }
+        }
+    }
+
+    /**
+     * 讯飞引擎用的**会话级**笔画集合。
+     *
+     * 与 [strokes] 的区别：`strokes` 每次识别就被取空（系统笔引擎是"攒一批识别一次"），
+     * 而讯飞那边每个识别周期都要把**到目前为止的整段字迹**重新归一化后重喂一遍
+     *（因为它按写区域归一化，只喂增量的话第一个字的位置就错了），所以这里不清空，
+     * 直到"落字"或会话结束。
+     */
+    private val iflytekStrokes = ArrayList<List<PencilEngine.Pt>>()
+
 
     /** 几何诊断每个会话只落一次盘。 */
     @Volatile private var geomDumped = false
@@ -324,6 +442,57 @@ class StylusImeHooks(private val module: XposedModule) {
             ink.view?.addPoint(canvasX, canvasY, action)
         }
 
+        // 这一笔（抬笔时）的完整点集：手势识别要用它的**屏幕坐标**
+        var justFinished: List<PencilEngine.Pt>? = null
+
+        // ---- 工具条优先：用笔操作它 ----
+        //
+        // 手写窗口是 NOT_TOUCHABLE（不能改：改了会把笔的事件当普通触摸接走，笔画完不成），
+        // 所以工具条收不到真实触摸。但笔事件都经过这里，于是我们做命中判定 + 合成事件派发：
+        //   · 落在按钮上   → 视图消费，执行对应动作（撤回/恢复/…）
+        //   · 落在空处     → 不消费，当作拖动（按住拖走工具条）
+        // 命中时直接 return，所以不会在工具条上画出笔迹、也不会把它当字识别。
+        run {
+            val tb = toolbar
+            if (tb != null && tb.isShown && tb.contains(rawX, rawY)) {
+                if (action == MotionEvent.ACTION_DOWN) {
+                    toolbarDragging = false
+                    lastPenX = rawX
+                    lastPenY = rawY
+                }
+                val consumed = tb.dispatchPen(action, rawX, rawY)
+                if (!consumed && !toolbarDragging && action == MotionEvent.ACTION_DOWN) {
+                    toolbarDragging = true
+                }
+                if (toolbarDragging) {
+                    if (action == MotionEvent.ACTION_MOVE) {
+                        tb.moveBy(rawX - lastPenX, rawY - lastPenY)
+                    }
+                    lastPenX = rawX
+                    lastPenY = rawY
+                    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                        toolbarDragging = false
+                        tb.rememberPosition()
+                    }
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    tb.dispatchPen(action, rawX, rawY)
+                }
+                recordToolbar("hit act=$action consumed=$consumed drag=$toolbarDragging at=(${rawX.toInt()},${rawY.toInt()})")
+                return
+            }
+        }
+
+        // ★ 工具条**在这里**（第一笔真正落下时）才建。
+        //
+        // 它在这之前建过两次都出事：只要在会话建立前后碰 Compose/Miuix（首次组合 + 主题
+        // 字体加载是几百毫秒级）或改手写窗口的触摸标志，就可能把 IMMS 那个 200ms 的手势
+        // 窗口拖过去 → 会话建不起来 → 僵尸拦截面把笔整个吃掉。
+        // 而现在这个位置有事件到达，说明**会话已经确认建立**了，做重活不可能再影响它。
+        if (sessionStrokeCount == 0 && HookPrefs.stylusToolbarEnabled() && !usingHcr) {
+            mainHandler.post { showToolbar() }
+        }
+
         synchronized(stateLock) {
             when (action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -340,6 +509,7 @@ class StylusImeHooks(private val module: XposedModule) {
                     current?.let {
                         it.add(PencilEngine.Pt(rawX, rawY, ACTION_UP, time))
                         strokes.add(it)
+                        justFinished = it
                     }
                     current = null
                 }
@@ -403,6 +573,31 @@ class StylusImeHooks(private val module: XposedModule) {
             recordStrokeStat(isTap = false, upX = rawX, upY = rawY, time = time)
         }
 
+        // ---- 书写手势（圈选 / 尖尖插入 / 划掉删除 / 换行）----
+        //
+        // 识别复用系统笔引擎的 `GestureFacade`，它直接产出框架的 HandwritingGesture
+        //（见 [StylusGestureEngine]）。这里只做两件事：**便宜的几何预筛** + 交给框架执行。
+        //
+        // 为什么要预筛：`GestureFacade` 构造时会给全局 P2PManager 注册 MotionPoint 解析器，
+        // 与文字识别共用引擎状态；早先"每次抬笔都调它"真机表现是识别率越用越差。
+        // 只有形状上像手势的笔画才值得惊动它 —— 预筛偏宽松（假阳性只是白跑一次引擎调用，
+        // 假阴性则会让手势失效），真正的分类还是引擎说了算。
+        if (action == MotionEvent.ACTION_UP && HookPrefs.stylusGestureEnabled()) {
+            val stroke = justFinished
+            if (stroke != null && looksLikeGesture(stroke, prevStroke)) {
+                val g = gestureEngine.recognize(ime, stroke.map { PointF(it.x, it.y) })
+                if (g != null) {
+                    performGesture(ime, g, feedX.toInt(), feedY.toInt())
+                    prevStroke = stroke
+                    return
+                }
+                L.i("event=stylus_gesture_not_recognized points=${stroke.size}")
+            }
+        }
+        if (action == MotionEvent.ACTION_UP && justFinished != null) {
+            prevStroke = justFinished
+        }
+
         // 笔势**故意不放在这里**：早期版本在每次抬笔时都调 GestureFacade，而它构造时会给全局
         // P2PManager 注册 MotionPoint 解析器，与文字识别共用引擎状态 —— 真机表现就是
         // "一开始识别很准，后来越改越差"。现在模块完全不碰笔势：文字没认出来就只是没认出来。
@@ -410,6 +605,36 @@ class StylusImeHooks(private val module: XposedModule) {
         // 也不依赖框架把手写事件回放给画布：那条路要先过 InkWindow.isInkViewVisible()
         //（画布没布局完就先塞进 RingBuffer 等），而我们在 onStylusHandwritingMotionEvent
         // 里本来就拿到了每一笔，直接喂画布少一条路径，也不会重复画。
+
+        // ⓪ 我们**自己拉起来**的讯飞 HCR（与小爱那条链共用引擎，所以互斥：usingHcr 时走它那条）
+        //
+        // 节奏：**攒一段 → 停笔识别 → 直接落字（commitText）→ 清空累积**。
+        //
+        // 一路试下来的取舍（都踩过）：
+        //   · 每笔就 commit：第一笔被认成别的字就落定了，后面越写越乱；
+        //   · setComposingText（组词态）能让中间结果被替换，但用户看到的是
+        //     "文字下面有横线、还会被后面写的字改掉" —— 明确不要；
+        //   · 所以现在是落字 + **每次落字后清空 [iflytekStrokes]**，后面的笔画不再回头改前面的字。
+        if (iflytek.isActive && !usingHcr) {
+            if (action == MotionEvent.ACTION_CANCEL) {
+                iflytek.reset()
+                synchronized(stateLock) { iflytekStrokes.clear() }
+                return
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                justFinished?.let {
+                    synchronized(stateLock) { iflytekStrokes.add(it) }
+                }
+                // 停笔后识别并**直接落字**（不做组词态）：
+                // 组词态虽然能让中间结果被替换，但用户看到的是"文字下面有横线、还会被
+                // 后面写的字改掉" —— 明确不要。改成落字 + 每次落字后清空累积，
+                // 后面的笔画就不会再回头改前面已经定下的字。
+                val h = workerHandler()
+                h.removeCallbacks(recognizeTask)
+                h.postDelayed(recognizeTask, HookPrefs.stylusDelayMs().toLong().coerceIn(200L, 1500L))
+            }
+            return
+        }
 
         // ① 小爱自己的讯飞 HCR：只有它当前就是手写引擎时才走
         if (usingHcr) {
@@ -443,6 +668,97 @@ class StylusImeHooks(private val module: XposedModule) {
     private fun hcrEngineAvailable(ime: InputMethodService): Boolean =
         runCatching { hcrEngine?.invoke(null, ime) != null }.getOrDefault(false)
 
+    // ------------------------------------------------------------------ 书写手势
+
+    /**
+     * 便宜的几何预筛：这一笔（配合上一笔）像不像手势。
+     *
+     * 只看包围盒、首尾距离、方向这些 O(n) 的量，不碰引擎。三类：
+     * - **闭合环**（圈选）：首尾几乎相接，且包围盒不是一条细线；
+     * - **长横线**（划掉删除）：明显又宽又扁；
+     * - **尖尖**（插入）：这一笔的起点接在上一笔的终点上，且上一笔向上、这一笔向下（V 形），
+     *   并要求够宽 —— 太小的 V 就是「人」「八」这类字，不能当手势。
+     */
+    private fun looksLikeGesture(stroke: List<PencilEngine.Pt>, prev: List<PencilEngine.Pt>?): Boolean {
+        if (stroke.size < 6) return false
+        var minX = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = -Float.MAX_VALUE
+        for (p in stroke) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+        }
+        val w = maxX - minX
+        val h = maxY - minY
+        if (w < MIN_GESTURE_PX && h < MIN_GESTURE_PX) return false
+
+        val first = stroke.first()
+        val last = stroke.last()
+        val gap = kotlin.math.hypot((last.x - first.x).toDouble(), (last.y - first.y).toDouble()).toFloat()
+
+        // ① 闭合环（圈选）：首尾相接 + 两个方向都张得开
+        if (gap < 0.30f * maxOf(w, h) && w > MIN_GESTURE_PX && h > MIN_GESTURE_PX) return true
+
+        // ② 长横线（划掉删除）
+        if (w > 2.2f * h && w > 2f * MIN_GESTURE_PX) return true
+
+        // ③ 尖尖（插入）：两笔头尾相接成 V
+        if (prev != null && prev.size >= 4) {
+            val pFirst = prev.first()
+            val pLast = prev.last()
+            val join = kotlin.math.hypot(
+                (pLast.x - first.x).toDouble(),
+                (pLast.y - first.y).toDouble(),
+            ).toFloat()
+            val prevUp = pLast.y < pFirst.y - MIN_GESTURE_PX   // 上一笔向上
+            val curDown = last.y > first.y + MIN_GESTURE_PX    // 这一笔向下
+            val wide = (maxOf(maxX, pLast.x) - minOf(minX, pFirst.x)) > MIN_CARET_PX
+            if (join < 0.35f * maxOf(w, h) && prevUp && curDown && wide) return true
+        }
+        return false
+    }
+
+    /**
+     * 把手势交给宿主应用执行。
+     *
+     * 输入法只负责"识别形状 + 报坐标"：选区、删字、插入都是宿主编辑器的活
+     *（`InputConnection.performHandwritingGesture` → 宿主的 `Editor` 用那个矩形去比对自己的文本布局）。
+     * 所以这里喂的是**屏幕坐标**（引擎产出的 area/point 就是屏幕坐标系的）。
+     */
+    private fun performGesture(ime: InputMethodService, gesture: HandwritingGesture, feedX: Int, feedY: Int) {
+        // 手势不该变成文字，也不该留墨：从待识别集合里摘掉这一笔、抹掉它的墨迹
+        synchronized(stateLock) {
+            if (strokes.isNotEmpty()) strokes.removeAt(strokes.lastIndex)
+            current = null
+        }
+        ink.view?.removeLastStroke()
+
+        // HCR 那条路也要收尾：这一笔的 DOWN/MOVE 已经喂过去了，补一个 UP 再 reset，
+        // 否则引擎手里挂着半条笔画（与"轻点"同理）
+        if (usingHcr) {
+            runCatching { hcrFeed?.invoke(null, ime, feedX, feedY, ACTION_UP) }
+            runCatching { hcrClear?.invoke(null, ime) }
+        }
+
+        val ic = ime.currentInputConnection
+        if (ic == null) {
+            L.w("event=stylus_gesture_no_input_connection")
+            return
+        }
+        val name = gesture.javaClass.simpleName
+        runCatching {
+            ic.performHandwritingGesture(
+                gesture,
+                Executor { it.run() },
+                IntConsumer { result -> L.i("event=stylus_gesture_result type=$name result=$result") },
+            )
+        }.onFailure { L.e("event=stylus_gesture_perform_failed type=$name", it) }
+        L.i("event=stylus_gesture_performed type=$name target=${ime.currentInputConnection != null}")
+    }
+
     /**
      * "算不算画线"的位移阈值（px）：直接用系统的 touchSlop。
      *
@@ -455,11 +771,108 @@ class StylusImeHooks(private val module: XposedModule) {
             android.view.ViewConfiguration.get(ime).scaledTouchSlop.toFloat()
         }.getOrDefault(FALLBACK_TAP_SLOP)
 
-    /** 延迟任务到点：取快照 → 交后台识别。 */
+    /** 延迟任务到点：讯飞 HCR 优先，其次系统笔引擎。 */
     private fun recognizeAndCommit() {
         val ime = sessionIme ?: return
+
+        // ⓪ 讯飞 HCR：整段字迹归一化后重喂 → 取候选 → **直接落字**（无组词态、无下划线）
+        if (iflytek.isActive && !usingHcr) {
+            val all = synchronized(stateLock) { iflytekStrokes.map { ArrayList(it) } }
+            if (all.isEmpty()) return
+            val top = iflytek.recognize(all).firstOrNull()
+            synchronized(stateLock) { iflytekStrokes.clear() }
+            if (top.isNullOrEmpty()) {
+                L.i("event=stylus_iflytek_empty")
+                return
+            }
+            commitText(ime, top)
+            return
+        }
+
         val snapshot = takeStrokes() ?: return
         dispatchRecognition(ime, snapshot)
+    }
+
+    /**
+     * 会话空闲超时。
+     *
+     * 开了工具条就多留一会儿：落字后我们不再立刻收会话，否则工具条刚出现就消失，
+     * 「撤回 / 恢复」根本来不及点。
+     */
+    private fun sessionTimeoutMs(): Long {
+        val base = maxOf(1200L, HookPrefs.stylusDelayMs().toLong() + 600L)
+        return if (HookPrefs.stylusToolbarEnabled()) base + TOOLBAR_LINGER_MS else base
+    }
+
+    /** 把当前设置下发给讯飞引擎（间隔取自滑块；写区域固定为归一化方框）。 */
+    private fun reconfigureIflytek(ime: InputMethodService) {
+        if (!HookPrefs.stylusIflytek() || hcrEngineAvailable(ime)) return
+        iflytek.open(
+            ime,
+            areaLeft = 0,
+            areaTop = 0,
+            areaRight = InkNormalizer.SIZE,
+            areaBottom = InkNormalizer.SIZE,
+            intervalMs = HookPrefs.stylusDelayMs().toInt(),
+        )
+    }
+
+    /** 把工具条的关键事件写进 `files/stylus_toolbar.txt`（保留最近若干行）。 */
+    private fun recordToolbar(line: String) {
+        val dir = sessionIme?.filesDir ?: return
+        synchronized(toolbarLog) {
+            toolbarLog.addLast(line)
+            while (toolbarLog.size > STATS_KEEP) toolbarLog.removeFirst()
+            runCatching { File(dir, "stylus_toolbar.txt").writeText(toolbarLog.joinToString("\n") + "\n") }
+        }
+    }
+
+    // ------------------------------------------------------------------ 工具条
+
+    private fun showToolbar() {
+        val ime = sessionIme ?: return
+        if (!HookPrefs.stylusToolbarEnabled()) return
+        runCatching {
+            val t = toolbar ?: StylusToolbarWindow(ime).also { toolbar = it }
+            t.show(ink, toolbarActions, canUndo, canRedo)
+            recordToolbar("show shown=${t.isShown}")
+        }.onFailure { L.e("event=stylus_toolbar_show_exception", it) }
+    }
+
+    private fun hideToolbar() {
+        runCatching { toolbar?.hide() }.onFailure { L.e("event=stylus_toolbar_hide_exception", it) }
+        recordToolbar("hide")
+    }
+
+    /** 撤回/恢复按钮的可用状态（Compose state，可从任意线程写）。 */
+    private fun refreshToolbarState() {
+        canUndo.value = committedHistory.isNotEmpty()
+        canRedo.value = undoneHistory.isNotEmpty()
+    }
+
+    /** 上屏 + 墨迹退场 + 字出来了就收会话（讯飞与系统笔引擎共用）。 */
+    private fun commitText(ime: InputMethodService, text: String) {
+        // 记进手写自己的历史，供工具条"撤回 / 恢复"用
+        committedHistory.addLast(text)
+        undoneHistory.clear()
+        refreshToolbarState()
+        mainHandler.post {
+            runCatching { ime.currentInputConnection?.commitText(text, 1) }
+                .onFailure { L.w("event=stylus_commit_failed msg=${it.message}") }
+            if (!strokeActive) {
+                ink.clear()
+                // 开了工具条就把收会话推迟一点，否则工具条立刻消失、点不到撤回
+                val delay = if (HookPrefs.stylusToolbarEnabled()) TOOLBAR_LINGER_MS else 0L
+                if (delay == 0L) {
+                    runCatching { ime.finishStylusHandwriting() }
+                        .onFailure { L.w("event=stylus_finish_after_commit_failed msg=${it.message}") }
+                } else {
+                    workerHandler().postDelayed({
+                        if (!strokeActive) runCatching { ime.finishStylusHandwriting() }
+                    }, delay)
+                }
+            }
+        }
     }
 
     /**
@@ -587,11 +1000,35 @@ class StylusImeHooks(private val module: XposedModule) {
     // ------------------------------------------------------------------ 会话
 
     private fun beginSession(ime: InputMethodService) {
+        // ★ 这个函数是在 **IMMS 的手势窗口里**被回调的，必须尽快返回。
+        //
+        // 真机踩了两个大坑，症状一模一样（笔写不了、工具条不出现、还留下僵尸拦截面）：
+        //   ① 这里同步读一次 RemotePreferences（binder）；
+        //   ② 这里同步建 Miuix/Compose 工具条（首次组合 + 主题/字体加载是几百毫秒级）。
+        // 两次都是**在回调里做了耗时的事**。
+        //
+        // 为什么这么敏感：IMMS 里 `AFTER_STYLUS_UP_ALLOW_PERIOD_MS` 只有 **200ms**，
+        // `startHandwritingSession` 会检查 `HandwritingModeController.isStylusGestureOngoing()`。
+        // 我们返回晚了，这个窗口就过了 → 会话建不起来 → 那个手势的 stylus 拦截面残留下来
+        // **把笔整个吃掉**，直到笔离开设备列表才会被框架清掉。
+        //
+        // 所以：这里只做**必须同步**的轻活，其余一律 post/后台。
+        val t0 = System.nanoTime()
         sessionIme = ime
-        // 会话是低频事件，这里主动踢一次偏好刷新：注入进程不一定收得到偏好变更通知，
-        // 而笔迹的颜色/粗细/书写区高度就是在会话开始时读的（刷新是异步的，
-        // 所以本次仍可能用上一次的快照 —— 下一次起笔一定是最新的）。
-        HookPrefs.refreshSoon(module)
+        // 偏好刷新：**必须异步**。
+        //
+        // beginSession 是在 IMMS 的手势窗口里被回调的（`canStartStylusHandwriting`），
+        // 在这里同步等一次 binder（读 RemotePreferences）有把窗口拖过去的风险 ——
+        // 一旦拖过去，IMMS 那边 `startHandwritingSession` 就会失败：会话建不起来、
+        // 墨迹与工具条都不出现，而那个手势的 stylus 拦截面还会残留下来把笔吃掉。
+        // 所以：后台刷新，落地后再把新值下发给讯飞引擎（第一次识别在几百毫秒之后，来得及）。
+        workerHandler().post {
+            runCatching { HookPrefs.rebind(module) }
+                .onFailure { L.w("event=stylus_prefs_rebind_failed msg=${it.message}") }
+            // 用刷新后的值重新配置讯飞引擎（间隔/写区域），这样滑块改动立刻生效
+            runCatching { reconfigureIflytek(ime) }
+                .onFailure { L.w("event=stylus_reconfigure_failed msg=${it.message}") }
+        }
         // 0) 会话空闲超时**必须短**。
         //
         // 这里踩过一个大坑：早先按注释「默认很短，写着写着会断掉」把它设成了
@@ -614,9 +1051,9 @@ class StylusImeHooks(private val module: XposedModule) {
         //
         // 取值要比停笔识别延迟长一点，免得正在识别时把会话收掉。
         runCatching {
-            val idle = (HookPrefs.stylusDelayMs().toLong() + 600L).coerceAtLeast(1200L)
+            val idle = sessionTimeoutMs()
             ime.setStylusHandwritingSessionTimeout(java.time.Duration.ofMillis(idle))
-            L.i("event=stylus_session_timeout idle=${idle}ms")
+            L.i("event=stylus_session_timeout idle=${idle}ms toolbar=${HookPrefs.stylusToolbarEnabled()}")
         }.onFailure { L.w("event=stylus_timeout_failed msg=${it.message}") }
 
         // 1) 收起虚拟键盘：手写时不要让键盘挡着
@@ -627,6 +1064,30 @@ class StylusImeHooks(private val module: XposedModule) {
         //    挂不上只是没有墨迹，识别照常 —— 所以失败不抛、只记日志。
         //    挂载点选在这里是因为 AOSP 的顺序是 prepare（`maybeCreateAndInitInkWindow()` 已经
         //    建好窗口）→ start，到这一步 `getStylusHandwritingWindow()` 一定有值。
+        // 识别后端：小爱当前就是手写引擎时不碰（它自己那条链在跑）；
+        // 否则按开关把**讯飞 HCR** 拉起来 —— 它比系统笔引擎（64 点输入/top-4 输出）强得多。
+        // 拉起失败只会 isActive=false，后面所有分支自然退回系统笔引擎。
+        // 讯飞引擎：首次 initHcrEngine 可能是上百毫秒的原生初始化 —— 一律 post，别挡住手势窗口。
+        // 识别发生在停笔 delay 之后（几百毫秒），所以推迟这一点点完全来得及。
+        val wantIflytek = !hcrEngineAvailable(ime) && HookPrefs.stylusIflytek()
+        mainHandler.post {
+            if (!wantIflytek) return@post
+            runCatching {
+                // 写区域 = [InkNormalizer.SIZE] 的方框，喂进去的坐标也归一化到这块
+                //（见 recognizeAndCommit → IflytekHcrEngine.recognize → InkNormalizer.toBox）。
+                // 早先写区域给整屏而坐标给屏幕坐标，引擎把整个字看成几个像素，
+                // 候选出的是 `·`、`、`、`502` —— 真机诊断里抓到的。
+                iflytek.open(
+                    ime,
+                    areaLeft = 0,
+                    areaTop = 0,
+                    areaRight = InkNormalizer.SIZE,
+                    areaBottom = InkNormalizer.SIZE,
+                    intervalMs = HookPrefs.stylusDelayMs().toInt(),
+                )
+            }.onFailure { L.e("event=stylus_iflytek_open_exception", it) }
+        }
+
         geomDumped = false
         if (HookPrefs.stylusInkEnabled()) {
             runCatching { ink.attach(ime) }
@@ -641,7 +1102,21 @@ class StylusImeHooks(private val module: XposedModule) {
         }
         sessionStrokeCount = 0
         strokeActive = false
+        synchronized(stateLock) { iflytekStrokes.clear() }
         recordSessionState(ime, "begin")
+        // 记录本次回调耗时：IMMS 的窗口只有 200ms，超过就有风险（诊断文件里可查）
+        val costMs = (System.nanoTime() - t0) / 1_000_000
+        recordSessionState(ime, if (costMs > 200) "begin_slow=${costMs}ms" else "begin")
+        committedHistory.clear()
+        undoneHistory.clear()
+        refreshToolbarState()
+        // ★ 工具条**不在这里建**。
+        //
+        // 这里建过两次都出事（同步建、post 建都试过）：只要在会话建立前后碰
+        // Compose/Miuix（首次组合 + 主题字体加载是几百毫秒级）或去改手写窗口的触摸标志，
+        // 就可能把 IMMS 那个 200ms 的手势窗口拖过去 → 会话建不起来 → 僵尸拦截面吃笔。
+        // 现在改成**等第一个真实笔事件到达时再建**（见 onStylusMotion）：那个事件本身
+        // 就证明会话已经建好了，此时再做重活不可能影响会话建立。
         L.i("event=stylus_session_begin ink=${if (HookPrefs.stylusInkEnabled()) ink.isAttached else false}")
     }
 
@@ -656,7 +1131,12 @@ class StylusImeHooks(private val module: XposedModule) {
         usingHcr = false
         strokeActive = false
         sessionStrokeCount = 0
-        // 会话结束就把墨迹收掉：手写窗口会隐藏，留着只会在下次会话开头闪一下
+        prevStroke = null
+        synchronized(stateLock) { iflytekStrokes.clear() }
+        // 会话结束：丢弃讯飞引擎里未取走的输入（引擎本身不 release，小爱的键盘可能还在用）
+        iflytek.reset()
+        hideToolbar()
+                // 会话结束就把墨迹收掉：手写窗口会隐藏，留着只会在下次会话开头闪一下
         ink.clear()
         recordSessionState(ime, "finish")
         L.i("event=stylus_session_end")
@@ -788,6 +1268,15 @@ class StylusImeHooks(private val module: XposedModule) {
          * 只有取不到时才用这个数。
          */
         const val FALLBACK_TAP_SLOP = 20f
+
+        /** 工具条在时，落字后额外留这么久再收会话（ms）。 */
+        const val TOOLBAR_LINGER_MS = 4000L
+
+        /** 手势预筛：一个方向至少要这么大（px）才可能是手势。 */
+        const val MIN_GESTURE_PX = 90f
+
+        /** 尖尖（插入）预筛要求的最小宽度：太小就是「人」「八」，不是手势。 */
+        const val MIN_CARET_PX = 200f
 
         /** 笔画几何统计保留条数。 */
         const val STATS_KEEP = 8

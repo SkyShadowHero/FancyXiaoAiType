@@ -152,6 +152,9 @@ class AppUiState {
     var stylusInkEnabled by mutableStateOf(true)
     var stylusInkColor by mutableIntStateOf(PrefKeys.STYLUS_INK_COLOR_DEFAULT)
     var stylusInkWidthPx by mutableStateOf(PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
+    var stylusGestureEnabled by mutableStateOf(false)
+    var stylusIflytek by mutableStateOf(true)
+    var stylusToolbar by mutableStateOf(false)
 
     // 系统侧配合（system_server 进程，作用域 system）。默认开：
     // 关掉它会让 MIUI 设置页里的随手写开关打不开（死锁），见 PrefKeys 的注释。
@@ -483,4 +486,13 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.stylusInkWidthPx = p.runCatching {
         getFloat(PrefKeys.STYLUS_INK_WIDTH_PX, PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
     }.getOrDefault(PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
+    uiState.stylusGestureEnabled = p.runCatching {
+        getBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, false)
+    }.getOrDefault(false)
+    uiState.stylusIflytek = p.runCatching {
+        getBoolean(PrefKeys.STYLUS_IFLYTEK, true)
+    }.getOrDefault(true)
+    uiState.stylusToolbar = p.runCatching {
+        getBoolean(PrefKeys.STYLUS_TOOLBAR, false)
+    }.getOrDefault(false)
 }

@@ -76,6 +76,12 @@ public final class HookPrefs {
     private static volatile boolean stylusWhitelist = true;
     /** 是否显示笔迹（输入法进程的画布用）。 */
     private static volatile boolean stylusInkEnabled = true;
+    /** 书写手势总开关（圈选/尖尖插入/划掉删除）。 */
+    private static volatile boolean stylusGestureEnabled = false;
+    /** 是否优先用讯飞 HCR 引擎识别（而不是系统笔引擎）。默认开。 */
+    private static volatile boolean stylusIflytek = true;
+    /** 手写工具条开关（默认关，见 PrefKeys.STYLUS_TOOLBAR 说明）。 */
+    private static volatile boolean stylusToolbar = false;
     /** 笔迹颜色（ARGB）。 */
     private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
     /** 笔迹线宽（px）。 */
@@ -243,6 +249,18 @@ public final class HookPrefs {
         }
         try {
             stylusInkEnabled = p.getBoolean(PrefKeys.STYLUS_INK_ENABLED, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusGestureEnabled = p.getBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusIflytek = p.getBoolean(PrefKeys.STYLUS_IFLYTEK, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusToolbar = p.getBoolean(PrefKeys.STYLUS_TOOLBAR, false);
         } catch (Throwable ignored) {
         }
         try {
@@ -437,6 +455,31 @@ public final class HookPrefs {
     /** 是否显示笔迹。 */
     public static boolean stylusInkEnabled() {
         return stylusInkEnabled;
+    }
+
+    /** 书写手势是否开启。 */
+    public static boolean stylusGestureEnabled() {
+        return stylusGestureEnabled;
+    }
+
+    /** 是否优先用讯飞 HCR 引擎识别。 */
+    public static boolean stylusIflytek() {
+        return stylusIflytek;
+    }
+
+    /**
+     * 手写工具条是否启用。
+     *
+     * **当前硬性关闭（实验特性，暂停）**：它连续四轮都让手写会话出问题
+     * （最近一次真机数据：两轮会话连一个笔事件都收不到、`INTERCEPTS_STYLUS` 残留），
+     * 而我在没有可用触控笔的情况下无法自行验证。代码与开关位保留，
+     * 等能在设备上闭环验证之后再打开。
+     *
+     * 之所以直接返回 false 而不是读偏好：要保证**任何设置都不可能**让这条路复活，
+     * 否则手写会再次被拖垮。
+     */
+    public static boolean stylusToolbarEnabled() {
+        return false;
     }
 
     /** 笔迹颜色（ARGB）。 */
