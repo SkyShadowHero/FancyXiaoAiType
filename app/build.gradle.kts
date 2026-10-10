@@ -31,10 +31,9 @@ android {
         applicationId = "io.github.skyshadowhero.fancypad"
         minSdk = 35
         targetSdk = 37
-        // versionCode 用 major*10000 + minor*100 + patch，便于后续按语义递增
-        // FancyPad 是三个模块合并后的新应用（新包名），从 1.0.0 起算
-        versionCode = 10010
-        versionName = "1.1.0"
+        // versionCode 用 major*10000 + minor*10 + patch，便于后续按语义递增
+        versionCode = 10011
+        versionName = "1.1.1"
     }
 
     signingConfigs {
