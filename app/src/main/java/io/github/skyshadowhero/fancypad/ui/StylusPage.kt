@@ -191,7 +191,24 @@ fun StylusPage(
                 }
             }
 
-            item { SmallTitle("系统侧配合") }
+            item { SmallTitle("书写工具条") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.stylusToolbar,
+                    onCheckedChange = { checked ->
+                        uiState.stylusToolbar = checked
+                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_TOOLBAR, checked) }
+                    },
+                    title = "手写工具条（第二排）",
+                    summary = "写字时浮出我们自己的一排按钮，手指可点、可拖动：\n"
+                        + "撤回 / 恢复 / 删除 / 发送 / 标点 / 键盘\n"
+                        + "小爱自带那条栏（键盘 / 语音 / 撤回）保持原样，不受影响",
+                )
+            }
+        }
+
+        item { SmallTitle("系统侧配合") }
             item {
                 Card {
                     SwitchPreference(
