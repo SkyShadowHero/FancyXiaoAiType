@@ -22,12 +22,15 @@ object ConfigLoader {
 
     fun attach(p: SharedPreferences?) {
         prefs = p
+        invalidate()
         // 悬浮键盘尺寸上限处在热点路径上（夹取方法每帧都在调），不能按需读配置，
         // 所以这里先刷一次缓存；之后由下面的监听 + 缓存自带的节流刷新跟上改动。
         FloatingSize.refresh(p)
         // 注册监听：设置页改动后，Hook 侧下次读取立即取到新值（真正的实时生效）。
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             L.i("event=remote_pref_changed key=$key")
+            // 配置变了立刻让快照失效（热路径上的缓存必须马上跟上，别等 TTL）
+            invalidate()
             if (key == PrefKeys.FLOAT_KB_UNLOCK || key == PrefKeys.FLOAT_KB_MAX_SCALE) {
                 FloatingSize.refresh(prefs)
             }
@@ -42,8 +45,48 @@ object ConfigLoader {
 
     val raw: SharedPreferences? get() = prefs
 
-    /** 完整配置快照 */
+    /**
+     * 配置缓存。
+     *
+     * 为什么必须缓存：`snapshot()` 在**热点路径**上被调用 —— `Resources.getDimension*` 的
+     * 每个调用点都会问一次（[XposedEntry.overrideDimension]），而拖动悬浮键盘时布局是
+     * **逐帧**解析尺寸的。原来每次都重建 [Cfg]：逐键读 40+ 个 SharedPreferences
+     *（每个还套一层 `runCatching`）→ 真机上表现为"拖动那条工具栏很卡"。
+     *
+     * 现在：热路径只做一次 volatile 读 + 一次减法；配置改动由
+     * `OnSharedPreferenceChangeListener` 立刻 [invalidate]，[CACHE_TTL_MS] 只是兜底。
+     */
+    private const val CACHE_TTL_MS = 1000L
+
+    @Volatile
+    private var cachedCfg: Cfg = Cfg.DEFAULT
+
+    @Volatile
+    private var cachedAtMs: Long = 0L
+
+    /** 让缓存失效（配置变更 / 重新 attach 时调用）。 */
+    fun invalidate() {
+        cachedAtMs = 0L
+    }
+
+    /** 完整配置快照（带缓存，见 [CACHE_TTL_MS] 的说明）。 */
     fun snapshot(): Cfg {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - cachedAtMs < CACHE_TTL_MS) return cachedCfg
+        return synchronized(this) {
+            val t = android.os.SystemClock.uptimeMillis()
+            if (t - cachedAtMs < CACHE_TTL_MS) {
+                cachedCfg
+            } else {
+                build().also {
+                    cachedCfg = it
+                    cachedAtMs = t
+                }
+            }
+        }
+    }
+
+    private fun build(): Cfg {
         val p = prefs ?: return Cfg.DEFAULT
         return try {
             // 旧键 gap_dp 可能被存成不同类型，用 runCatching 单独兜住，

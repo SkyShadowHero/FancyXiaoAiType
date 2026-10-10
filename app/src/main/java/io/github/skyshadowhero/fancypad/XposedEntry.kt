@@ -311,6 +311,9 @@ class XposedEntry : XposedModule() {
 
     /** 资源名 -> ID（运行时解析，缓存）。ID 随版本变化，名字稳定。 */
     private val nameToId = HashMap<String, Int>()
+
+    /** `nameToId` 的值集合：用于热路径的快速拒绝（见 [overrideDimension]）。 */
+    private val interestingIds = HashSet<Int>()
     private var namesResolved = false
 
     /** 用应用自己的 Resources 把资源名解析成 ID；失败回退硬编码（0.2.910 实测值）。 */
@@ -362,6 +365,14 @@ class XposedEntry : XposedModule() {
             if (id != 0) floatingOk++
         }
         L.i("event=floating_resolved by_name=$floatingOk/${Target.FLOATING_NAMES.size}")
+        rebuildInterestingIds()
+    }
+
+    /** 把已解析到的资源 ID 收进快速拒绝集合。 */
+    private fun rebuildInterestingIds() {
+        interestingIds.clear()
+        for (v in nameToId.values) if (v != 0) interestingIds.add(v)
+        L.i("event=interesting_ids size=${interestingIds.size}")
     }
 
     /** 该资源 ID 是否属于某个名字集合 */
@@ -542,6 +553,10 @@ class XposedEntry : XposedModule() {
         asInt: Boolean,
     ): Any? {
         resolveNames(resources)
+        // ★ 快速拒绝：这是**逐帧**调用的热点函数，绝大多数 resId 与我们无关，
+        // 直接透传。没有这一层时每个尺寸解析都要读一遍完整配置（40+ 个偏好键）
+        // 外加拼日志字符串 —— 真机表现就是拖动悬浮键盘工具栏很卡。
+        if (resId !in interestingIds) return original
         val cfg = ConfigLoader.snapshot()
 
         // 1) 比例缩放（收缩态几何）：乘在**原始值**上，不写死新值。
@@ -551,28 +566,14 @@ class XposedEntry : XposedModule() {
             val origPx = (original as? Number)?.toFloat()
             if (origPx != null) {
                 val scaled = (origPx * factor).coerceAtLeast(0f)
-                L.sampled("mini_scale", limit = 12) {
-                    "event=mini_scale resId=0x${resId.toString(16)} " +
-                        "orig=$original factor=$factor -> $scaled"
-                }
                 return if (asInt) scaled.toInt() else scaled
             }
         }
 
         // 2) 绝对值覆写（dp × density）
-        val targetDp = resolveOverride(cfg, resId)
-        if (targetDp == null) {
-            L.sampled("dimcall", limit = 8) {
-                "event=dimen_call resId=0x${resId.toString(16)} value=$original (passthrough)"
-            }
-            return original
-        }
+        val targetDp = resolveOverride(cfg, resId) ?: return original
         val density = resources?.displayMetrics?.density ?: 1f
         val px = targetDp * density
-        L.i(
-            "event=dimen_override resId=0x${resId.toString(16)} orig=$original " +
-                "newPx=$px (${targetDp}dp @density=$density)"
-        )
         return if (asInt) px.toInt() else px
     }
 
