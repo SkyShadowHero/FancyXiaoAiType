@@ -37,32 +37,7 @@
             </intent-filter>
         </activity>
 
-        <!--
-          笔引擎自检页（调试用）：验证系统 xiaomi-pencilengine-pad 能否在本进程里出字。
-          **不导出**：这个页面会加载 17MB 模型并反复跑 OCR，导出就等于任何一个应用都能拉起来。
-          需要触发时走 root（本机有 KernelSU）：
-              su -c 'am start -n io.github.skyshadowhero.fancypad/.PencilEngineSelfTest'
-          root uid 在组件权限检查里是放行的，非导出组件一样起得来。
-          结果同时落在 files/selftest.txt 与模块日志里，不看屏幕也能取到结论。
-        -->
-        <activity
-            android:name=".PencilEngineSelfTest"
-            android:exported="false"
-            android:label="笔引擎自检"
-            android:theme="@style/Theme.Miuix" />
 
-        <!--
-          ONNX Runtime 自检页（调试用）：验证"换更好的识别模型"这条路能不能走通 ——
-          运行时（系统自带的 libonnxruntime）能否挂上、以及 files/models/*.onnx 的输入输出规格。
-          同样**不导出**，root 触发：
-              su -c 'am start -n io.github.skyshadowhero.fancypad/.OrtSelfTest'
-          结论落在 files/ort_selftest.txt。
-        -->
-        <activity
-            android:name=".OrtSelfTest"
-            android:exported="false"
-            android:label="ONNX 自检"
-            android:theme="@style/Theme.Miuix" />
     </application>
 
 </manifest>

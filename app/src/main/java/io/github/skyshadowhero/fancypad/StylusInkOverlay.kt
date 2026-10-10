@@ -173,7 +173,6 @@ internal class StylusInkOverlay {
     //
     // 试过：撤掉它 → 这块全屏窗口把笔的后续事件当普通触摸接走，手写通道拿不到 UP，
     // 笔画永远完不成（真机表现：会话建立成功、诊断里有 down/req=true，但一个字都写不出来）。
-    // 工具条现在改用笔操作，见 StylusToolbarWindow.dispatchPen()。
 
     fun clear() {
         inkView?.clear()

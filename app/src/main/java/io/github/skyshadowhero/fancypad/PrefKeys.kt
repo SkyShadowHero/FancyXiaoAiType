@@ -697,12 +697,4 @@ object PrefKeys {
     /** 优先使用小爱自带的讯飞手写引擎（默认开：这是识别质量的关键）。 */
     const val STYLUS_IFLYTEK = "stylus_iflytek"
 
-    /**
-     * 手写工具条（撤回/恢复/删除/发送/标点/键盘，可拖拽）。
-     *
-     * **默认关**：它是在随手写会话里再开一个 `TYPE_INPUT_METHOD` 窗口，
-     * 真机出现过"开了工具条之后手写会话建不起来"的问题，先用开关隔离，
-     * 确认不影响手写之后再默认打开。
-     */
-    const val STYLUS_TOOLBAR = "stylus_toolbar"
 }

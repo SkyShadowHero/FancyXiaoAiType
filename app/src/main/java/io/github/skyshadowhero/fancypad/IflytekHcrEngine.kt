@@ -52,9 +52,6 @@ internal class IflytekHcrEngine {
     /** `RecognizeType` 类，首次解析后缓存（configure 每次会话都要用）。 */
     @Volatile private var recognizeTypeClass: Class<*>? = null
 
-    /** 落盘诊断用的目录（输入法私有目录；logcat 与 LSPosed 日志在本机都收不到）。 */
-    @Volatile private var filesDir: java.io.File? = null
-    private val log = ArrayDeque<String>()
 
     private var mInputPoint: Method? = null
     private var mFinishInput: Method? = null
@@ -89,7 +86,6 @@ internal class IflytekHcrEngine {
         intervalMs: Int,
         recognizeMode: String = MODE_FREE_STROKE,
     ): Boolean {
-        filesDir = ime.filesDir
         // ★ 引擎只创建一次，但**配置每次会话都要重新下发** ——
         // 早先 `if (engine != null) return true` 直接返回，于是用户在设置里改的
         // "停笔识别延迟"（= setHcrInterval）只在第一次会话生效过，之后永远用旧值
@@ -261,22 +257,9 @@ internal class IflytekHcrEngine {
             .onFailure { L.w("event=iflytek_reset_failed msg=${it.message}") }
     }
 
-    /**
-     * 写一行诊断到 `files/stylus_iflytek.txt`（保留最近 [LOG_KEEP] 行）。
-     *
-     * 为什么不用日志：本机 logcat 缓冲区是死的（`logcat -d` 只有几个月前的旧行），
-     * 模块日志也进不去 LSPosed 日志目录 —— 只能落盘，root 侧 `cat` 取证。
-     */
+    /** 记一行日志（本机 logcat 不可用，留着方便以后接别的输出通道）。 */
     private fun emit(line: String) {
         L.i("event=iflytek $line")
-        val dir = filesDir ?: return
-        synchronized(log) {
-            log.addLast(line)
-            while (log.size > LOG_KEEP) log.removeFirst()
-            runCatching {
-                java.io.File(dir, "stylus_iflytek.txt").writeText(log.joinToString("\n") + "\n")
-            }
-        }
     }
 
     /** 从 `SmartResult` 取文本（小爱自己的转换器就是调 `getWord()`）。 */
@@ -313,7 +296,5 @@ internal class IflytekHcrEngine {
         /** 单字模式（识别更保守，适合一次写一个字）。 */
         const val MODE_CHAR = "HCR_RECOGNITION_CHAR"
 
-        /** 诊断文件保留行数。 */
-        const val LOG_KEEP = 12
     }
 }

@@ -80,8 +80,6 @@ public final class HookPrefs {
     private static volatile boolean stylusGestureEnabled = false;
     /** 是否优先用讯飞 HCR 引擎识别（而不是系统笔引擎）。默认开。 */
     private static volatile boolean stylusIflytek = true;
-    /** 手写工具条开关（默认关，见 PrefKeys.STYLUS_TOOLBAR 说明）。 */
-    private static volatile boolean stylusToolbar = false;
     /** 笔迹颜色（ARGB）。 */
     private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
     /** 笔迹线宽（px）。 */
@@ -257,10 +255,6 @@ public final class HookPrefs {
         }
         try {
             stylusIflytek = p.getBoolean(PrefKeys.STYLUS_IFLYTEK, true);
-        } catch (Throwable ignored) {
-        }
-        try {
-            stylusToolbar = p.getBoolean(PrefKeys.STYLUS_TOOLBAR, false);
         } catch (Throwable ignored) {
         }
         try {
@@ -467,21 +461,6 @@ public final class HookPrefs {
         return stylusIflytek;
     }
 
-    /**
-     * 手写工具条是否启用。
-     *
-     * 它的两条**硬约束**（都是真机踩出来的，改代码时别破坏）：
-     *  1. **不新开窗口**：用输入法 window token 另开窗口会让 token 重新"可见"，
-     *     IMMS 因此中止手写会话（`req=false`），还留下僵尸 `INTERCEPTS_STYLUS` 把笔吃掉；
-     *     输入法也没有悬浮窗权限（`SYSTEM_ALERT_WINDOW` / `INTERNAL_SYSTEM_WINDOW` 均 granted=0）。
-     *     所以工具条是挂进框架手写窗口容器的子 View。
-     *  2. **绝不改手写窗口的 `FLAG_NOT_TOUCHABLE`**：那块窗口是全屏的，一旦可触摸就会把笔的
-     *     后续事件当普通触摸接走，笔画永远完不成（真机：`down req=true` 之后什么都没有）。
-     *     所以工具条用**笔**操作：命中判定 + 合成事件派发，见 `StylusToolbarWindow.dispatchPen`。
-     */
-    public static boolean stylusToolbarEnabled() {
-        return stylusToolbar;
-    }
 
     /** 笔迹颜色（ARGB）。 */
     public static int stylusInkColor() {
