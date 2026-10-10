@@ -128,6 +128,12 @@ class StylusImeHooks(private val module: XposedModule) {
     /** 上一笔的点集：判断"尖尖插入"那种两笔相接的形状要用。 */
     @Volatile private var prevStroke: List<PencilEngine.Pt>? = null
 
+    /** 上一笔抬起的时刻（事件时间）。判断这一笔是不是"单独画的"要用（见 [looksLikeGesture]）。 */
+    @Volatile private var lastStrokeUpTime = 0L
+
+    /** 本次落笔距上一笔抬起过了多久（ms）；第一笔、或隔了很久没写时是 [Long.MAX_VALUE]。 */
+    @Volatile private var idleBeforeStroke = Long.MAX_VALUE
+
     // ---- 识别后端：优先讯飞 HCR（小爱自带），失败自动退回系统笔引擎 ----
     private val iflytek = IflytekHcrEngine()
 
@@ -327,6 +333,9 @@ class StylusImeHooks(private val module: XposedModule) {
                 maxDist = 0f
                 moveEvents = 0
                 strokeActive = true
+                // 距上一笔抬起多久 —— "单独画的一笔"的判据（连接·拆分那种改动型笔势只认它）
+                idleBeforeStroke =
+                    if (lastStrokeUpTime > 0L) time - lastStrokeUpTime else Long.MAX_VALUE
                 // 落笔时同步一次画布/窗口的真实位置（上一笔之后可能发生过布局变化）。
                 // 每个 MOVE 都去问 View 的位置没必要 —— 每秒上百次；整笔沿用这次的结果。
                 ink.sync()
@@ -432,6 +441,7 @@ class StylusImeHooks(private val module: XposedModule) {
 
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             strokeActive = false
+            lastStrokeUpTime = time
         }
 
         if (isTap) {
@@ -493,7 +503,7 @@ class StylusImeHooks(private val module: XposedModule) {
         // 假阴性则会让手势失效），真正的分类还是引擎说了算。
         if (action == MotionEvent.ACTION_UP && HookPrefs.stylusGestureEnabled()) {
             val stroke = justFinished
-            if (stroke != null && looksLikeGesture(stroke, prevStroke)) {
+            if (stroke != null && looksLikeGesture(ime, stroke, prevStroke)) {
                 val g = gestureEngine.recognize(ime, stroke.map { PointF(it.x, it.y) })
                 if (g != null) {
                     performGesture(ime, g, feedX.toInt(), feedY.toInt())
@@ -589,10 +599,18 @@ class StylusImeHooks(private val module: XposedModule) {
      * - **直角折线**（换行）→ `InsertGesture`（插换行符）；
      * - **尖尖**（在光标处插入）→ `InsertModeGesture`：两笔相接成 V，或一笔画出 ^/V。
      *
-     * 这里**故意偏宽松**：假阳性只是白问一次模型（模型说不像时这一笔照常当文字识别），
-     * 假阴性才是功能直接失效。所以每条分支的阈值都按"宁可多放行"来定。
+     * 这里**总体偏宽松**：假阳性只是白问一次模型（模型说不像时这一笔照常当文字识别），
+     * 假阴性才是功能直接失效。所以各条分支的阈值都按"宁可多放行"来定。
+     *
+     * **例外是短竖线（连接·拆分）**：竖笔在中文里太常见，放宽的代价不是"多问一次"而是
+     * "写字被打断"，所以那一条反过来要严 —— 只认**单独画的、落在已有文字之间**的竖线
+     *（见 [isMarkBetweenText]）。
      */
-    private fun looksLikeGesture(stroke: List<PencilEngine.Pt>, prev: List<PencilEngine.Pt>?): Boolean {
+    private fun looksLikeGesture(
+        ime: InputMethodService,
+        stroke: List<PencilEngine.Pt>,
+        prev: List<PencilEngine.Pt>?,
+    ): Boolean {
         if (stroke.size < 6) return false
         var minX = Float.MAX_VALUE
         var maxX = -Float.MAX_VALUE
@@ -620,9 +638,16 @@ class StylusImeHooks(private val module: XposedModule) {
         if (w > STRIKE_ASPECT * h && w > MIN_STRIKE_PX) return true
 
         // ②b 短竖线（连接·拆分）：引擎里模型 type 3/4 → `JoinOrSplitGesture`。
-        //     在两个字中间点一竖就是"连接 / 拆分"。只判"够竖 + 长度合适"，其余交给模型；
-        //     上限是怕把正常的长竖（撇/竖笔）也问一遍 —— 太长了就不像"点一下"。
-        if (h > SPLIT_ASPECT * w && h > MIN_SPLIT_PX && h < MAX_SPLIT_PX) return true
+        //
+        //     这条**必须严**。初版只判形状（够竖 + 长度合适），真机结果就是
+        //     "竖线被识别成手势的概率太大，写字被打断"：中文里竖笔太常见，写带竖的字几乎每次
+        //     都去问一次模型，而模型一旦判成 JoinOrSplit，正在写的那个字就被连接/拆分了。
+        //     所以除形状外还要过 [isMarkBetweenText]：**单独画的** + **落在已有文字之间**。
+        if (h > SPLIT_ASPECT * w && h > MIN_SPLIT_PX && h < MAX_SPLIT_PX &&
+            isMarkBetweenText(ime)
+        ) {
+            return true
+        }
 
         // ③ 尖尖（插入）· 两笔版：两笔头尾相接成 V
         //
@@ -697,6 +722,30 @@ class StylusImeHooks(private val module: XposedModule) {
             }
         }
         return false
+    }
+
+    /**
+     * 「单独画的一笔、而且落在**已有文字之间**」—— 连接·拆分这种**改动型**笔势的准入条件。
+     *
+     * 两道都要满足：
+     *
+     * 1. **单独画的**：距上一笔抬起超过 [MARK_IDLE_MS]。正常写字笔画是连着来的（几百毫秒一笔），
+     *    不会满足；要连接 / 拆分才会先停一下、再单独画一竖。
+     * 2. **落在文字上**：光标**前后都有字**才放行。写字是从文字末尾往后写，落笔处光标后面是空的；
+     *    要连接 / 拆分才会把笔落在两个字**之间**。框架在落笔时会先把光标移到落笔位置
+     *   （`HandwritingInitiator.requestFocusWithoutReveal` → `EditText.setSelection(偏移)`），
+     *    所以到抬笔这一刻这个判断是有效的。
+     *
+     * 宿主不返回上下文（`getTextBeforeCursor` 返回 null）时按**不成立**处理 ——
+     * 这个手势宁可少触发，也不能再出现"写字被打断"。
+     */
+    private fun isMarkBetweenText(ime: InputMethodService): Boolean {
+        if (idleBeforeStroke < MARK_IDLE_MS) return false
+        return runCatching {
+            val ic = ime.currentInputConnection ?: return@runCatching false
+            ic.getTextBeforeCursor(1, 0)?.isNotEmpty() == true &&
+                ic.getTextAfterCursor(1, 0)?.isNotEmpty() == true
+        }.getOrDefault(false)
     }
 
     /**
@@ -1138,6 +1187,9 @@ class StylusImeHooks(private val module: XposedModule) {
 
         /** 连接·拆分：高要是宽的这么多倍才算"够竖"。 */
         const val SPLIT_ASPECT = 1.4f
+
+        /** 连接·拆分：这一笔距上一笔抬起至少隔这么久（ms）才算"单独画的"。 */
+        const val MARK_IDLE_MS = 600L
 
         /** 换行（折线钩）：笔画至少要这么多点才去找折角。 */
         const val MIN_NEWLINE_POINTS = 8
