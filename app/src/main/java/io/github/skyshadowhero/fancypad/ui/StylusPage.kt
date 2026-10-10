@@ -185,30 +185,13 @@ fun StylusPage(
                             uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_IFLYTEK, checked) }
                         },
                         title = "用讯飞引擎识别",
-                        summary = "用小爱自带的讯飞引擎识别（不切你的键盘）\n"
+                        summary = "用小爱自带的讯飞引擎识别\n"
                             + "关闭则退回系统笔引擎，识别率会明显下降",
                     )
                 }
             }
 
-            item { SmallTitle("书写工具条") }
-        item {
-            Card {
-                SwitchPreference(
-                    checked = uiState.stylusToolbar,
-                    onCheckedChange = { checked ->
-                        uiState.stylusToolbar = checked
-                        uiState.save { e -> e.putBoolean(PrefKeys.STYLUS_TOOLBAR, checked) }
-                    },
-                    title = "手写工具条（第二排）",
-                    summary = "写字时浮出我们自己的一排按钮，手指可点、可拖动：\n"
-                        + "撤回 / 恢复 / 删除 / 发送 / 标点 / 键盘\n"
-                        + "小爱自带那条栏（键盘 / 语音 / 撤回）保持原样，不受影响",
-                )
-            }
-        }
-
-        item { SmallTitle("系统侧配合") }
+            item { SmallTitle("系统侧配合") }
             item {
                 Card {
                     SwitchPreference(

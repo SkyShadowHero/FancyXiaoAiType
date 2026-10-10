@@ -80,8 +80,6 @@ public final class HookPrefs {
     private static volatile boolean stylusGestureEnabled = false;
     /** 是否优先用讯飞 HCR 引擎识别（而不是系统笔引擎）。默认开。 */
     private static volatile boolean stylusIflytek = true;
-    /** 手写工具条（第二排）开关，默认关：它要自建窗口，先让用户自己决定开不开。 */
-    private static volatile boolean stylusToolbar = false;
     /** 笔迹颜色（ARGB）。 */
     private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
     /** 笔迹线宽（px）。 */
@@ -257,10 +255,6 @@ public final class HookPrefs {
         }
         try {
             stylusIflytek = p.getBoolean(PrefKeys.STYLUS_IFLYTEK, true);
-        } catch (Throwable ignored) {
-        }
-        try {
-            stylusToolbar = p.getBoolean(PrefKeys.STYLUS_TOOLBAR, false);
         } catch (Throwable ignored) {
         }
         try {
@@ -467,10 +461,6 @@ public final class HookPrefs {
         return stylusIflytek;
     }
 
-    /** 手写工具条（第二排）是否启用。 */
-    public static boolean stylusToolbarEnabled() {
-        return stylusToolbar;
-    }
 
 
     /** 笔迹颜色（ARGB）。 */
