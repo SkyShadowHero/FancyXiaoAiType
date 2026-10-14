@@ -137,12 +137,26 @@ class StylusImeHooks(private val module: XposedModule) {
     @Volatile private var lastStrokeUpTime = 0L
 
     /**
-     * 因为**轻点**而立刻收会话时，把这批还没到识别延迟的笔迹带走（见 [carryStrokes]）。
+     * 本次会话用的那个 `InputConnection`。
      *
-     * [endSession] 会清空 [strokes]，而这个字段跨会话保留；[recognizeAndCommit] 优先取它。
+     * 所有对输入框的写入都要先比一下它。会话结束、用户换输入框/换应用之后，
+     * `currentInputConnection` 已经是**别人的**了 —— 最典型的是用户接着打拼音，那时组词区
+     * 属于拼音流程，往里写就会截断/污染它（真机：手写之后打字，候选变成"该改革才"这种）。
      */
     @Volatile
-    private var carriedStrokes: List<List<PencilEngine.Pt>>? = null
+    private var sessionIc: android.view.inputmethod.InputConnection? = null
+
+    /** 我们最后一次放进组词区的文字；落定前用它确认那还是**我们的**组词区。 */
+    @Volatile
+    private var lastComposingText: String? = null
+
+    /** 会话结束时要补一次"识别完顺手落定"（见 [endSession]）。 */
+    @Volatile
+    private var finalizeAfterRecognize = false
+
+    /** 是否还有一次"抬手"欠着（见 [hcrLiftTask] 与 [endSession]）。 */
+    @Volatile
+    private var hcrLiftScheduled = false
 
     /** 本次落笔距上一笔抬起过了多久（ms）；第一笔、或隔了很久没写时是 [Long.MAX_VALUE]。 */
     @Volatile private var idleBeforeStroke = Long.MAX_VALUE
@@ -349,8 +363,6 @@ class StylusImeHooks(private val module: XposedModule) {
                 // 距上一笔抬起多久 —— "单独画的一笔"的判据（连接·拆分那种改动型笔势只认它）
                 idleBeforeStroke =
                     if (lastStrokeUpTime > 0L) time - lastStrokeUpTime else Long.MAX_VALUE
-                // 又落笔了：把轻点"带走"的那批笔迹并回累积，识别继续等真正停笔
-                mergeCarriedBack()
                 // 落笔时同步一次画布/窗口的真实位置（上一笔之后可能发生过布局变化）。
                 // 每个 MOVE 都去问 View 的位置没必要 —— 每秒上百次；整笔沿用这次的结果。
                 ink.sync()
@@ -490,15 +502,13 @@ class StylusImeHooks(private val module: XposedModule) {
             if (usingHcr) {
                 runCatching { hcrFeed?.invoke(null, ime, feedX.toInt(), feedY.toInt(), ACTION_UP) }
                 runCatching { hcrClear?.invoke(null, ime) }
-            } else {
-                // 轻点要立刻收会话（把笔交回系统），但**不能**因此提前识别。
-                //
-                // 早先这里是 flushRecognition()：立即把攒下的笔迹送去识别。真机表现就是
-                // "字还没写完就被中断然后出字了" —— 而且它走的是 `dispatchRecognition()`，
-                // 也就是**系统笔引擎**，不是用户在设置里选的讯飞，所以出的字还常常是错的。
-                // 现在改成"带走这批笔迹 + 按停笔延迟到点再识别"，见 [carryStrokes]。
-                carryStrokes()
             }
+            // 这里**不**提前识别，也**不**留下"延迟到会话之外再写输入框"的欠账 ——
+            // 攒下的笔迹由紧接着的会话结束当场清账（见 [endSession]）。
+            //
+            // 两条走过的弯路：flushRecognition() 立即出字，而且走的是系统笔引擎（不是用户
+            // 选的讯飞）；后来改成"带走这批 + 延迟再识别"更糟 —— 延迟到点时用户可能已经在
+            // 打拼音，那一笔写进了**拼音的组词区**，把拼音过程截断，候选就成了"该改革才"。
             // ★ 必须**post 出去**，不能在这里同步收会话。
             //
             // 这个钩子是在框架 `InputMethodImpl.deliverStylusHandwritingMotionEvent()` 里被调的，
@@ -605,6 +615,7 @@ class StylusImeHooks(private val module: XposedModule) {
                 //   最可能就是这里。改成按同一个延迟再抬手；中间又落笔就在 DOWN 分支里撤掉。
                 val h = workerHandler()
                 h.removeCallbacks(hcrLiftTask)
+                hcrLiftScheduled = true
                 h.postDelayed(hcrLiftTask, recognizeDelayMs())
                 synchronized(stateLock) { strokes.clear() }   // HCR 自己上屏，别重复处理
                 // 字出来之后墨迹就该退场。延迟一小会儿是为了让「笔迹→文字」看起来是接续的；
@@ -629,31 +640,15 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     /**
-     * 新落笔时，把轻点**带走**的那批笔迹并回当前累积，并撤掉那次提前排的识别。
-     *
-     * 不这么做的话：写完两笔 → 停一下 → 笔尖轻触（按轻点判据算点击）→ 半个字被"带走"、
-     * 延迟到点就落字了 —— 而用户其实还在写同一个字，看到的又是"还没写完就出字"。
-     * 并回来之后，识别只会在**真正停笔**之后发生。
-     */
-    private fun mergeCarriedBack() {
-        val carried = carriedStrokes ?: return
-        carriedStrokes = null
-        synchronized(stateLock) {
-            strokes.addAll(carried)
-            // 讯飞那条路用的是另一份累积（它每个识别周期要重喂整段），所以两边都要并
-            if (iflytek.isActive && !usingHcr) iflytekStrokes.addAll(carried)
-        }
-        workerHandler?.removeCallbacks(recognizeTask)
-        L.i("event=stylus_carry_merged strokes=${carried.size}")
-    }
-
-    /**
      * 停笔延迟到点后才让小爱 HCR 那条链"抬手"（见 [onStylusMotion] 的 `usingHcr` 分支）。
      *
-     * 抬手动作（`v4.x.e`）会取候选并**直接上屏**，所以必须等停笔 —— 否则就是"没写完就出字"。
+     * 抬手动作（`v4.x.e`）会取候选并**直接上屏**，所以必须等停笔 —— 否则就是"没写完就出字"；
+     * 而且它写的是 `currentInputConnection`，所以同样要先过 [writeAllowed]。
      */
     private val hcrLiftTask = Runnable {
+        hcrLiftScheduled = false
         val ime = sessionIme ?: return@Runnable
+        if (!writeAllowed(ime)) return@Runnable
         runCatching { hcrLift?.invoke(null, ime) }
             .onFailure { L.w("event=stylus_hcr_lift_failed msg=${it.message}") }
         L.i("event=stylus_hcr_lift")
@@ -769,13 +764,47 @@ class StylusImeHooks(private val module: XposedModule) {
     /**
      * 闭合环（**画框框**）→ 圈选。
      *
-     * 首尾相接 + 两个方向都张得开。比例放宽过两次（0.25 → 0.30 → 0.40）：圈得不圆、
-     * 留个口子的也放行 —— 真判形状的是模型，预筛只管别把候选漏掉；而**执行前**的
-     * [gestureShapeOk] 会用同一条判据再验一次，所以放宽不会让"横线变成圈选"。
+     * 除了"首尾相接 + 两个方向都张得开"，还要求它**像框**而不是像「o」：
+     * 框的笔画会走到包围盒的四个角附近，而圆/椭圆离四个角很远（正圆时最近也有约
+     * 0.15×对角线）。真机反馈"画 o 的时候不要识别为手势，不然写不了 o 和 0"就是这个 ——
+     * 小写 o、数字 0 本身就是闭合环，只看"闭合"必然误判。
+     *
+     * 判据见 [frameLike]：四个角里至少 [FRAME_CORNERS_MIN] 个，笔画走到离它
+     * [FRAME_CORNER_RATIO]×对角线以内。手画的（小圆角）框能过，圆/椭圆过不了。
      */
-    private fun isLoopShape(g: Geometry): Boolean =
-        g.gap < SELECT_GAP_RATIO * maxOf(g.w, g.h) &&
-            g.w > MIN_GESTURE_PX && g.h > MIN_GESTURE_PX
+    private fun isLoopShape(g: Geometry): Boolean {
+        if (g.gap >= SELECT_GAP_RATIO * maxOf(g.w, g.h)) return false
+        if (g.w <= MIN_GESTURE_PX || g.h <= MIN_GESTURE_PX) return false
+        return frameLike(g)
+    }
+
+    /**
+     * 这一笔像不像"框"：包围盒的四个角里，有多少个是笔画真的走到的。
+     *
+     * 圆/椭圆永远走不到角上（正圆时最近的点离角约 0.15×对角线），所以这一条能把
+     * 「o / 0」与「画框框」分开 —— 而它们都是"闭合环"，只靠闭合判不出来。
+     * 手画的框角多为圆角，所以允许一个角不达标（[FRAME_CORNERS_MIN] = 3）。
+     */
+    private fun frameLike(g: Geometry): Boolean {
+        val diag = kotlin.math.hypot(g.w.toDouble(), g.h.toDouble()).toFloat()
+        if (diag <= 0f) return false
+        val limit = FRAME_CORNER_RATIO * diag
+        var near = 0
+        for (cx in floatArrayOf(g.minX, g.maxX)) {
+            for (cy in floatArrayOf(g.minY, g.maxY)) {
+                var best = Float.MAX_VALUE
+                for (p in g.stroke) {
+                    val d = kotlin.math
+                        .hypot((p.x - cx).toDouble(), (p.y - cy).toDouble())
+                        .toFloat()
+                    if (d < best) best = d
+                    if (best <= limit) break
+                }
+                if (best <= limit) near++
+            }
+        }
+        return near >= FRAME_CORNERS_MIN
+    }
 
     /** 长横线（划掉）→ 删除。 */
     private fun isStrikeShape(g: Geometry): Boolean =
@@ -939,7 +968,7 @@ class StylusImeHooks(private val module: XposedModule) {
         }
 
         val ic = ime.currentInputConnection
-        if (ic == null) {
+        if (ic == null || !writeAllowed(ime)) {
             L.w("event=stylus_gesture_no_input_connection")
             return
         }
@@ -967,41 +996,54 @@ class StylusImeHooks(private val module: XposedModule) {
         }.getOrDefault(FALLBACK_TAP_SLOP)
 
     /**
-     * 延迟任务到点：讯飞 HCR 优先，其次系统笔引擎。
+     * 延迟任务到点：把"到目前为止的整段字迹"重认一遍。
      *
-     * **不清空累积** —— 每次都要把"到目前为止的整段字迹"重认一遍，中间结果才能被替换
-     *（见 [showComposing]）。累积由会话结束/开始来清（那时才落定）。
+     * **不清空累积** —— 中间结果才能被下一轮替换（见 [showComposing]）。
+     * 累积由会话开始/结束来清（那时才落定）。
      */
     private fun recognizeAndCommit() {
         val ime = sessionIme ?: return
+        val snapshot = synchronized(stateLock) {
+            val src = if (iflytek.isActive && !usingHcr) iflytekStrokes else strokes
+            if (src.isEmpty()) null else src.map { ArrayList(it) }
+        } ?: return
+        recognizeSnapshot(ime, snapshot)
+    }
 
-        // ⓪ 轻点收会话时"带走"的那批笔迹（见 [carryStrokes]）：先并回对应的累积里
-        carriedStrokes?.let { carried ->
-            carriedStrokes = null
-            synchronized(stateLock) {
-                strokes.addAll(carried)
-                if (iflytek.isActive && !usingHcr) iflytekStrokes.addAll(carried)
-            }
-        }
-
-        // ① 讯飞 HCR：整段字迹归一化后重喂 → 取候选 → **组词态**上屏
+    /**
+     * 把一批笔迹交给**用户选的那条引擎**并上屏（组词态）。
+     *
+     * 抽出来是因为会话结束"清账"时也要用：那时累积已经被同步取走，不能再读 [strokes]/[iflytekStrokes]。
+     */
+    private fun recognizeSnapshot(ime: InputMethodService, snapshot: List<List<PencilEngine.Pt>>) {
         if (iflytek.isActive && !usingHcr) {
-            val all = synchronized(stateLock) { iflytekStrokes.map { ArrayList(it) } }
-            if (all.isEmpty()) return
-            val top = iflytek.recognize(all).firstOrNull()
+            val top = iflytek.recognize(snapshot).firstOrNull()
             if (top.isNullOrEmpty()) {
-                L.i("event=stylus_iflytek_empty")
+                L.i("event=stylus_iflytek_empty strokes=${snapshot.size}")
+                finalizeIfNeeded(ime)
                 return
             }
             showComposing(ime, top)
             return
         }
-
-        // ② 系统笔引擎：同样整段重认、组词态上屏
-        val snapshot = synchronized(stateLock) {
-            if (strokes.isEmpty()) null else strokes.map { ArrayList(it) }
-        } ?: return
         dispatchRecognition(ime, snapshot)
+    }
+
+    /**
+     * "这次识别本来是要收尾的（会话已结束），但引擎没认出来" → 也得把组词区落定。
+     *
+     * 否则上一次识别留下的组词态会一直挂着下划线（甚至被下一次会话的内容替换）。
+     * 墨迹照旧留着：让用户看出"写了但没认出来"，而不是笔迹凭空消失。
+     */
+    private fun finalizeIfNeeded(ime: InputMethodService) {
+        if (!finalizeAfterRecognize) return
+        finalizeAfterRecognize = false
+        finishComposing(ime)
+    }
+
+    /** 累积里还有没有笔迹（会话结束判断"有没有欠账"用）。 */
+    private fun hasPendingStrokes(): Boolean = synchronized(stateLock) {
+        iflytekStrokes.isNotEmpty() || strokes.isNotEmpty()
     }
 
     /**
@@ -1047,48 +1089,64 @@ class StylusImeHooks(private val module: XposedModule) {
      * 优化；会话由框架的空闲超时（[sessionTimeoutMs]）或用户轻点来收。
      */
     private fun showComposing(ime: InputMethodService, text: String) {
+        val finalize = finalizeAfterRecognize
+        finalizeAfterRecognize = false
         mainHandler.post {
+            if (!writeAllowed(ime)) return@post
             runCatching { ime.currentInputConnection?.setComposingText(text, 1) }
                 .onFailure { L.w("event=stylus_composing_failed msg=${it.message}") }
+            lastComposingText = text
             // 文字已经在组词态显示出来了，墨迹就该退场（留着会跟文字糊在一起）
             if (!strokeActive) ink.clear()
+            if (finalize) finishComposing(ime)
         }
     }
 
-    /** 落定组词态：把文字真正提交给编辑器、下划线消失。会话结束时调（见 [endSession]）。 */
+    /**
+     * 落定组词态：把文字真正提交给编辑器、下划线消失。会话结束时调（见 [endSession]）。
+     *
+     * 落定前要确认**光标前那段还是我们写的**：用户可能已经接着打拼音了，那时的组词区是
+     * 拼音流程的，我们去 `finishComposingText` 会把拼到一半的拼音截断（真机：候选变乱）。
+     */
     private fun finishComposing(ime: InputMethodService) {
-        runCatching { ime.currentInputConnection?.finishComposingText() }
+        val mine = lastComposingText
+        lastComposingText = null
+        if (!writeAllowed(ime)) return
+        val ic = ime.currentInputConnection ?: return
+        if (mine != null) {
+            val before = runCatching { ic.getTextBeforeCursor(mine.length, 0) }
+                .getOrNull()?.toString()
+            if (before != mine) {
+                L.i("event=stylus_finish_composing_skipped reason=not_ours")
+                return
+            }
+        }
+        runCatching { ic.finishComposingText() }
             .onFailure { L.w("event=stylus_finish_composing_failed msg=${it.message}") }
     }
 
     /**
-     * 轻点收会话时，把已经攒下、还没到识别延迟的笔迹**带走**，并重新排识别。
+     * 现在还能不能往这个输入框写 —— 身份校验，两道合一。
      *
-     * 为什么不能就地识别：`flushRecognition()`（旧实现）会**立即**出字 —— 真机表现就是
-     * "字还没写完就被中断然后出字了"，而且走的是系统笔引擎、无视用户选的讯飞。
-     * 为什么不能不管：紧接着的 `finishStylusHandwriting()` 会走 [endSession]，那里会把
-     * `strokes` 清掉，字就丢了。
-     *
-     * 所以：**主线程同步取走快照**存进 [carriedStrokes]（跨会话保留），再按用户设的停笔
-     * 延迟重新排 [recognizeTask]；`endSession` 见到 [carriedStrokes] 非空时不会撤掉它。
+     * 会话结束之后 `currentInputConnection` 随时可能换人（用户换输入框、换应用去打字），
+     * 那时写进去就是**污染别人的输入**（真机现象：手写之后打字，候选变成"该改革才"这种
+     * 毫不相干的，且重启输入法才恢复）。所以每次写入前都拿 [sessionIc] 比一次身份。
      */
-    private fun carryStrokes() {
-        val snapshot = takeStrokes() ?: return
-        carriedStrokes = snapshot
-        val delay = recognizeDelayMs()
-        val h = workerHandler()
-        h.removeCallbacks(recognizeTask)
-        h.postDelayed(recognizeTask, delay)
-        L.i("event=stylus_carry strokes=${snapshot.size} delay=${delay}ms")
+    private fun writeAllowed(ime: InputMethodService): Boolean {
+        val ic = ime.currentInputConnection ?: return false
+        val mine = sessionIc
+        if (mine == null || ic !== mine) {
+            L.i("event=stylus_write_skipped reason=input_connection_changed")
+            return false
+        }
+        return true
     }
 
-    /** 取出并清空待识别笔迹；没有就返回 null。 */
-    private fun takeStrokes(): List<List<PencilEngine.Pt>>? = synchronized(stateLock) {
-        if (strokes.isEmpty()) return@synchronized null
-        val copy = strokes.map { ArrayList(it) }
-        strokes.clear()
-        copy
-    }
+    // 注：轻点收会话时**不再**做任何"延迟写入"。
+    //
+    // 走过的两条弯路：`flushRecognition()` 会立即出字（还用错引擎）；改成"带走这批笔迹 +
+    // 延迟再识别"更糟 —— 延迟到点时用户可能已经在打拼音，那一笔会写进**拼音的组词区**
+    // 把它截断。现在统一由 [endSession] 当场清账。
 
     /** 后台线程识别 → 主线程上屏。 */
     private fun dispatchRecognition(ime: InputMethodService, snapshot: List<List<PencilEngine.Pt>>) {
@@ -1099,7 +1157,9 @@ class StylusImeHooks(private val module: XposedModule) {
             val text = eng.recognize(normalize(snapshot))
             if (text.isNullOrEmpty()) {
                 L.i("event=stylus_recognize_empty strokes=${snapshot.size}")
-                // 没认出来就把墨迹留着：用户能看出"写了但没认出来"，而不是笔迹凭空消失
+                // 没认出来就把墨迹留着：用户能看出"写了但没认出来"，而不是笔迹凭空消失。
+                // 但如果是会话结束时的"清账"，组词区还是要落定，别一直挂着下划线。
+                mainHandler.post { finalizeIfNeeded(ime) }
                 return@post
             }
             L.i("event=stylus_recognize_ok strokes=${snapshot.size} text=$text")
@@ -1127,6 +1187,10 @@ class StylusImeHooks(private val module: XposedModule) {
         // 所以：这里只做**必须同步**的轻活，其余一律 post/后台。
         val t0 = System.nanoTime()
         sessionIme = ime
+        // ★ 记下"本会话的输入框"：之后所有写入都要拿它比身份（见 [writeAllowed]）。
+        //   会话结束、用户换输入框/换应用之后 currentInputConnection 就是别人的了。
+        sessionIc = ime.currentInputConnection
+        lastComposingText = null
         // 偏好刷新：**必须异步**。
         //
         // beginSession 是在 IMMS 的手势窗口里被回调的（`canStartStylusHandwriting`），
@@ -1226,13 +1290,30 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     private fun endSession(ime: InputMethodService) {
-        // ★ 落定组词态：会话结束才算"写完了"，这时才把文字真正交给编辑器（下划线消失）。
-        //   必须放在清累积**之前** —— 清累积是为了下一次会话从空开始重认。
-        finishComposing(ime)
-        // 有"带走"的笔迹时**不能**撤掉识别回调 —— 那批字还等着到点识别（轻点会走到这里）
-        if (carriedStrokes == null) workerHandler?.removeCallbacks(recognizeTask)
-        workerHandler?.removeCallbacks(hcrLiftTask)
+        // ★ 会话结束 = 用户写完了。这时必须**当场清账**：把还攒着、还没到延迟的笔迹立刻
+        //   识别掉，然后落定组词态。**绝不能**把写入推迟到会话之外 —— 会话一结束，
+        //   `currentInputConnection` 随时可能换人（用户接着打拼音），延迟写进去就会截断
+        //   拼音的组词区（真机：手写之后打字，候选变成"该改革才"这种，重启输入法才恢复）。
+        //
+        //   顺带也修掉了"停笔太快、笔迹还没到延迟就被会话结束清掉"导致的丢字。
+        val snapshot = synchronized(stateLock) {
+            val src = if (iflytek.isActive && !usingHcr) iflytekStrokes else strokes
+            if (src.isEmpty()) null else src.map { ArrayList(it) }
+        }
+        val lifting = hcrLiftScheduled
+        val h = workerHandler()
+        // 先把还没到点的定时任务全撤掉（免得它们醒来时输入框已经换人），再补上"欠账"
+        h.removeCallbacks(recognizeTask)
+        h.removeCallbacks(hcrLiftTask)
+        hcrLiftScheduled = false
         mainHandler.removeCallbacks(inkFadeTask)
+        if (snapshot != null || lifting) {
+            finalizeAfterRecognize = true
+            if (snapshot != null) h.post { recognizeSnapshot(ime, snapshot) }
+            if (lifting) h.post(hcrLiftTask)
+        } else {
+            finishComposing(ime)
+        }
         runCatching { hcrClear?.invoke(null, ime) }
         synchronized(stateLock) {
             strokes.clear()
@@ -1351,6 +1432,17 @@ class StylusImeHooks(private val module: XposedModule) {
 
         /** 闭合环（圈选）：首尾间距要小于「包围盒长边 × 这个比例」才算圈上了（原 0.30，放宽到 0.40）。 */
         const val SELECT_GAP_RATIO = 0.40f
+
+        /**
+         * 圈选（画框框）：笔画要走到包围盒角点这个比例（× 对角线）以内才算"框"。
+         *
+         * 正圆的最近点离角约 0.15×对角线，所以 0.10 能把「o / 0」挡在外面，
+         * 而手画的（小圆角）框仍然能过。
+         */
+        const val FRAME_CORNER_RATIO = 0.10f
+
+        /** 四个角里至少这么多个"走到了"才算框（手画的框常有圆角，允许一个不达标）。 */
+        const val FRAME_CORNERS_MIN = 3
 
         /**
          * 划掉删除（长横线）预筛的最小宽度（px）。
