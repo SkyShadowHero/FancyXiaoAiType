@@ -257,7 +257,46 @@ object TargetCatalog {
         fBionicMaterial = "b",
     )
 
-    val known: List<AppTargets> = listOf(V1053, V910_974)
+    /**
+     * 0.2.1246：整体再重排一轮（`m9` → `o9`，材质相关挪到 `jb` / `mf` 包）。
+     *
+     * 定位依据（全部来自 dex 结构 + 字符串引用，不是猜的）：
+     * - `o9.e`：唯一同时具备 `static boolean(String,boolean)` 与 `static boolean()`、
+     *   且代码里真的引用 `"split_keyboard_enabled"` 的类 → prefs 门面；其 `s()` 就是读该键。
+     * - `dd.o`：有 `(Iterable,Object)->boolean`（`g0`）→ 集合判定工具。
+     * - `u1.c`：同时有 `(F,F,F)->F`（`n`）与 `(I,I,I)->I`（`o`）→ 夹取工具。
+     * - `jb.f0`：引用 `"HyperMaterialHelper"` / `"packageMaterialVersions"` /
+     *   `"blacklistPackageMaterialVersions"`，其 `k()` 是材质状态机锚点（与旧版同名）→ 材质状态机。
+     * - `mf.j`：引用 `"setMiBackgroundBlurRadius"`，且有 `x(View,int)->void` → 材质应用入口。
+     * - `y7.a`：静态布尔字段由 `persist.sys.advanced_visual_release` 初始化 → 离屏填充门。
+     * - `mf.b`：四个静态字段由 blur_supported / bionic_material / blur_status_default /
+     *   blur_version 初始化，类型顺序 (Z,Z,Boolean,I) 与旧版 `we.b` 完全一致 → 模糊能力门。
+     * - `jb.z0`：13 个 float 的数据类（构建器与材质同在 jb 包）→ 分离键盘几何（仅诊断用）。
+     */
+    private val V1246 = AppTargets(
+        label = "0.2.1246",
+        padSplitDims = "jb.z0",
+        prefFacade = "o9.e",
+        collectionsUtil = "dd.o",
+        materialHelper = "jb.f0",
+        materialApplier = "mf.j",
+        advancedVisualGate = "y7.a",
+        blurGate = "mf.b",
+        clampUtil = "u1.c",
+        mPrefBool = "a",
+        mSplitGetter = "s",
+        mMaterialApply = "k",
+        mApplyMaterial = "x",
+        mClampFloat = "n",
+        mClampInt = "o",
+        fOffscreenFill = "a",
+        fBlurSupported = "a",
+        fBlurVersion = "d",
+        fBlurStatusDefault = "c",
+        fBionicMaterial = "b",
+    )
+
+    val known: List<AppTargets> = listOf(V1246, V1053, V910_974)
 
     private const val MAX_SCORE = 8
 

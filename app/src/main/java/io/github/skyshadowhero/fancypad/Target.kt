@@ -142,7 +142,7 @@ object Target {
     const val ORIGINAL_BUBBLE_CORNER_DP = 14f
 
     /**
-     * 键盘外边距（离屏幕左/右/下的距离）。
+     * 键盘外边距（离屏幕左/右的距离）。
      *
      * 同一类里手机版与平板版、以及按导航方式分的底部变体，实际只会命中其中一个，
      * 不会叠加，所以**全部一起改**，不用逐机型判断。
@@ -158,16 +158,7 @@ object Target {
         "keyboard_padding_q18_outer_portrait",
     )
 
-    val MARGIN_BOTTOM_NAMES = arrayOf(
-        "pad_keyboard_bottom_margin",
-        "keyboard_bottom_margin",
-        "keyboard_bottom_margin_gesture_no_bar",
-        "keyboard_bottom_margin_gesture_with_bar",
-        "keyboard_bottom_margin_three_button",
-        "keyboard_bottom_margin_with_bottom_view",
-    )
-
-    val MARGIN_NAMES = MARGIN_HORIZONTAL_NAMES + MARGIN_BOTTOM_NAMES
+    val MARGIN_NAMES = MARGIN_HORIZONTAL_NAMES
 
     /**
      * 按键圆角资源集合（统一改，不分横竖屏、不按角区分）。

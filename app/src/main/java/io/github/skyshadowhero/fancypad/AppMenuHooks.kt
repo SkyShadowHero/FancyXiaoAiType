@@ -147,6 +147,10 @@ class AppMenuHooks(private val module: XposedInterface) {
     @Volatile
     private var installed = false
 
+    /** 热重载后重新安装用：放掉幂等守卫。 */
+    fun resetInstalled() { installed = false }
+
+
     /** 上次播入场动画的时间（按弹窗实例，弱引用避免拖住已销毁的弹窗） */
     private val lastAnimated = WeakHashMap<Any, Long>()
 

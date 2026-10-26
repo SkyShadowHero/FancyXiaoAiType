@@ -60,6 +60,13 @@ class StylusSystemHooks(private val module: XposedModule) {
     @Volatile
     private var installed = false
 
+    /** 热重载后重新安装用：放掉幂等守卫（含安全中心进程那个）。 */
+    fun resetInstalled() {
+        installed = false
+        securityCenterInstalled = false
+    }
+
+
     /** 安全中心进程单独一个幂等位（那个进程只装声明）。 */
     @Volatile
     private var securityCenterInstalled = false

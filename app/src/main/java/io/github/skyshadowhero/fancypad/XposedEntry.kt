@@ -82,6 +82,7 @@ class XposedEntry : XposedModule() {
         // 本机 logd 不收集常规缓冲区（logcat -b main -d 恒为 0 行），模块日志等于失效；
         // 镜像一份到 LSPosed 自己的日志（不经过 logd，落在 /data/adb/lspd/log/）。
         L.attach { priority, msg -> log(priority, L.TAG, "[${param.processName}] $msg") }
+        Diag.attach(param.processName)
         L.i("event=module_loaded process=${param.processName} api=$apiVersion framework=$frameworkName")
         dumpInjectionMarker(param.processName)
     }
@@ -126,32 +127,42 @@ class XposedEntry : XposedModule() {
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
-        when (param.packageName) {
+        installForPackage(param.packageName, param.classLoader)
+    }
+
+    /**
+     * 按「包名 / 进程」装各自那一域的 Hook。
+     *
+     * 抽成独立函数是为了**热重载后能原样再装一遍**（见 [onHotReloaded]）：
+     * 热重载不会重放生命周期，新代码必须自己重新注册 Hook。
+     */
+    private fun installForPackage(pkg: String, cl: ClassLoader) {
+        when (pkg) {
             Target.PACKAGE -> {
-                L.i("event=package_ready package=${param.packageName} process=$processName")
+                L.i("event=package_ready package=$pkg process=$processName")
                 // 必须在装 hook 之前绑定：随手写那边有若干**不带 module 参数**的快照读取
                 // （笔迹颜色/粗细/书写区高度等 `HookPrefs.stylusXxx()`），不 bind 就会拿到
                 // 字段默认值 —— 真机踩过：表现为"设置了但落笔时还是默认的样子"。
                 HookPrefs.bind(this)
                 ConfigLoader.attach(getRemotePreferences(PrefKeys.GROUP))
-                installHooks(param.classLoader)
+                installHooks(cl)
                 // 随手写：与输入法外观那批 hook 独立，单独装（installHooks 有自己的幂等守卫）
-                stylusImeHooks.install(param.classLoader)
+                stylusImeHooks.install(cl)
             }
 
             Target.SYSTEM_PACKAGE -> {
                 L.i("event=package_ready package=system process=$processName")
                 HookPrefs.bind(this)
-                cursorHooks.installSystemHooks(param.classLoader)
-                stylusSystemHooks.install(param.classLoader)
+                cursorHooks.installSystemHooks(cl)
+                stylusSystemHooks.install(cl)
             }
 
             Target.SYSTEM_UI_PACKAGE -> {
-                L.i("event=package_ready package=${param.packageName} process=$processName")
+                L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
-                embeddingHooks.install(param.classLoader)
-                selectionToolbarHooks.install(param.classLoader)
-                captionHooks.install(param.classLoader)
+                embeddingHooks.install(cl)
+                selectionToolbarHooks.install(cl)
+                captionHooks.install(cl)
             }
 
             /**
@@ -161,9 +172,9 @@ class XposedEntry : XposedModule() {
              * `supportsStylusHandwriting()`，所以在这个进程装上声明 hook，它自己就早退了。
              */
             Target.SECURITY_CENTER_PACKAGE -> {
-                L.i("event=package_ready package=${param.packageName} process=$processName")
+                L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
-                stylusSystemHooks.installForSecurityCenter(param.classLoader)
+                stylusSystemHooks.installForSecurityCenter(cl)
             }
 
             /**
@@ -173,13 +184,71 @@ class XposedEntry : XposedModule() {
              * 注入进去只会白装 hook，直接跳过。
              */
             else -> {
-                if (param.packageName != MODULE_PACKAGE) {
-                    L.i("event=package_ready package=${param.packageName} process=$processName")
+                if (pkg != MODULE_PACKAGE) {
+                    L.i("event=package_ready package=$pkg process=$processName")
                     HookPrefs.bind(this)
-                    appMenuHooks.install(param.classLoader)
+                    appMenuHooks.install(cl)
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------ 热重载
+
+    /**
+     * 热重载：旧一代被冻结**之前**回调。返回 true 才允许继续。
+     *
+     * 这里只清**模块自己的运行态**（Handler 队列、缓存），不摘 Hook —— 旧 Handle 由框架
+     * 通过 [onHotReloaded] 的 `oldHookHandles` 直接交给我们，在那里摘更准确：不会漏，
+     * 也不会像「自己维护一张句柄表」那样因为某处漏记而重复安装。
+     *
+     * 为什么必须清：旧一代冻结后线程并不会停，不清就会出现**两代同时往输入框写**
+     * （skill 案例 7：reload 后命中次数翻倍、状态错乱）。
+     */
+    override fun onHotReloading(param: XposedModuleInterface.HotReloadingParam): Boolean {
+        L.i("event=hot_reloading process=$processName")
+        runCatching { stylusImeHooks.dispose() }
+            .onFailure { L.e("event=hot_reload_cleanup_failed target=stylus_ime", it) }
+        return true
+    }
+
+    /**
+     * 热重载完成：新代码接管。
+     *
+     * 热重载**不重放生命周期**（不会再调 `onPackageReady`），所以新代码必须：
+     * 1) 把旧一代的 Hook 全摘掉（`oldHookHandles`）；
+     * 2) 自己重新装一遍 —— 目标 `ClassLoader` 从旧句柄的 `Executable` 反推
+     *   （`HotReloadedParam` 本身不提供）。
+     */
+    override fun onHotReloaded(param: XposedModuleInterface.HotReloadedParam) {
+        val old = param.oldHookHandles
+        var off = 0
+        for (h in old) {
+            try {
+                h.unhook()
+                off++
+            } catch (t: Throwable) {
+                L.w("event=hot_reload_unhook_failed id=${runCatching { h.id }.getOrNull()}")
+            }
+        }
+        val cl = old.firstNotNullOfOrNull { h ->
+            runCatching { h.executable.declaringClass.classLoader }.getOrNull()
+        }
+        L.i(
+            "event=hot_reloaded process=${param.processName} old=$off/${old.size} " +
+                "classloader=${cl?.javaClass?.name}",
+        )
+        if (cl == null) {
+            L.w("event=hot_reload_no_classloader（无法自动重装，请重启目标进程）")
+            return
+        }
+        // 放掉幂等守卫，否则 install 会直接早退（表现：reload 后功能全没了）
+        installed.set(false)
+        stylusImeHooks.resetInstalled()
+        stylusSystemHooks.resetInstalled()
+        appMenuHooks.resetInstalled()
+        selectionToolbarHooks.resetInstalled()
+        installForPackage(param.processName.substringBefore(':'), cl)
     }
 
     // ------------------------------------------------------------------ 安装
@@ -215,6 +284,18 @@ class XposedEntry : XposedModule() {
         }
 
         L.i("event=install_done hooks=$ok process=$processName appVersion=${t?.label ?: "unknown"}")
+        // 落盘诊断：版本分档到底选中了哪一档、得分多少、各档分别几分。
+        // 本机日志不可读，这条是事后核对「适配有没有生效」的唯一取证通道。
+        Diag.write(
+            "install",
+            buildString {
+                appendLine("process=$processName hooks=$ok")
+                appendLine("target=${t?.label ?: "unknown"} score=${t?.let { runCatching { it.score(cl) }.getOrDefault(-1) }}")
+                for (c in TargetCatalog.known) {
+                    appendLine("  candidate=${c.label} score=${runCatching { c.score(cl) }.getOrDefault(-1)}")
+                }
+            },
+        )
         if (ok == 0) installed.set(false)
     }
 
@@ -350,6 +431,13 @@ class XposedEntry : XposedModule() {
             if (id != 0) marginOk++
         }
         L.i("event=margin_resolved by_name=$marginOk/${Target.MARGIN_NAMES.size}")
+        Diag.write(
+            "margin_names",
+            "resolved=$marginOk/${Target.MARGIN_NAMES.size}\n" +
+                Target.MARGIN_NAMES.joinToString("\n") {
+                    "  $it -> " + (nameToId[it]?.takeIf { id -> id != 0 }?.let { id -> "0x${id.toString(16)}" } ?: "MISSING")
+                },
+        )
 
         // 悬浮候选词窗口 / 悬浮输入法栏的资源名同样按名登记。
         // 一律不写硬编码兜底：这些 ID 在 0.2.974 上相对 0.2.910 已整体 +22，
@@ -471,7 +559,6 @@ class XposedEntry : XposedModule() {
         resId == nameToId[Target.NAME_BUBBLE_CORNER] -> if (cfg.cornerEnabled) cfg.bubbleCornerDp else null
 
         idIn(resId, Target.MARGIN_HORIZONTAL_NAMES) -> if (cfg.marginEnabled) cfg.marginHorizontalDp else null
-        idIn(resId, Target.MARGIN_BOTTOM_NAMES) -> if (cfg.marginEnabled) cfg.marginBottomDp else null
 
         resId == nameToId[Target.NAME_KEY_HEIGHT_LAND] -> if (cfg.spaceEnabled) cfg.spaceKeyHLand else null
         resId == nameToId[Target.NAME_KEY_HEIGHT_PORT] -> if (cfg.spaceEnabled) cfg.spaceKeyHPort else null

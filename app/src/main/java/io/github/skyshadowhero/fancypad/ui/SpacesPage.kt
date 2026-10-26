@@ -13,7 +13,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
  *
  * 1. 间距调节：按键高度 / 键横间距 / 键行间距，横竖屏各一套。
  *    同一个开关控制，滑块标题用「横屏·」「竖屏·」前缀区分，不再另开卡片。
- * 2. 边距调节：键盘离屏幕左/右/下的距离。
+ * 2. 边距调节：键盘离屏幕左/右的距离。
  *
  * 关掉总开关时依赖项直接收起，避免一排不可用控件占位。全部走同一个尺寸覆写通道。
  * 超过「该项上限的 6/10」时由 AppShell 统一弹出尺寸过大警告。
@@ -128,7 +128,7 @@ fun LazyListScope.spacingSection(uiState: AppUiState) {
                     uiState.save { editor -> editor.putBoolean(PrefKeys.MARGIN_ENABLED, checked) }
                 },
                 title = "启用边距调节",
-                summary = "调整键盘离屏幕左/右/下的距离；关闭则保持默认",
+                summary = "调整键盘离屏幕左/右的距离；关闭则保持默认",
             )
             AnimatedVisibility(visible = uiState.marginEnabled) {
                 Column {
@@ -142,20 +142,6 @@ fun LazyListScope.spacingSection(uiState: AppUiState) {
                         onCommit = {
                             uiState.save { e ->
                                 e.putFloat(PrefKeys.MARGIN_HORIZONTAL_DP, uiState.marginHorizontalDp)
-                            }
-                        },
-                        commitGuard = { uiState.loaded },
-                    )
-                    DpSlider(
-                        title = "下边距",
-                        summary = "默认约 ${PrefKeys.MARGIN_BOTTOM_DEFAULT.toInt()}dp",
-                        value = uiState.marginBottomDp,
-                        range = PrefKeys.MARGIN_MIN..PrefKeys.MARGIN_MAX,
-                        keyPoint = PrefKeys.MARGIN_BOTTOM_DEFAULT,
-                        onValueChange = { v -> uiState.marginBottomDp = v },
-                        onCommit = {
-                            uiState.save { e ->
-                                e.putFloat(PrefKeys.MARGIN_BOTTOM_DP, uiState.marginBottomDp)
                             }
                         },
                         commitGuard = { uiState.loaded },

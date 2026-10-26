@@ -107,6 +107,10 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
     @Volatile
     private var installed = false
 
+    /** 热重载后重新安装用：放掉幂等守卫。 */
+    fun resetInstalled() { installed = false }
+
+
     /** 反射结果缓存：字段名 → Field（null 表示这个版本没有该字段） */
     private val fields = HashMap<String, Field?>()
 

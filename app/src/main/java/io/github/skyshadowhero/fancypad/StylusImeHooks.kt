@@ -80,6 +80,33 @@ class StylusImeHooks(private val module: XposedModule) {
     @Volatile
     private var installed = false
 
+    /** 热重载后重新安装用：放掉幂等守卫（见 XposedEntry.onHotReloaded）。 */
+    fun resetInstalled() { installed = false }
+
+    /**
+     * 热重载前调用：停掉本模块开出去的定时任务、清掉半截会话。
+     *
+     * 旧一代被冻结后线程仍在跑，不停会出现**两代同时往输入框写**（skill 案例 7：
+     * reload 后命中翻倍、状态错乱）。Hook 本身不在这里摘 —— 交给 onHotReloaded。
+     */
+    fun dispose() {
+        runCatching { workerHandler?.removeCallbacksAndMessages(null) }
+        runCatching { mainHandler.removeCallbacksAndMessages(null) }
+        synchronized(stateLock) {
+            strokes.clear()
+            iflytekStrokes.clear()
+            current = null
+        }
+        strokeActive = false
+        sessionIme = null
+        sessionIc = null
+        lastComposingText = null
+        finalizeAfterRecognize = false
+        hcrLiftScheduled = false
+        runCatching { iflytek.reset() }
+    }
+
+
     /** 目标输入法类 `com.mi.ime.MiInputMethodService`，用于 instanceof 守卫。 */
     @Volatile
     private var imeClass: Class<*>? = null

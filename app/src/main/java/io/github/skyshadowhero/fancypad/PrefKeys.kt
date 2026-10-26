@@ -37,17 +37,15 @@ object PrefKeys {
     const val CORNER_DEFAULT = 8f
     const val BUBBLE_CORNER_DEFAULT = 14f
 
-    // ---- 键盘外边距（离屏幕左/右/下的距离，dip） ----
+    // ---- 键盘外边距（离屏幕左/右的距离，dip） ----
     const val MARGIN_ENABLED = "margin_enabled"
     const val MARGIN_HORIZONTAL_DP = "margin_horizontal_dp"
-    const val MARGIN_BOTTOM_DP = "margin_bottom_dp"
 
     const val MARGIN_MIN = 0f
     const val MARGIN_MAX = 80f
 
-    /** 默认参考值：平板横屏左右 25dp、底部 17dp */
+    /** 默认参考值：平板横屏左右 25dp */
     const val MARGIN_HORIZONTAL_DEFAULT = 25f
-    const val MARGIN_BOTTOM_DEFAULT = 17f
 
     // ---- 按键间距 / 键高（二级「间距」页，横竖屏各一套） ----
     const val SPACE_ENABLED = "space_enabled"
