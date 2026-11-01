@@ -25,12 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.ColorPicker
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /** 宽屏（平板横屏）阈值，与外壳的 rail 断点一致 */
 private const val WIDE_BREAKPOINT_DP = 840
@@ -100,7 +95,7 @@ internal fun cursorColorsSubtitle(): String =
 private fun colorPickerCard(state: CursorUiState, isFill: Boolean) {
     val color = if (isFill) state.fill else state.stroke
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(BasicComponentDefaults.InsideMargin)) {
+        Column(modifier = Modifier.padding(DsDimens.insideMargin)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
@@ -109,14 +104,14 @@ private fun colorPickerCard(state: CursorUiState, isFill: Boolean) {
                         .background(color)
                         .border(
                             1.dp,
-                            MiuixTheme.colorScheme.onBackgroundVariant.copy(alpha = 0.35f),
+                            DsTheme.colorScheme.onBackgroundVariant.copy(alpha = 0.35f),
                             CircleShape,
                         )
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
                     (if (isFill) "填充色 " else "描边色 ") + hex(color),
-                    style = MiuixTheme.textStyles.body1,
+                    style = DsTheme.textStyles.body1,
                 )
             }
             Spacer(Modifier.height(12.dp))

@@ -11,9 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「虚拟键盘」页：触屏虚拟键盘的全部样式调节，四段合成一页。

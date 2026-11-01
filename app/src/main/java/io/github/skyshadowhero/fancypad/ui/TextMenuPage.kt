@@ -10,9 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「AOSP长按菜单」页：长按或选中文字后弹出的那个工具栏（复制 / 粘贴 / 全选 / 分享…）。

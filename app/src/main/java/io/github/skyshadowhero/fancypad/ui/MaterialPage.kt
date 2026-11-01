@@ -26,15 +26,7 @@ import io.github.skyshadowhero.fancypad.MaterialPackages
 import io.github.skyshadowhero.fancypad.PrefKeys
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「超级材质」页：接管默认「哪些应用能用毛玻璃键盘背景」的白名单判定。
@@ -224,6 +216,6 @@ private fun PickerHint(text: String) {
             .height(96.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text, color = MiuixTheme.colorScheme.onSurfaceContainerHigh)
+        Text(text = text, color = DsTheme.colorScheme.onSurfaceContainerHigh)
     }
 }

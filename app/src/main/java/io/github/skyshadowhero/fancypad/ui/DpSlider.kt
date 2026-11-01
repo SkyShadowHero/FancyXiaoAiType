@@ -1,6 +1,10 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,11 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.preference.SliderPreference
-import top.yukonga.miuix.kmp.window.WindowDialog
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 全模块统一的 dp 滑块。三种交互：
@@ -66,6 +66,8 @@ internal fun DpSlider(
     // steps = 区间内可取的**中间值**个数（不含两端）= 格数 - 1
     val steps = intervals - 1
 
+    var anchorRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    Box(modifier = Modifier.onGloballyPositioned { anchorRect = it.boundsInWindow() }) {
     SliderPreference(
         value = value,
         onValueChange = onValueChange,
@@ -83,6 +85,7 @@ internal fun DpSlider(
             dialogOpen = true
         },
     )
+    }
 
     // show = false 时 Miuix 不会构建窗口内容（WindowDialog 内部有 visible 判断），
     // 所以每个滑块各带一个对话框实例的开销可以忽略。
@@ -91,6 +94,7 @@ internal fun DpSlider(
         title = title,
         summary = summary,
         onDismissRequest = { dialogOpen = false },
+        anchor = anchorRect,
         content = {
             Column {
                 TextField(
@@ -120,7 +124,7 @@ internal fun DpSlider(
                             dialogOpen = false
                         },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        colors = DsButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
             }

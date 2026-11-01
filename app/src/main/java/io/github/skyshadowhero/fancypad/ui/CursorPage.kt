@@ -50,22 +50,11 @@ import io.github.skyshadowhero.fancypad.RemoteConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
-import top.yukonga.miuix.kmp.preference.SliderPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import kotlin.math.roundToInt
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 光标域（作用域 `system`）的三个页面 —— 平板端的左侧菜单就是这三项（与原 os4光标主题模块一致）：
@@ -129,7 +118,7 @@ private fun LazyListScope.previewSection(state: CursorUiState) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(BasicComponentDefaults.InsideMargin),
+                    .padding(DsDimens.insideMargin),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
@@ -151,11 +140,11 @@ private fun LazyListScope.previewSection(state: CursorUiState) {
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(current.label, style = MiuixTheme.textStyles.body1)
+                    Text(current.label, style = DsTheme.textStyles.body1)
                     Text(
                         "${(state.scale * 100).roundToInt()}% · 24dp 基准",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant,
+                        style = DsTheme.textStyles.footnote1,
+                        color = DsTheme.colorScheme.onBackgroundVariant,
                     )
                 }
             }
@@ -357,7 +346,7 @@ private fun LazyListScope.importSection(
     item {
         Card {
             Column {
-                Column(modifier = Modifier.padding(BasicComponentDefaults.InsideMargin)) {
+                Column(modifier = Modifier.padding(DsDimens.insideMargin)) {
                     Text(
                         "逐项选择：下面每种光标单独挑一张 PNG 或 SVG。已选过的显示「已选择 · 点此替换」；"
                             + "只要有任意一项选好，「自定义（逐项）」预设就会出现在主题预设列表里。",
@@ -379,7 +368,7 @@ private fun LazyListScope.importSection(
                         onClick = { onPickType(key) },
                     )
                 }
-                Column(modifier = Modifier.padding(BasicComponentDefaults.InsideMargin)) {
+                Column(modifier = Modifier.padding(DsDimens.insideMargin)) {
                     val cur = presetList(state.themes, state.labels, state.importedKeys.isNotEmpty())
                         .firstOrNull { it.id == state.preset }
                     val curTheme = cur?.themeName
@@ -402,8 +391,8 @@ private fun LazyListScope.importSection(
                         Spacer(Modifier.height(8.dp))
                         Text(
                             state.message,
-                            style = MiuixTheme.textStyles.footnote1,
-                            color = MiuixTheme.colorScheme.onBackgroundVariant,
+                            style = DsTheme.textStyles.footnote1,
+                            color = DsTheme.colorScheme.onBackgroundVariant,
                         )
                     }
                 }

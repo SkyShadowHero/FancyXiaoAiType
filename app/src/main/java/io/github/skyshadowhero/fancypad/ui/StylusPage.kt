@@ -26,14 +26,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.ColorPicker
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「随手写」页：给超级小爱输入法（`com.xiaomi.type`）补上**触控笔手写**。
@@ -221,7 +214,7 @@ fun StylusPage(
  */
 @Composable
 private fun InkColorSection(uiState: AppUiState) {
-    Column(modifier = Modifier.padding(BasicComponentDefaults.InsideMargin)) {
+    Column(modifier = Modifier.padding(DsDimens.insideMargin)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
@@ -230,12 +223,12 @@ private fun InkColorSection(uiState: AppUiState) {
                     .background(Color(uiState.stylusInkColor))
                     .border(
                         1.dp,
-                        MiuixTheme.colorScheme.onBackgroundVariant.copy(alpha = 0.35f),
+                        DsTheme.colorScheme.onBackgroundVariant.copy(alpha = 0.35f),
                         CircleShape,
                     )
             )
             Spacer(Modifier.width(12.dp))
-            Text("笔迹颜色 ${hex(Color(uiState.stylusInkColor))}", style = MiuixTheme.textStyles.body1)
+            Text("笔迹颜色 ${hex(Color(uiState.stylusInkColor))}", style = DsTheme.textStyles.body1)
         }
         Spacer(Modifier.height(12.dp))
         ColorPicker(

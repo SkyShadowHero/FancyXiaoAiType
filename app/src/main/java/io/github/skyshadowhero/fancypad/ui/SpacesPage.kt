@@ -4,9 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyListScope
 import io.github.skyshadowhero.fancypad.PrefKeys
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「虚拟键盘」页的第二段：间距调节 / 边距调节。

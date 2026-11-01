@@ -24,6 +24,14 @@ object PrefKeys {
     /** 主题模式（ThemeMode 序号），跨启动记忆 */
     const val THEME_MODE = "theme_mode"
 
+    /**
+     * 界面主题（`UiStyle` 序号）：0 = Miuix（HyperOS 风，默认），1 = Glasmio（iOS 液态玻璃风）。
+     *
+     * 这个键**只影响模块自己的设置界面**（模块 App 里 Compose 画的那套），
+     * 不参与 Hook 侧的任何行为 —— Hook 读的偏好都在下面各自的段落里。
+     */
+    const val UI_THEME = "ui_theme"
+
     // ---- 按键圆角（不分横竖屏，统一一个值） ----
     const val CORNER_ENABLED = "corner_enabled"
     const val CORNER_DP = "corner_dp"

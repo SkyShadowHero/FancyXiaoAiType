@@ -3,22 +3,25 @@ package io.github.skyshadowhero.fancypad.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,48 +33,68 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import io.github.neoruaa.glasmio.icons.SfIcon
+import io.github.neoruaa.glasmio.icons.SfSymbol
+import io.github.neoruaa.glasmio.ui.GlasmioIconButton
 import io.github.skyshadowhero.fancypad.ImeRestarter
 import io.github.skyshadowhero.fancypad.L
 import io.github.skyshadowhero.fancypad.PrefKeys
+import io.github.skyshadowhero.fancypad.ui.ds.Card
+import io.github.skyshadowhero.fancypad.ui.ds.DsButtonDefaults
+import io.github.skyshadowhero.fancypad.ui.ds.DsSegmentedRow
+import io.github.skyshadowhero.fancypad.ui.ds.DsSidebar
+import io.github.skyshadowhero.fancypad.ui.ds.DsTheme
+import io.github.skyshadowhero.fancypad.ui.ds.GlasmioNavBar
+import io.github.skyshadowhero.fancypad.ui.ds.GlasmioSnackbarHost
+import io.github.skyshadowhero.fancypad.ui.ds.TextButton
+import io.github.skyshadowhero.fancypad.ui.ds.WindowDialog
+import io.github.skyshadowhero.fancypad.ui.ds.isGlasmio
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
-import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.basic.NavigationRailValue
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -79,26 +102,32 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavKey
-import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 /**
  * 自适应外壳。全部导航走 miuix-nav（[NavDisplay] + [NavKey]）：作用域是路由栈的第一层，
  * 作用域里的功能页是第二层，光标域的颜色设置是第三层。
  *
+ * 两种外观（[io.github.skyshadowhero.fancypad.ui.ds.UiStyle]）共用一个路由栈与同一套页面，
+ * 差别只在**外壳**：
+ * - Miuix：顶栏渐进模糊 + 横屏左栏 / 竖屏底部菜单（原有行为）；
+ * - Glasmio：iOS 风格居中顶栏 + 分段控件切换同作用域的页面（没有左栏与底部菜单）。
+ *
  * - 一级页面（[RouteScopes]）不显示多页导航；
- * - 进入多页作用域（输入法外观）后，横屏走左侧栏、竖屏走底部菜单，在这几页之间切换
- *   —— 同级切换只**替换**栈顶，不加深返回栈，返回键一次就回到作用域列表；
+ * - 进入多页作用域（输入法外观）后，在这几页之间切换 —— 同级切换只**替换**栈顶，
+ *   不加深返回栈，返回键一次就回到作用域列表；
  * - 配置装载已在 App() 完成，这里只负责渲染与交互。
  */
 @Composable
 fun AppShell(
     uiState: AppUiState,
+    backStack: SnapshotStateList<NavKey>,
     padding: PaddingValues,
     serviceMissing: Boolean = false,
     onRetryService: () -> Unit = {},
 ) {
+    val glasmio = isGlasmio
+
     // 未连上 LSPosed：启动即弹窗警告（不阻断界面，但明确告知改动不会保存/生效）
     var serviceWarningDismissed by remember { mutableStateOf(false) }
     WindowDialog(
@@ -124,7 +153,7 @@ fun AppShell(
                     text = "我知道了",
                     onClick = { serviceWarningDismissed = true },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    colors = DsButtonDefaults.textButtonColorsPrimary(),
                 )
             }
         },
@@ -147,9 +176,6 @@ fun AppShell(
 
     // ---------------------------------------------------------------- 路由
 
-    // 只做内存栈（navBackStackOf）：路由都是 data object，不需要序列化插件，
-    // 代价是不做进程重建后的路由恢复 —— 对模块设置页够用。
-    val backStack = remember { navBackStackOf(RouteScopes) }
     fun push(key: NavKey) {
         if (key !in backStack) backStack.add(key)
     }
@@ -169,9 +195,10 @@ fun AppShell(
         }
     }
 
-    // 返回兜底：NavDisplay 的返回桥在部分宿主下不生效（会直接退到桌面），这里补一层；
-    // pop() 有 size 守卫，重复触发也不会退出
-    BackHandler(enabled = backStack.size > 1) { pop() }
+    // 返回交给 NavDisplay 自己的预测返回（它注册的 onBack 就是 pop）。
+    // 这里**不能再挂一个 BackHandler**：两个处理器同时存在时，一次返回会被分发两遍，
+    // 实测表现为「先 pop 一层、紧接着 Activity 被 finish」——就是闪退回桌面的根因。
+
 
     val current = backStack.lastOrNull() ?: RouteScopes
     val activeScope = current.scope()
@@ -222,7 +249,7 @@ fun AppShell(
                     text = "我知道了",
                     onClick = { sizeWarningDismissed = true },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    colors = DsButtonDefaults.textButtonColorsPrimary(),
                 )
             }
         },
@@ -230,6 +257,360 @@ fun AppShell(
 
     val pages = activeScope?.pages.orEmpty()
     val showScopeNav = pages.size > 1
+
+    // 退出多页作用域时 pages 立刻变空，但左栏收起动画还要播完，所以记住最后一组页面。
+    var lastScopePages by remember { mutableStateOf(emptyList<NavKey>()) }
+    LaunchedEffect(pages) { if (pages.isNotEmpty()) lastScopePages = pages }
+    // 左栏标题同理：收起动画期间 activeScope 已经是 null，标题不能跟着变空。
+    var lastScope by remember { mutableStateOf<AppScope?>(null) }
+    LaunchedEffect(activeScope) { if (activeScope != null) lastScope = activeScope }
+
+    // 光标域的框架连接跟随：两套外观都要跑（拆成三个页面后只在外壳里跑一份轮询）
+    CursorConnectionEffect()
+
+    // ---------------------------------------------------------- 重启输入法 + Snackbar
+
+    // 两套外观各自有自己的 Snackbar 宿主（Miuix 用 Miuix 的，Glasmio 用自己画的胶囊），
+    // 但提示内容与触发点只有一份，所以两边状态都持有，按当前外观选一个显示。
+    val miuixSnackbar = remember { SnackbarHostState() }
+    val glassSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var showRestartDialog by remember { mutableStateOf(false) }
+    // 重启确认框从重启按钮的位置长出来：记录按钮在窗口里的矩形。
+    var restartAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    fun startRestart() {
+        L.i("event=restart_clicked")
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { ImeRestarter.forceStop() }
+                    .getOrElse { ImeRestarter.Result.Failed(it.message ?: "未知错误") }
+            }
+            L.i("event=restart_result result=$result")
+            when (result) {
+                is ImeRestarter.Result.Killed -> {
+                    val message = "已关闭输入法，下次弹出键盘时自动重启"
+                    if (glasmio) glassSnackbar.showSnackbar(message)
+                    else miuixSnackbar.showSnackbar(message, "重启成功")
+                }
+
+                is ImeRestarter.Result.Failed -> {
+                    val message = "重启失败：需要 root 授权（KernelSU）"
+                    if (glasmio) glassSnackbar.showSnackbar(message)
+                    else miuixSnackbar.showSnackbar(message, "失败")
+                }
+            }
+        }
+    }
+
+    // 重启确认弹窗（两套外观共用）
+    WindowDialog(
+        show = showRestartDialog,
+        title = "重启超级小爱输入法？",
+        onDismissRequest = { showRestartDialog = false },
+        content = {
+            Row(horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(
+                    text = "取消",
+                    onClick = { showRestartDialog = false },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(20.dp))
+                TextButton(
+                    text = "重启",
+                    onClick = {
+                        showRestartDialog = false
+                        startRestart()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = DsButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        },
+    )
+
+    if (glasmio) {
+        // ------------------------------------------------ Glasmio 外壳（iOS 风）
+        //
+        // 布局结构**固定**：Row[ 左栏 | 详情列 ]，左栏那一列永远存在、宽度在 0 ↔ 300dp 之间动画。
+        // 这是 Miuix 外壳里踩过的同一个坑（见 MiuixShell 的注释）：按「有没有侧栏」增删 Row
+        // 的子节点，NavDisplay 会被换到新的组合位置重建，上一层的列表会瞬间按变窄后的宽度
+        // 重排 —— 视觉上就是「闪一下跑到新位置」。所以结构不动、只让宽度动。
+        //
+        // 顶栏属于**详情列**而不是整屏：有左栏时它是详情页的标题栏（像 iPadOS 那样），
+        // 没左栏时它自然铺满整宽。左栏自己有表头（作用域名），两边互不重叠。
+        // 侧栏宽度可拖（右边缘把手），松手用 spring 收尾 —— macOS 的 sidebar 就是这个交互。
+        var sidebarUserWidth by remember { mutableStateOf(SIDEBAR_WIDTH) }
+        // 拖拽时面板做一点点横向拉伸（以左边缘为原点），松手弹回 —— 液态的手感。
+        var sidebarDragging by remember { mutableStateOf(false) }
+        val sidebarStretch by animateFloatAsState(
+            targetValue = if (sidebarDragging) 1.02f else 1f,
+            animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+            label = "sidebarStretch",
+        )
+        val sidebarTargetWidth = if (showScopeNav && useRail) sidebarUserWidth else 0.dp
+        val sidebarWidth by animateDpAsState(
+            targetValue = sidebarTargetWidth,
+            animationSpec = spring(
+                dampingRatio = 0.85f,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "sidebarWidth",
+        )
+        val sidebarScope = activeScope ?: lastScope
+        val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+        Box(modifier = Modifier.fillMaxSize().background(DsTheme.colorScheme.surface)) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // 左栏：槽位宽度动画，但**不裁切内容** —— 内容按最终宽度排版、先画出来，
+                // 再让槽位让位；否则展开/收起过程中内容会被槽位齐边切掉。
+                Box(
+                    modifier = Modifier
+                        .width(sidebarWidth)
+                        .fillMaxHeight()
+                        // 拖拽时以左边缘为原点做轻微横向拉伸，松手弹回：液态手感。
+                        .graphicsLayer {
+                            scaleX = sidebarStretch
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                        }
+                        .zIndex(1f)
+                        // 收起时按宽度比例淡出：裁切保住不越界，但看不到被切的那条边
+                        //（之前去掉裁切后，收起过程中内容溢出到内容区，就是那个残影）。
+                        .graphicsLayer {
+                            val target = if (sidebarUserWidth.value > 0f) sidebarUserWidth.value else 1f
+                            alpha = (sidebarWidth.value / target).coerceIn(0f, 1f)
+                        }
+                        .clipToBounds(),
+                ) {
+                    if (sidebarWidth > 0.dp) {
+                        // 侧栏上也能左右滑动切换选项（和内容区、底栏一致的手势）。
+                        var sidebarSwipe by remember { mutableStateOf(0f) }
+                        Box(
+                            modifier = Modifier
+                                .requiredWidth(sidebarUserWidth)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .pointerInput(pages, current) {
+                                    val list = if (pages.isNotEmpty()) pages else lastScopePages
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { sidebarSwipe = 0f },
+                                        onHorizontalDrag = { _, amount -> sidebarSwipe += amount },
+                                        onDragEnd = {
+                                            val threshold = 60.dp.toPx()
+                                            val idx = list.indexOf(current)
+                                            if (idx >= 0 && kotlin.math.abs(sidebarSwipe) > threshold) {
+                                                val target = if (sidebarSwipe < 0f) idx + 1 else idx - 1
+                                                list.getOrNull(target)?.let { openSibling(it) }
+                                            }
+                                            sidebarSwipe = 0f
+                                        },
+                                        onDragCancel = { sidebarSwipe = 0f },
+                                    )
+                                },
+                        ) {
+                            DsSidebar(
+                                title = sidebarScope?.label.orEmpty(),
+                                items = (if (pages.isNotEmpty()) pages else lastScopePages)
+                                    .map { it to it.title() },
+                                selected = current,
+                                onSelected = { openSibling(it) },
+                                modifier = Modifier.requiredWidth(sidebarUserWidth),
+                            )
+                        }
+                        // 右边缘 10dp 的把手：拖动改宽度（200..360dp），松手由 spring 收尾。
+                        val density = androidx.compose.ui.platform.LocalDensity.current
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .width(10.dp)
+                                .draggable(
+                                    orientation = androidx.compose.foundation.gestures.Orientation.Horizontal,
+                                    onDragStarted = { sidebarDragging = true },
+                                    onDragStopped = { sidebarDragging = false },
+                                    state = androidx.compose.foundation.gestures.rememberDraggableState { delta ->
+                                        sidebarUserWidth = (sidebarUserWidth + with(density) { delta.toDp() })
+                                            .coerceIn(200.dp, 360.dp)
+                                    },
+                                ),
+                        )
+                    }
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    // 顶栏**浮**在内容之上：内容始终铺满整列，只把顶栏实测高度作为
+                    // 列表的 contentPadding。这样「有没有分段控件」不会再改变内容布局，
+                    // 进二级页时不会出现「标题消失、内容先闪一下再上移」。
+                    var barHeightPx by remember { mutableIntStateOf(0) }
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    val barHeight = with(density) { barHeightPx.toDp() }
+                    val contentTop by animateDpAsState(
+                        targetValue = barHeight,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "contentTop",
+                    )
+
+                    // 顶栏模糊：内容层录进 backdrop，顶栏用 Miuix 的 progressive blur 采样它。
+                    val topBlur = rememberTopBlurBackdrop(DsTheme.colorScheme.surface)
+                    // 同作用域内的页面支持左右滑动切换（像底栏那样）：横向拖动超过 80dp 切一页。
+                    var swipeAccum by remember { mutableStateOf(0f) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(if (topBlur != null) Modifier.layerBackdrop(topBlur) else Modifier)
+                            .pointerInput(pages, current) {
+                                if (!showScopeNav) return@pointerInput
+                                detectHorizontalDragGestures(
+                                    onDragStart = { swipeAccum = 0f },
+                                    onHorizontalDrag = { _, amount -> swipeAccum += amount },
+                                    onDragEnd = {
+                                        val threshold = 80.dp.toPx()
+                                        val idx = pages.indexOf(current)
+                                        if (idx >= 0 && kotlin.math.abs(swipeAccum) > threshold) {
+                                            val target = if (swipeAccum < 0f) idx + 1 else idx - 1
+                                            pages.getOrNull(target)?.let { openSibling(it) }
+                                        }
+                                        swipeAccum = 0f
+                                    },
+                                    onDragCancel = { swipeAccum = 0f },
+                                )
+                            },
+                    ) {
+                        NavPages(
+                            uiState = uiState,
+                            backStack = backStack,
+                            padding = padding,
+                            contentPadding = PaddingValues(top = contentTop, bottom = bottomInset),
+                            gapMaxLand = gapMaxLand,
+                            gapMaxPort = gapMaxPort,
+                            onBack = {
+                                pop()
+                            },
+                            onPush = { push(it) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                            .zIndex(1f)
+                            .onSizeChanged { barHeightPx = it.height },
+                    ) {
+                        BlurredTopBar(
+                            backdrop = topBlur,
+                            active = topBlur != null,
+                            scrollOffsetPx = { Float.MAX_VALUE },
+                            blendColor = DsTheme.colorScheme.surface,
+                            alwaysVisible = true,
+                        ) {
+                            Column {
+                                GlasmioNavBar(
+                                    title = current.title(),
+                                    subtitle = current.subtitle(),
+                                    canGoBack = backStack.size > 1,
+                                    onBack = { pop() },
+                                    actions = {
+                                        // 重启按钮只在输入法域出现：出现/消失也走淡入淡出 + 缩放，
+                                        // 跟返回按钮一致，不会「唰」地一下换上换下。
+                                        AnimatedVisibility(
+                                            visible = current.scope() == AppScope.Ime,
+                                            enter = fadeIn(tween(120)) + scaleIn(
+                                                initialScale = 0.6f,
+                                                animationSpec = spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium),
+                                            ),
+                                            exit = fadeOut(tween(90)) + scaleOut(
+                                                targetScale = 0.55f,
+                                                animationSpec = tween(140),
+                                            ),
+                                        ) {
+                                            GlasmioIconButton(onClick = { showRestartDialog = true }) {
+                                                SfIcon(
+                                                    symbol = SfSymbol.ArrowClockwise,
+                                                    contentDescription = "重启输入法",
+                                                    size = 20.dp,
+                                                    tint = DsTheme.colorScheme.accent,
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                        // 窄屏（没有左栏）用分段控件切同作用域的页面；高度也跟着动画。
+                        AnimatedVisibility(
+                            visible = showScopeNav && !useRail,
+                            enter = expandVertically(animationSpec = tween(200)) + fadeIn(tween(160)),
+                            exit = shrinkVertically(animationSpec = tween(160)) + fadeOut(tween(120)),
+                        ) {
+                            DsSegmentedRow(
+                                items = (if (pages.isNotEmpty()) pages else lastScopePages)
+                                    .map { it to it.title() },
+                                selected = current,
+                                onSelected = { openSibling(it) },
+                            )
+                        }
+                            }
+                        }
+                    }
+                }
+            }
+            // Snackbar 浮在最外层底部，跨左右两栏都能看见。
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                GlasmioSnackbarHost(glassSnackbar)
+            }
+        }
+    } else {
+        MiuixShell(
+            uiState = uiState,
+            backStack = backStack,
+            current = current,
+            pages = pages,
+            showScopeNav = showScopeNav,
+            useRail = useRail,
+            padding = padding,
+            gapMaxLand = gapMaxLand,
+            gapMaxPort = gapMaxPort,
+            miuixSnackbar = miuixSnackbar,
+            showRestartDialog = { showRestartDialog = true },
+            onBack = {
+                        pop()
+                    },
+            onPush = { push(it) },
+            onOpenSibling = { openSibling(it) },
+        )
+    }
+}
+
+/**
+ * Miuix 外壳：唯一的 Scaffold（顶栏 + Snackbar），内容交给 [NavDisplay] 按路由渲染。
+ * 右上角放「重启输入法」入口；宽屏走左栏、窄屏走底部菜单。
+ */
+@Composable
+private fun MiuixShell(
+    uiState: AppUiState,
+    backStack: SnapshotStateList<NavKey>,
+    current: NavKey,
+    pages: List<NavKey>,
+    showScopeNav: Boolean,
+    useRail: Boolean,
+    padding: PaddingValues,
+    gapMaxLand: Float,
+    gapMaxPort: Float,
+    miuixSnackbar: SnackbarHostState,
+    showRestartDialog: () -> Unit,
+    onBack: () -> Unit,
+    onPush: (NavKey) -> Unit,
+    onOpenSibling: (NavKey) -> Unit,
+) {
+    val scrollBehavior = MiuixScrollBehavior()
+
+    // 顶部渐进模糊。backdrop 需要内容层注册进去（见下面的 layerBackdrop），
+    // 顶栏的模糊层才能采样到滚动经过的内容。
+    val backdrop = rememberTopBlurBackdrop()
+    // 只在滚动后才让模糊层出现。这里用 derivedStateOf 让这个布尔量只在
+    // 「有/无偏移」翻转时触发重组，而不是每帧重组顶栏 —— 滚动偏移本身
+    // 在 BlurredTopBar 的 graphicsLayer 里按帧读取，不进组合。
+    val blurActive by remember(backdrop) {
+        derivedStateOf { backdrop != null && scrollBehavior.state.contentOffset < 0f }
+    }
 
     /** 宽屏 + 当前功能域有多页 → 显示左栏 */
     val railVisible = showScopeNav && useRail
@@ -284,7 +665,7 @@ fun AppShell(
                     railPages.forEach { page ->
                         NavigationRailItem(
                             selected = current == page,
-                            onClick = { openSibling(page) },
+                            onClick = { onOpenSibling(page) },
                             icon = page.icon(),
                             label = page.title(),
                         )
@@ -302,100 +683,68 @@ fun AppShell(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface)
+            .background(DsTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 railContent()
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    PageHost(
+                    MiuixPageHost(
                         uiState = uiState,
                         backStack = backStack,
                         current = current,
+                        pages = pages,
                         gapMaxLand = gapMaxLand,
                         gapMaxPort = gapMaxPort,
                         padding = padding,
                         railSettled = railWidth == railTargetWidth,
-                        onBack = { pop() },
-                        onPush = { push(it) },
+                        miuixSnackbar = miuixSnackbar,
+                        showRestartDialog = showRestartDialog,
+                        onBack = onBack,
+                        onPush = onPush,
                     )
                 }
             }
-                // 窄屏用底部菜单，从底部滑入 / 滑出
-                AnimatedVisibility(
-                    visible = showScopeNav && !useRail,
-                    enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(180)),
-                    exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(140)),
-                ) {
-                    NavigationBar {
-                        pages.forEach { page ->
-                            NavigationBarItem(
-                                selected = current == page,
-                                onClick = { openSibling(page) },
-                                icon = page.icon(),
-                                label = page.title(),
-                            )
-                        }
+            // 窄屏用底部菜单，从底部滑入 / 滑出
+            AnimatedVisibility(
+                visible = showScopeNav && !useRail,
+                enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(180)),
+                exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(140)),
+            ) {
+                NavigationBar {
+                    pages.forEach { page ->
+                        NavigationBarItem(
+                            selected = current == page,
+                            onClick = { onOpenSibling(page) },
+                            icon = page.icon(),
+                            label = page.title(),
+                        )
                     }
                 }
+            }
         }
     }
 }
 
-/**
- * 页面宿主：唯一的 Scaffold（顶栏 + Snackbar），内容交给 [NavDisplay] 按路由渲染。
- * 右上角放「重启输入法」入口。
- */
 @Composable
-private fun PageHost(
+private fun MiuixPageHost(
     uiState: AppUiState,
-    backStack: androidx.compose.runtime.snapshots.SnapshotStateList<NavKey>,
+    backStack: SnapshotStateList<NavKey>,
     current: NavKey,
+    pages: List<NavKey>,
     gapMaxLand: Float,
     gapMaxPort: Float,
     padding: PaddingValues,
     railSettled: Boolean,
+    miuixSnackbar: SnackbarHostState,
+    showRestartDialog: () -> Unit,
     onBack: () -> Unit,
     onPush: (NavKey) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-
-    // 光标域的框架连接跟随（拆成三个页面后只在外壳里跑一份轮询）
-    CursorConnectionEffect()
-
-    // 顶部渐进模糊。backdrop 需要内容层注册进去（见下面的 layerBackdrop），
-    // 顶栏的模糊层才能采样到滚动经过的内容。
     val backdrop = rememberTopBlurBackdrop()
-    // 只在滚动后才让模糊层出现。这里用 derivedStateOf 让这个布尔量只在
-    // 「有/无偏移」翻转时触发重组，而不是每帧重组顶栏 —— 滚动偏移本身
-    // 在 BlurredTopBar 的 graphicsLayer 里按帧读取，不进组合。
     val blurActive by remember(backdrop) {
         derivedStateOf { backdrop != null && scrollBehavior.state.contentOffset < 0f }
-    }
-
-    var showRestartDialog by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    // 用 composition 作用域而不是 LaunchedEffect(key)：
-    // 之前把「进行中」标记当 key，在里面把它置回 false 会让 Compose 直接取消当前协程，
-    // withContext 在挂起点被中断，结果上报与 Snackbar 都走不到（实测重启生效了但没有任何提示）。
-    val scope = rememberCoroutineScope()
-
-    fun startRestart() {
-        L.i("event=restart_clicked")
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { ImeRestarter.forceStop() }
-                    .getOrElse { ImeRestarter.Result.Failed(it.message ?: "未知错误") }
-            }
-            L.i("event=restart_result result=$result")
-            when (result) {
-                is ImeRestarter.Result.Killed ->
-                    snackbarHostState.showSnackbar("已关闭输入法，下次弹出键盘时自动重启", "重启成功")
-
-                is ImeRestarter.Result.Failed ->
-                    snackbarHostState.showSnackbar("重启失败：需要 root 授权（KernelSU）", "失败")
-            }
-        }
     }
 
     Scaffold(
@@ -414,8 +763,8 @@ private fun PageHost(
                     color = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface,
                     navigationIcon = {
                         if (backStack.size > 1) {
-                            IconButton(onClick = onBack) {
-                                Icon(MiuixIcons.Back, "返回")
+                            top.yukonga.miuix.kmp.basic.IconButton(onClick = onBack) {
+                                top.yukonga.miuix.kmp.basic.Icon(MiuixIcons.Back, "返回")
                             }
                         }
                     },
@@ -423,13 +772,13 @@ private fun PageHost(
                         // 「重启小爱输入法」只跟输入法域有关：只在键盘外观的页面里出现，
                         // 功能列表 / 光标 / 平行窗口 / 关于都不显示它。
                         if (current.scope() == AppScope.Ime) {
-                            DropdownActionMenu { showRestartDialog = true }
+                            DropdownActionMenu { showRestartDialog() }
                         }
                     },
                 )
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(miuixSnackbar) },
     ) { innerPadding ->
         val contentPadding = PaddingValues(
             top = innerPadding.calculateTopPadding(),
@@ -455,191 +804,19 @@ private fun PageHost(
                 )
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
-                NavDisplay(
-                    backStack = backStack,
-                    onBack = onBack,
-                    transition = PadPush,
-                    // 关掉默认的 0.5 暗层与圆角裁切：这台平板 3200×2136，全屏暗层 + 裁切每帧都要重绘，
-                    // 实测发卡；backdropColor 给页面底色，转场期间露出的区域不会是黑的。
-                    effects = NavDisplayEffects(
-                        enableCornerClip = false,
-                        dimAmount = 0f,
-                        backdropColor = MiuixTheme.colorScheme.surface,
-                    ),
-                ) {
-                    entry<RouteScopes> {
-                        PageSurface {
-                            ScopeListPage(
-                                onEnter = { scope -> onPush(scope.pages.first()) },
-                                onAbout = { onPush(RouteAbout) },
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteImeVirtual> {
-                        PageSurface {
-                            VirtualKeyboardPage(
-                                uiState = uiState,
-                                gapMaxLand = gapMaxLand,
-                                gapMaxPort = gapMaxPort,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteImeFloating> {
-                        PageSurface {
-                            FloatingKeyboardPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteImeMaterial> {
-                        PageSurface {
-                            MaterialPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteImeStylus> {
-                        PageSurface {
-                            StylusPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCursorPreset> {
-                        PageSurface {
-                            CursorPresetPage(
-                                cursorEnabled = uiState.cursorEnabled,
-                                onCursorEnabledChange = { checked ->
-                                    uiState.cursorEnabled = checked
-                                    uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
-                                },
-                                onOpenColors = { onPush(RouteCursorColors) },
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCursorSize> {
-                        PageSurface {
-                            CursorSizePage(
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCursorImport> {
-                        PageSurface {
-                            CursorImportPage(
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCursorColors> {
-                        PageSurface {
-                            CursorColorsPage(
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteParallel> {
-                        PageSurface {
-                            ParallelPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCaptionFeatures> {
-                        PageSurface {
-                            CaptionFeaturesPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteCaptionButtons> {
-                        PageSurface {
-                            CaptionButtonsPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteTextMenu> {
-                        PageSurface {
-                            TextMenuPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteAppMenu> {
-                        PageSurface {
-                            AppMenuPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                    entry<RouteAbout> {
-                        PageSurface {
-                            AboutPage(
-                                uiState = uiState,
-                                padding = padding,
-                                scaffoldPadding = contentPadding,
-                            )
-                        }
-                    }
-                }
-            }
+            NavPages(
+                uiState = uiState,
+                backStack = backStack,
+                padding = padding,
+                contentPadding = contentPadding,
+                gapMaxLand = gapMaxLand,
+                gapMaxPort = gapMaxPort,
+                onBack = onBack,
+                onPush = onPush,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
-
-    // Miuix 二次确认弹窗。
-    // 用 WindowDialog（独立窗口层）而不是 OverlayDialog：
-    // OverlayDialog 依赖 Scaffold 的 MiuixPopupHost，在本应用的多 Scaffold 结构下渲染不出来
-    // （实测弹窗完全不出现）。WindowDialog 自带窗口层，跨页面可用，符合 Miuix 对全局弹窗的推荐。
-    WindowDialog(
-        show = showRestartDialog,
-        title = "重启超级小爱输入法？",
-        summary = null,
-        onDismissRequest = { showRestartDialog = false },
-        content = {
-            Row(horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(
-                    text = "取消",
-                    onClick = { showRestartDialog = false },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = "重启",
-                    onClick = {
-                        showRestartDialog = false
-                        startRestart()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
-            }
-        },
-    )
+    }
 }
 
 /** 顶栏副标题（目前只有颜色设置页用） */
@@ -648,8 +825,191 @@ private fun NavKey.subtitle(): String = when (this) {
     else -> ""
 }
 
+/** 路由栈 → NavDisplay。两种外壳共用这一份，页面本身跟外观无关。 */
+@Composable
+private fun NavPages(
+    uiState: AppUiState,
+    backStack: SnapshotStateList<NavKey>,
+    padding: PaddingValues,
+    contentPadding: PaddingValues,
+    gapMaxLand: Float,
+    gapMaxPort: Float,
+    onBack: () -> Unit,
+    onPush: (NavKey) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        NavDisplay(
+            backStack = backStack,
+            onBack = onBack,
+            transition = PadPush,
+            // 关掉默认的 0.5 暗层与圆角裁切：这台平板 3200×2136，全屏暗层 + 裁切每帧都要重绘，
+            // 实测发卡；backdropColor 给页面底色，转场期间露出的区域不会是黑的。
+            effects = NavDisplayEffects(
+                enableCornerClip = false,
+                dimAmount = 0f,
+                backdropColor = DsTheme.colorScheme.surface,
+            ),
+        ) {
+            entry<RouteScopes> {
+                PageSurface {
+                    ScopeListPage(
+                        onEnter = { scope -> onPush(scope.pages.first()) },
+                        onTheme = { onPush(RouteTheme) },
+                        onAbout = { onPush(RouteAbout) },
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteTheme> {
+                PageSurface {
+                    ThemeSettingsPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteImeVirtual> {
+                PageSurface {
+                    VirtualKeyboardPage(
+                        uiState = uiState,
+                        gapMaxLand = gapMaxLand,
+                        gapMaxPort = gapMaxPort,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteImeFloating> {
+                PageSurface {
+                    FloatingKeyboardPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteImeMaterial> {
+                PageSurface {
+                    MaterialPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteImeStylus> {
+                PageSurface {
+                    StylusPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCursorPreset> {
+                PageSurface {
+                    CursorPresetPage(
+                        cursorEnabled = uiState.cursorEnabled,
+                        onCursorEnabledChange = { checked ->
+                            uiState.cursorEnabled = checked
+                            uiState.save { e -> e.putBoolean(PrefKeys.CURSOR_ENABLED, checked) }
+                        },
+                        onOpenColors = { onPush(RouteCursorColors) },
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCursorSize> {
+                PageSurface {
+                    CursorSizePage(
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCursorImport> {
+                PageSurface {
+                    CursorImportPage(
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCursorColors> {
+                PageSurface {
+                    CursorColorsPage(
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteParallel> {
+                PageSurface {
+                    ParallelPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCaptionFeatures> {
+                PageSurface {
+                    CaptionFeaturesPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteCaptionButtons> {
+                PageSurface {
+                    CaptionButtonsPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteTextMenu> {
+                PageSurface {
+                    TextMenuPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteAppMenu> {
+                PageSurface {
+                    AppMenuPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+            entry<RouteAbout> {
+                PageSurface {
+                    AboutPage(
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = contentPadding,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 平板布局断点：横屏平板走左侧栏；竖屏平板 / 手机走底部菜单。 */
 private const val RAIL_BREAKPOINT_DP = 840
+
+/** Glasmio 外观下左栏的展开宽度（Miuix 用的是它自己的 NavigationRailDefaults，这里自己给）。 */
+private val SIDEBAR_WIDTH = 250.dp
 
 /**
  * 展开态左栏**总**宽 = Miuix 的展开宽度 + 它自带的那条右侧分隔线。

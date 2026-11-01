@@ -10,9 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「平行窗口」页（原 os4平行窗口动画fix模块）：作用域 `com.android.systemui`。

@@ -68,6 +68,9 @@ data object RouteTextMenu : NavKey
 
 data object RouteAppMenu : NavKey
 
+/** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。只影响模块自己的设置界面。 */
+data object RouteTheme : NavKey
+
 data object RouteAbout : NavKey
 
 /**
@@ -142,6 +145,7 @@ fun NavKey.title(): String = when (this) {
     RouteCaptionButtons -> "按钮"
     RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
+    RouteTheme -> "主题设置"
     RouteAbout -> "关于"
     else -> ""
 }

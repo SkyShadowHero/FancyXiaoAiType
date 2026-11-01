@@ -121,6 +121,16 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
 
+    // Glasmio：iOS 27 Liquid Glass 风格的 Compose 组件库（主题设置里的另一套外观）。
+    // 只取 core / glass / icons / ui / preference：scaffold 会带进 navigation3 与
+    // 另一份 miuix-nav，跟本模块自己的 miuix-nav 冲突，那一层的两个壳（GlasmioScaffold /
+    // GlasmioListPage）本来就是十几行，直接在 DsChrome 里自己搭。
+    implementation("io.github.neoruaa.glasmio:glasmio-core:0.1.1")
+    implementation("io.github.neoruaa.glasmio:glasmio-glass:0.1.1")
+    implementation("io.github.neoruaa.glasmio:glasmio-icons:0.1.1")
+    implementation("io.github.neoruaa.glasmio:glasmio-ui:0.1.1")
+    implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
+
     // 识别模型功能：ONNX Runtime 的 **Java 绑定**（native 库由系统提供，见上面的 packaging 排除）。
     // 版本必须跟系统里那份 .so 一致（1.15.1），否则 JNI 签名对不上会 UnsatisfiedLinkError。
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.15.1")

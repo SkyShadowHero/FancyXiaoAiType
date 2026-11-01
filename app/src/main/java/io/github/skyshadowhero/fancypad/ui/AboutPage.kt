@@ -25,15 +25,7 @@ import io.github.skyshadowhero.fancypad.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /** 项目仓库地址 */
 private const val REPO_URL = "https://github.com/SkyShadowHero/FancyXiaoAiType"
@@ -82,22 +74,6 @@ fun AboutPage(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { SmallTitle("外观") }
-        item {
-            Card {
-                OverlayDropdownPreference(
-                    title = "主题模式",
-                    items = ThemeMode.entries.map { it.label },
-                    selectedIndex = uiState.themeMode.coerceIn(0, ThemeMode.entries.size - 1),
-                    onSelectedIndexChange = { index ->
-                        uiState.themeMode = index
-                        // 落盘，跨启动记忆
-                        uiState.save { editor -> editor.putInt(PrefKeys.THEME_MODE, index) }
-                    },
-                )
-            }
-        }
-
         item { SmallTitle("版本") }
         item {
             Card {
@@ -148,7 +124,7 @@ fun AboutPage(
                     } else {
                         notes
                     },
-                    color = MiuixTheme.colorScheme.onSurfaceContainerHigh,
+                    color = DsTheme.colorScheme.onSurfaceContainerHigh,
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.SpaceBetween) {
@@ -165,7 +141,7 @@ fun AboutPage(
                             update?.url?.let { url -> runCatching { uriHandler.openUri(url) } }
                         },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        colors = DsButtonDefaults.textButtonColorsPrimary(),
                     )
                 }
             }

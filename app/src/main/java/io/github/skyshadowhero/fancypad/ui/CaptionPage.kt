@@ -40,13 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 控制菜单里一个按钮的界面信息。
@@ -124,8 +119,8 @@ private fun CaptionDisabledHint() {
         Text(
             text = "小窗控制器总开关已关，这一页的设置都不生效。",
             modifier = Modifier.padding(16.dp),
-            style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onBackgroundVariant,
+            style = DsTheme.textStyles.footnote1,
+            color = DsTheme.colorScheme.onBackgroundVariant,
         )
     }
 }
@@ -325,8 +320,8 @@ fun CaptionButtonsPage(
                     Text(
                         text = "没有启用的按钮",
                         modifier = Modifier.padding(16.dp),
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant,
+                        style = DsTheme.textStyles.footnote1,
+                        color = DsTheme.colorScheme.onBackgroundVariant,
                     )
                 } else {
                     ButtonOrderStrip(
@@ -390,7 +385,7 @@ private fun ButtonOrderStrip(
     val latestMove = rememberUpdatedState(onMove)
     val scrollState = rememberScrollState()
     val rowShape = RoundedCornerShape(12.dp)
-    val normalTint = MiuixTheme.colorScheme.onBackground
+    val normalTint = DsTheme.colorScheme.onBackground
 
     Row(
         modifier = Modifier
@@ -413,7 +408,7 @@ private fun ButtonOrderStrip(
                             IntOffset(if (dragging) draggingOffset.roundToInt() else 0, 0)
                         }
                         .background(
-                            color = if (dragging) MiuixTheme.colorScheme.surfaceContainerHigh
+                            color = if (dragging) DsTheme.colorScheme.surfaceContainerHigh
                             else Color.Transparent,
                             shape = rowShape,
                         )
@@ -466,9 +461,9 @@ private fun ButtonOrderStrip(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = shortLabelOf(buttonKey),
-                        style = MiuixTheme.textStyles.footnote1,
+                        style = DsTheme.textStyles.footnote1,
                         color = if (isForceClose) FORCE_CLOSE_RED
-                        else MiuixTheme.colorScheme.onBackgroundVariant,
+                        else DsTheme.colorScheme.onBackgroundVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

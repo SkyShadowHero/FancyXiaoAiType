@@ -3,6 +3,7 @@ package io.github.skyshadowhero.fancypad.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -29,9 +30,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 实际总是支持，这里的判断只是兜底。
  */
 @Composable
-internal fun rememberTopBlurBackdrop(): LayerBackdrop? {
+internal fun rememberTopBlurBackdrop(surfaceColor: Color? = null): LayerBackdrop? {
     if (!isRuntimeShaderSupported()) return null
-    val surface = MiuixTheme.colorScheme.surface
+    // Glasmio 外观下没有 MiuixTheme，调用方必须显式给底色。
+    val surface = surfaceColor ?: MiuixTheme.colorScheme.surface
     return rememberLayerBackdrop {
         drawRect(surface)
         drawContent()
@@ -58,6 +60,8 @@ internal fun BlurredTopBar(
     backdrop: LayerBackdrop?,
     active: Boolean,
     scrollOffsetPx: () -> Float,
+    blendColor: Color? = null,
+    alwaysVisible: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     if (backdrop == null) {
@@ -72,7 +76,8 @@ internal fun BlurredTopBar(
                     .matchParentSize()
                     .graphicsLayer {
                         // 48dp 内完成淡入；在绘制阶段读状态，不引起重组
-                        this.alpha = (scrollOffsetPx() / (48f * density)).coerceIn(0f, 1f)
+                        this.alpha = if (alwaysVisible) 1f
+                            else (scrollOffsetPx() / (48f * density)).coerceIn(0f, 1f)
                     }
                     .progressiveTextureBlur(
                         backdrop = backdrop,
@@ -80,7 +85,7 @@ internal fun BlurredTopBar(
                         // 曲线取 2.2：模糊从顶到底衰减得更快，顶栏文字区域才够实
                         gradient = ProgressiveBlur.Top.copy(curve = 2.2f),
                         blurRadius = 10f,
-                        colors = barBlurColors(),
+                        colors = barBlurColors(blendColor),
                     ),
             )
         }
@@ -95,8 +100,8 @@ internal fun BlurredTopBar(
  * 与顶栏配色连贯。系数 0.3 取自 Miuix example 的渐进模糊配置。
  */
 @Composable
-private fun barBlurColors(): BlurColors = BlurDefaults.blurColors(
+private fun barBlurColors(blendColor: Color? = null): BlurColors = BlurDefaults.blurColors(
     blendColors = listOf(
-        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha = 0.3f)),
+        BlendColorEntry(color = (blendColor ?: MiuixTheme.colorScheme.surface).copy(alpha = 0.3f)),
     ),
 )

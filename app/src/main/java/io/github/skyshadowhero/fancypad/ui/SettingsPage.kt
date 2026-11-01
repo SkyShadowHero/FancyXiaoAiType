@@ -6,9 +6,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.Target
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /**
  * 「虚拟键盘」页的第一段：分离键盘宽度 / 按键圆角 / 键盘形态。
