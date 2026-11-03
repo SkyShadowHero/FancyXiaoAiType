@@ -81,6 +81,7 @@ fun HomePage(
             val healthy = framework != null && scopePackages.isNotEmpty()
             HomeStatusCard(
                 healthy = healthy,
+                connecting = uiState.serviceReady == null,
                 framework = framework,
                 api = api,
                 scopeCount = scopePackages.size,
@@ -107,14 +108,24 @@ fun HomePage(
 @Composable
 private fun HomeStatusCard(
     healthy: Boolean,
+    connecting: Boolean = false,
     framework: String?,
     api: Int?,
     scopeCount: Int,
     runningCount: Int,
     staleCount: Int,
 ) {
-    val statusSurface = if (healthy) Color(0xFFDDF8E5) else Color(0xFFFFE1DF)
-    val statusAccent = if (healthy) Color(0xFF2ECC71) else Color(0xFFF04438)
+    // connecting 时保持中性色，避免每次进入都先闪一下红再变绿
+    val statusSurface = when {
+        connecting -> Color(0xFFEDEDF0)
+        healthy -> Color(0xFFDDF8E5)
+        else -> Color(0xFFFFE1DF)
+    }
+    val statusAccent = when {
+        connecting -> Color(0xFF9A9AA2)
+        healthy -> Color(0xFF2ECC71)
+        else -> Color(0xFFF04438)
+    }
     val primaryText = Color(0xFF111111)
     val secondaryText = Color(0xFF626262)
     val statusText = if (framework == null) {
@@ -140,7 +151,7 @@ private fun HomeStatusCard(
                         .background(statusSurface.copy(alpha = 0.22f), RoundedCornerShape(24.dp)),
                 ) {
                     HomeStatusCardContent(
-                        healthy, statusAccent, primaryText, secondaryText,
+                        connecting, healthy, statusAccent, primaryText, secondaryText,
                         statusText, staleCount,
                     )
                 }
@@ -155,7 +166,7 @@ private fun HomeStatusCard(
             onClick = {},
         ) {
             HomeStatusCardContent(
-                healthy, statusAccent, primaryText, secondaryText,
+                connecting, healthy, statusAccent, primaryText, secondaryText,
                 statusText, staleCount,
             )
         }
@@ -164,6 +175,7 @@ private fun HomeStatusCard(
 
 @Composable
 private fun HomeStatusCardContent(
+    connecting: Boolean,
     healthy: Boolean,
     accent: Color,
     primaryText: Color,
@@ -171,6 +183,28 @@ private fun HomeStatusCardContent(
     statusText: String,
     staleCount: Int,
 ) {
+    if (connecting) {
+        // 还在等 LSPosed 服务绑定：中性提示，不做「未激活」的判断
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 128.dp)
+                .padding(start = 18.dp, top = 18.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("正在连接 LSPosed…", style = DsTheme.textStyles.headline, color = primaryText)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "正在读取模块作用域与注入状态",
+                    style = DsTheme.textStyles.body1,
+                    color = secondaryText,
+                )
+            }
+        }
+        return
+    }
+
     if (!healthy) {
         // 「模块未激活」：标题 + 一句指引 + 右侧大图标（与参考设计一致）
         Row(

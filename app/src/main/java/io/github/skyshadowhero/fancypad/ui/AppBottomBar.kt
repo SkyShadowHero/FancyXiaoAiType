@@ -33,10 +33,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -250,7 +252,16 @@ private fun BottomBarContent(
     val currentIndex by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
 
+    // 拖拽松手时下面已经 animateTo 过一次；父级 selectedIndex 变化又会触发这个
+    // LaunchedEffect 从当前值再 animate 一次。两段弹簧叠在一起，观感就是「猛地弹一下」。
+    // selfDrivenIndex 记录「这次变化是我自己动画驱动的」，让 effect 跳过。
+    var selfDrivenIndex by remember { mutableIntStateOf(-1) }
+
     LaunchedEffect(selectedIndex) {
+        if (selectedIndex == selfDrivenIndex) {
+            selfDrivenIndex = -1
+            return@LaunchedEffect
+        }
         state.position.animateTo(selectedIndex.toFloat(), BottomBarSlideSpec)
     }
 
@@ -320,7 +331,10 @@ private fun BottomBarContent(
                     val released = (startSlot + travelled / slotPx).coerceIn(0f, lastSlot)
                     val target = released.roundToInt().coerceIn(0, items.size - 1)
                     if (onIndicator) {
-                        if (target != currentIndex) currentOnSelect(target)
+                        if (target != currentIndex) {
+                            selfDrivenIndex = target
+                            currentOnSelect(target)
+                        }
                         scope.launch { state.position.animateTo(target.toFloat(), BottomBarSlideSpec) }
                     }
                     scope.launch { state.pan.animateTo(0f, BottomBarPanSpec) }

@@ -175,6 +175,12 @@ class AppUiState {
     var loaded by mutableStateOf(false)
 
     /**
+     * LSPosed 服务绑定状态：null = 还在等（启动头一两百毫秒），true/false = 已有结论。
+     * 首页卡片靠它区分「正在连接」和「没激活」，避免每次进入都红一下再变绿。
+     */
+    var serviceReady by mutableStateOf<Boolean?>(null)
+
+    /**
      * 统一保存入口：装载完成前直接丢弃写入。
      * 这样即使界面先渲染（显示默认值），也不会把默认值写回、覆盖已保存的设置。
      * @return 是否真的写入
@@ -236,6 +242,7 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
             }
         }
         serviceReady = RemoteConfig.isReady
+        uiState.serviceReady = serviceReady
         if (RemoteConfig.isReady) {
             loadConfigInto(uiState)
             ThemeCache.write(context, uiState.uiTheme)
@@ -249,6 +256,7 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
             val ready = RemoteConfig.isReady
             if (ready != serviceReady) {
                 serviceReady = ready
+                uiState.serviceReady = ready
                 L.i("event=service_state_changed ready=$ready")
                 if (ready) {
                     loadConfigInto(uiState)
