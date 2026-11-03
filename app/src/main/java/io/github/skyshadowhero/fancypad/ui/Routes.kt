@@ -73,6 +73,9 @@ data object RouteAppMenu : NavKey
 /** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。从「信息」页进入。 */
 data object RouteTheme : NavKey
 
+    /** 致谢（开源库与素材） */
+    data object RouteCredits : NavKey
+
 /**
  * 一个功能域 = 一个路由：域内兄弟页由 [DomainHost] 用 HorizontalPager 承载。
  *
@@ -194,6 +197,7 @@ fun NavKey.title(): String = when (this) {
     RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
     RouteTheme -> "主题设置"
+    RouteCredits -> "致谢"
     is RouteDomain -> scope.label
     else -> ""
 }
@@ -213,6 +217,7 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteTextMenu -> MiuixIcons.SelectAll
     RouteAppMenu -> MiuixIcons.ListView
     RouteTheme -> MiuixIcons.Settings
+    RouteCredits -> MiuixIcons.Info
     else -> MiuixIcons.Info
 }
 

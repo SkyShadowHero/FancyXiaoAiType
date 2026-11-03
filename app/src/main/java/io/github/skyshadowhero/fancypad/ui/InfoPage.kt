@@ -27,6 +27,7 @@ fun InfoPage(
     uiState: AppUiState,
     scopePackages: Set<String>,
     onTheme: () -> Unit,
+    onCredits: () -> Unit,
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
@@ -49,6 +50,17 @@ fun InfoPage(
                     title = "主题设置",
                     summary = if (uiState.uiTheme == 1) "Glasmio（iOS 液态玻璃）" else "Miuix（HyperOS 风格）",
                     onClick = onTheme,
+                )
+            }
+        }
+
+        item { SmallTitle("关于") }
+        item {
+            Card {
+                ArrowPreference(
+                    title = "致谢",
+                    summary = "用到的开源库、素材与参考实现",
+                    onClick = onCredits,
                 )
             }
         }

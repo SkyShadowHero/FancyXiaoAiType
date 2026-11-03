@@ -987,6 +987,7 @@ private fun NavPages(
                         scaffoldPadding = LocalPageScaffoldPadding.current,
                         onOpenScope = { scope -> onPush(RouteDomain(scope)) },
                         onOpenTheme = { onPush(RouteTheme) },
+                        onOpenCredits = { onPush(RouteCredits) },
                     )
                 }
             }
@@ -1017,6 +1018,14 @@ private fun NavPages(
                 PageSurface(route = RouteTheme, scaffoldPadding = pagePadding) {
                     ThemeSettingsPage(
                         uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = LocalPageScaffoldPadding.current,
+                    )
+                }
+            }
+            entry<RouteCredits>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+                PageSurface(route = RouteCredits, scaffoldPadding = pagePadding) {
+                    CreditsPage(
                         padding = padding,
                         scaffoldPadding = LocalPageScaffoldPadding.current,
                     )
@@ -1161,6 +1170,7 @@ private fun RootPager(
     scaffoldPadding: PaddingValues,
     onOpenScope: (AppScope) -> Unit,
     onOpenTheme: () -> Unit,
+    onOpenCredits: () -> Unit,
 ) {
     val tabScope = rememberCoroutineScope()
     val openFeatures: () -> Unit = {
@@ -1193,6 +1203,7 @@ private fun RootPager(
                 uiState = uiState,
                 scopePackages = scopePackages,
                 onTheme = onOpenTheme,
+                onCredits = onOpenCredits,
                 padding = padding,
                 scaffoldPadding = scaffoldPadding,
             )
