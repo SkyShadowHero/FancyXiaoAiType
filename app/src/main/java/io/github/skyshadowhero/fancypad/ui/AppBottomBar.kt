@@ -77,7 +77,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sign
 
 private val BottomBarItemHeight = 50.dp
-private val BottomBarPillInset = 1.5.dp
+private val BottomBarPillInset = 4.dp
 
 /** 指示器滑动弹簧：临界阻尼，快速到位不回弹（dynamic-youth 同款） */
 private val BottomBarSlideSpec = spring<Float>(dampingRatio = 1f, stiffness = 900f, visibilityThreshold = 0.001f)
@@ -140,7 +140,7 @@ fun AppBottomBar(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = 68.dp, end = 68.dp, top = 2.dp, bottom = 18.dp),
+                .padding(start = 68.dp, end = 68.dp, top = 44.dp, bottom = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
             GlasmioNavigationBar(
@@ -163,8 +163,8 @@ fun AppBottomBar(
     val scrim = remember(colors.surface) {
         Brush.verticalGradient(
             0f to Color.Transparent,
-            0.45f to colors.surface.copy(alpha = 0.55f),
-            1f to colors.surface.copy(alpha = 0.95f),
+            0.30f to colors.onBackground.copy(alpha = 0.025f),
+            1f to colors.onBackground.copy(alpha = 0.06f),
         )
     }
     val state = remember { BottomBarIndicatorState(selectedIndex) }
@@ -182,7 +182,7 @@ fun AppBottomBar(
             .fillMaxWidth()
             .background(scrim)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 68.dp, end = 68.dp, top = 2.dp, bottom = 18.dp),
+            .padding(start = 68.dp, end = 68.dp, top = 44.dp, bottom = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -208,21 +208,21 @@ fun AppBottomBar(
                     // 动画期间**完全摘掉模糊**：只要 backdrop 失效（切 tab 时页面每帧都在动），
                     // textureBlur 就会整条重采样一遍，即使 radius = 0 也照样跑一遍 effect，
                     // 这就是之前「底栏自己掉帧」的来源。静止时才挂上模糊。
-                    if (animating || backdrop == null) {
+                    if (backdrop == null) {
                         Modifier.background(
-                            if (colors.isDark) Color(0xFF1C1C1E).copy(alpha = 0.92f)
-                            else Color.White.copy(alpha = 0.85f),
+                            if (colors.isDark) Color(0xFF1C1C1E).copy(alpha = 0.72f)
+                            else Color(0xFFF2F2F5).copy(alpha = 0.55f),
                         )
                     } else {
                         Modifier.textureBlur(
                             backdrop = backdrop,
                             shape = CircleShape,
-                            blurRadius = 34f,
+                            blurRadius = 20f,
                             colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
                                 blendColors = listOf(
                                     top.yukonga.miuix.kmp.blur.BlendColorEntry(
-                                        color = if (colors.isDark) Color(0xFF1C1C1E).copy(alpha = 0.86f)
-                                        else Color.White.copy(alpha = 0.62f),
+                                        color = if (colors.isDark) Color(0xFF1C1C1E).copy(alpha = 0.72f)
+                                        else Color(0xFFF2F2F5).copy(alpha = 0.55f),
                                     ),
                                 ),
                             ),
@@ -276,7 +276,7 @@ private fun BottomBarContent(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 0.dp)
             .pointerInput(items.size) {
                 val lastSlot = (items.size - 1).toFloat()
                 awaitEachGesture {
@@ -322,7 +322,7 @@ private fun BottomBarContent(
         val slotWidth = maxWidth / items.size
         val slotPx = with(LocalDensity.current) { slotWidth.toPx() }
         val pillWidth = slotWidth - BottomBarPillInset * 2
-        val pillHeight = BottomBarItemHeight - 8.dp
+        val pillHeight = BottomBarItemHeight - 7.dp
 
         Box(
             modifier = Modifier
@@ -428,7 +428,7 @@ private fun BottomBarItem(
             ),
         icon = icon,
         label = label,
-        color = DsTheme.colorScheme.onBackgroundVariant,
+        color = DsTheme.colorScheme.onBackground,
     )
 }
 

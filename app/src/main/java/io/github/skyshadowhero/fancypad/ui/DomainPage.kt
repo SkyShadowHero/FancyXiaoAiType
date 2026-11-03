@@ -1,6 +1,10 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
+import io.github.skyshadowhero.fancypad.ui.ds.Card
+import io.github.skyshadowhero.fancypad.ui.ds.RadioButtonPreference
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.ui.ds.DsSegmentedRow
 import io.github.skyshadowhero.fancypad.ui.ds.DsTheme
@@ -89,6 +94,9 @@ fun DomainHost(
     }
 }
 
+/** 宽屏侧栏宽度：外壳画分隔线时要对齐这条边。 */
+val DomainSidebarWidth = 220.dp
+
 /** 宽屏下的域内切换侧栏（窄屏仍用顶栏 TabRow）。 */
 @Composable
 private fun DomainSidebar(
@@ -96,39 +104,75 @@ private fun DomainSidebar(
     pagerState: androidx.compose.foundation.pager.PagerState,
 ) {
     val pages = scope.pages
-    val colors = DsTheme.colorScheme
     val tabScope = rememberCoroutineScope()
-    Column(
+    // 直接复用皮肤自己的卡片与列表行：
+    // - Miuix → MiuixCard + MiuixRadioButtonPreference（HyperOS 列表的间距/圆角/按压遮罩）
+    // - Glass → GlasmioGroupedList + DsListRow（玻璃卡片 26dp 圆角、分隔线、勾选标记）
+    Box(
         modifier = Modifier
-            .width(200.dp)
+            .width(DomainSidebarWidth)
             .fillMaxHeight()
             .padding(
                 start = 12.dp,
                 end = 8.dp,
-                top = LocalPageScaffoldPadding.current.calculateTopPadding(),
+                top = LocalPageScaffoldBottomlessPadding() + 16.dp,
                 bottom = 12.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        pages.forEachIndexed { index, page ->
-            val selected = pagerState.currentPage == index
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (selected) colors.accent.copy(alpha = 0.14f) else Color.Transparent)
-                    .clickable { tabScope.launch { pagerState.animateScrollToPage(index) } }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            ) {
-                androidx.compose.material3.Text(
-                    text = page.title(),
-                    color = if (selected) colors.accent else colors.onBackground,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-                )
+        Card {
+            pages.forEachIndexed { index, page ->
+                val selected = pagerState.currentPage == index
+                val onClick: () -> Unit = {
+                    tabScope.launch { pagerState.animateScrollToPage(index) }
+                }
+                if (isGlasmio) {
+                    // Glass 保持最初的样子：GlasmioGroupedList + DsListRow（勾选标记、分隔线）
+                    RadioButtonPreference(
+                        title = page.title(),
+                        selected = selected,
+                        onClick = onClick,
+                    )
+                } else {
+                    DsSidebarItem(
+                        title = page.title(),
+                        selected = selected,
+                        onClick = onClick,
+                    )
+                }
             }
         }
     }
 }
+
+/** 侧栏条目：两套皮肤共用（左对齐 + 选中灰色遮罩，无勾选标记）。 */
+@Composable
+private fun DsSidebarItem(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = DsTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) colors.onBackground.copy(alpha = 0.08f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        androidx.compose.material3.Text(
+            text = title,
+            color = colors.onBackground,
+            fontSize = 18.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** 侧栏顶部让位：与页面内容一致，避开顶栏。 */
+@Composable
+private fun LocalPageScaffoldBottomlessPadding(): androidx.compose.ui.unit.Dp =
+    LocalPageScaffoldPadding.current.calculateTopPadding()
 
 /**
  * 域内兄弟页切换条 —— 放在顶栏的 `header` 槽里。
@@ -252,4 +296,31 @@ private fun DomainPage(
         )
     }
 }
-
+/** Miuix 侧栏行：选中项是一层比按压遮罩更深的灰色底。 */
+@Composable
+private fun MiuixSidebarRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = DsTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (selected) colors.onBackground.copy(alpha = 0.14f) else Color.Transparent,
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        androidx.compose.material3.Text(
+            text = title,
+            color = if (selected) colors.accent else colors.onBackground,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
