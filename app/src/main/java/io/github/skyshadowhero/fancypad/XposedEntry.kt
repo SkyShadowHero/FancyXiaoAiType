@@ -1,30 +1,31 @@
 package io.github.skyshadowhero.fancypad
 
+import android.os.Handler
+import android.os.Looper
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import java.io.File
 import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * FancyPad 单一入口：一个模块带三个功能域，按进程分发。
+ * FancyPad 单一入口：一个模块带五个功能域，按**包名**分发（不是进程名，见 [ProcessNames]）。
  *
- * | 进程 | 功能 |
+ * | 包名（scope） | 功能 |
  * |---|---|
- * | `com.xiaomi.type` | 输入法外观增强（分离键盘 / 按键圆角间距 / 悬浮键盘 / 超级材质） |
- * | `system`（system_server） | 光标主题接管（`PointerIconCache` + 两个只读 aconfig flag） |
- * | `com.android.systemui` | 平行窗口（Activity Embedding）动画恢复 AOSP |
+ * | `com.xiaomi.type` | 输入法外观增强（分离键盘 / 按键圆角间距 / 悬浮键盘 / 超级材质）+ 随手写的输入法侧 |
+ * | `android`（scope: `system`） | 光标主题接管（`PointerIconCache` + 两个只读 aconfig flag）+ 随手写声明 |
+ * | `com.android.systemui` | 平行窗口动画 / 小窗控制菜单 / 文本选择工具栏 |
+ * | `com.miui.securitycore` | 随手写白名单（让它别把默认输入法改写掉） |
+ * | 其它（用户自加） | 右键菜单：目标应用进程内的 `PopupWindow` |
  *
- * 三个域的开关都放在同一个 RemotePreferences 组（[PrefKeys.GROUP]）里，
+ * 所有域的开关都放在同一个 RemotePreferences 组（[PrefKeys.GROUP]）里，
  * 由 App 侧界面写入、Hook 侧通过 [HookPrefs] / [ConfigLoader] 读取。
  *
- * 输入法侧功能 1~5 的说明见原先的注释：
- * 功能 1：调整分离键盘中心间隙（滑块）；间隙减小后两半更靠近屏幕中部。
- * 功能 2：竖屏强制普通键盘（开关，默认关闭 = 保持默认行为）。
- * 功能 3：按键圆角 / 键高 / 键距（横竖屏分设）。
- * 功能 4：设置页右上角「强制关闭输入法」——写入重启信号，本进程在键盘再次弹出时自杀重启。
- * 功能 5：超级材质——接管「哪些应用能用毛玻璃键盘背景」的判定，支持强制全部 / 手动选择。
+ * 每个域装完后由 [installWithRetry] 判定要不要重试（最多 3 次）：
+ * 「类还没加载好」这类偶发失败不再等于永久降级。
  *
  * Hook 策略：改「读取入口」而非改磁盘/资源，避免缓存与落盘副作用。
  */
@@ -33,6 +34,12 @@ class XposedEntry : XposedModule() {
     private companion object {
         /** 模块自己的包名：设置界面没有右键菜单，不需要装那一域。 */
         const val MODULE_PACKAGE = "io.github.skyshadowhero.fancypad"
+
+        /** 每个功能域的安装最多试几次。 */
+        const val INSTALL_MAX_ATTEMPTS = 3
+
+        /** 两次安装尝试之间的间隔（ms）。 */
+        const val INSTALL_RETRY_DELAY_MS = 1500L
     }
 
     /**
@@ -42,6 +49,20 @@ class XposedEntry : XposedModule() {
     private val minFloatingWidthPx = 200
 
     private val installed = AtomicBoolean(false)
+
+    /**
+     * 安装失败后的重试调度。
+     *
+     * 为什么需要：`onPackageReady` 每个进程只来一次，而 `loadClass` 失败、资源尚未就绪
+     * 这类原因是**可能自愈的**（类晚一点才加载好）。早先的做法是失败也把幂等位钉死，
+     * 等于一次偶发失败就永久降级到进程重启 —— 表现是「功能时好时坏，重启就好」。
+     * 现在：每个域最多试 [INSTALL_MAX_ATTEMPTS] 次，间隔 [INSTALL_RETRY_DELAY_MS]。
+     *
+     * 重试跑在主线程（Handler）：装 Hook 本身是反射 + 注册，不需要额外线程，
+     * 也不能在 system_server 里另起线程做重活。
+     */
+    private val retryHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val retryCounts = ConcurrentHashMap<String, Int>()
 
     /** 光标域（system_server）：懒建，只有真的进了 system 作用域才会用到。 */
     private val cursorHooks by lazy { CursorHooks(this) }
@@ -99,13 +120,15 @@ class XposedEntry : XposedModule() {
      * |---|---|
      * | system_server | `/data/system/fancypad_module.txt` |
      * | 普通应用进程 | `/data/data/<包名>/files/fancypad_module.txt` |
+     *
+     * 系统进程的判定统一走 [ProcessNames]（`system` / `system_server` / `android` 三种写法都认），
+     * 否则在报成 `system_server` 的机器上会去写 `/data/data/system_server/files` ——
+     * 那个目录不存在，写入静默失败，看起来就像「模块没注入」。
      */
     private fun dumpInjectionMarker(processName: String) {
         try {
-            val host = processName.substringBefore(':')
-            val system = host == "system" || host == "android"
-            val dir = if (system) File("/data/system") else File("/data/data/$host/files")
-            if (!system && !dir.isDirectory) dir.mkdirs()
+            val dir = ProcessNames.diagDir(processName)
+            if (!dir.isDirectory) dir.mkdirs()
             File(dir, "fancypad_module.txt").writeText(
                 "process=$processName\napi=$apiVersion\nframework=$frameworkName\n"
             )
@@ -122,12 +145,40 @@ class XposedEntry : XposedModule() {
     override fun onSystemServerStarting(param: XposedModuleInterface.SystemServerStartingParam) {
         HookPrefs.bind(this)
         L.i("event=system_server_starting process=$processName")
-        cursorHooks.installSystemHooks(param.classLoader)
-        stylusSystemHooks.install(param.classLoader)
+        installWithRetry("system_cursor") { cursorHooks.installSystemHooks(param.classLoader) }
+        installWithRetry("system_stylus") { stylusSystemHooks.install(param.classLoader) }
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
         installForPackage(param.packageName, param.classLoader)
+    }
+
+    /**
+     * 装一次；没装上就隔 [INSTALL_RETRY_DELAY_MS] 再试，最多 [INSTALL_MAX_ATTEMPTS] 次。
+     *
+     * 每个功能域用自己的 tag 计数：输入法外观装好了、随手写没装好，只重试随手写。
+     * 用尽次数后明确落一条 `install_gave_up`，避免「功能没了但日志里什么都没有」。
+     */
+    private fun installWithRetry(tag: String, block: () -> Boolean) {
+        // 单个域内部抛异常不能连累后面的域：这里统一兜住，按「没装上」处理
+        val ok = runCatching { block() }
+            .onFailure { L.e("event=install_threw tag=$tag", it) }
+            .getOrDefault(false)
+        if (ok) return
+        val attempt = (retryCounts[tag] ?: 0) + 1
+        retryCounts[tag] = attempt
+        if (attempt >= INSTALL_MAX_ATTEMPTS) {
+            L.w("event=install_gave_up tag=$tag attempts=$attempt（该功能本次进程内不可用，重启进程后可重试）")
+            return
+        }
+        L.w("event=install_retry tag=$tag attempt=$attempt/$INSTALL_MAX_ATTEMPTS delay=${INSTALL_RETRY_DELAY_MS}ms")
+        retryHandler.postDelayed(
+            {
+                runCatching { installWithRetry(tag, block) }
+                    .onFailure { L.e("event=install_retry_failed tag=$tag", it) }
+            },
+            INSTALL_RETRY_DELAY_MS,
+        )
     }
 
     /**
@@ -145,24 +196,24 @@ class XposedEntry : XposedModule() {
                 // 字段默认值 —— 真机踩过：表现为"设置了但落笔时还是默认的样子"。
                 HookPrefs.bind(this)
                 ConfigLoader.attach(getRemotePreferences(PrefKeys.GROUP))
-                installHooks(cl)
+                installWithRetry("ime_appearance") { installHooks(cl) }
                 // 随手写：与输入法外观那批 hook 独立，单独装（installHooks 有自己的幂等守卫）
-                stylusImeHooks.install(cl)
+                installWithRetry("ime_stylus") { stylusImeHooks.install(cl) }
             }
 
             Target.SYSTEM_PACKAGE -> {
                 L.i("event=package_ready package=system process=$processName")
                 HookPrefs.bind(this)
-                cursorHooks.installSystemHooks(cl)
-                stylusSystemHooks.install(cl)
+                installWithRetry("system_cursor") { cursorHooks.installSystemHooks(cl) }
+                installWithRetry("system_stylus") { stylusSystemHooks.install(cl) }
             }
 
             Target.SYSTEM_UI_PACKAGE -> {
                 L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
-                embeddingHooks.install(cl)
-                selectionToolbarHooks.install(cl)
-                captionHooks.install(cl)
+                installWithRetry("sysui_embedding") { embeddingHooks.install(cl) }
+                installWithRetry("sysui_selection") { selectionToolbarHooks.install(cl) }
+                installWithRetry("sysui_caption") { captionHooks.install(cl) }
             }
 
             /**
@@ -174,7 +225,7 @@ class XposedEntry : XposedModule() {
             Target.SECURITY_CENTER_PACKAGE -> {
                 L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
-                stylusSystemHooks.installForSecurityCenter(cl)
+                installWithRetry("security_stylus") { stylusSystemHooks.installForSecurityCenter(cl) }
             }
 
             /**
@@ -182,13 +233,21 @@ class XposedEntry : XposedModule() {
              *
              * 只处理命令行里真的会弹菜单的应用；模块自己的设置界面没有右键菜单，
              * 注入进去只会白装 hook，直接跳过。
+             *
+             * **系统进程一律不进来**：这条分支会在进程里 hook `AbsListView.setSelector` /
+             * `View.setLayoutParams` 这类框架全局方法，装进 system_server 是要出事的。
+             * 正常情况下 `packageName` 已经把它分到 [Target.SYSTEM_PACKAGE] 了，
+             * 这里再拦一道，防的是「包名/进程名对不上」的边角情况（例如热重载反推错了）。
              */
             else -> {
-                if (pkg != MODULE_PACKAGE) {
-                    L.i("event=package_ready package=$pkg process=$processName")
-                    HookPrefs.bind(this)
-                    appMenuHooks.install(cl)
+                if (pkg == MODULE_PACKAGE) return
+                if (ProcessNames.isSystemProcess(pkg) || ProcessNames.isSystemProcess(processName)) {
+                    L.w("event=install_skipped reason=system_process pkg=$pkg process=$processName")
+                    return
                 }
+                L.i("event=package_ready package=$pkg process=$processName")
+                HookPrefs.bind(this)
+                installWithRetry("app_menu") { appMenuHooks.install(cl) }
             }
         }
     }
@@ -248,15 +307,30 @@ class XposedEntry : XposedModule() {
         stylusSystemHooks.resetInstalled()
         appMenuHooks.resetInstalled()
         selectionToolbarHooks.resetInstalled()
-        installForPackage(param.processName.substringBefore(':'), cl)
+        retryCounts.clear()
+        // ★ 按**包名**分派，不能拿进程名当包名：
+        //   system_server 的 packageName 是 android，processName 却是 system / system_server，
+        //   早先 `processName.substringBefore(':')` 会让它掉进「普通应用」分支，
+        //   在 system_server 里装右键菜单域，同时光标/随手写不会重装。
+        val pkg = ProcessNames.packageOf(param.processName)
+        if (pkg == null) {
+            L.w("event=hot_reload_no_package process=${param.processName}（请重启目标进程）")
+            return
+        }
+        installForPackage(pkg, cl)
     }
 
     // ------------------------------------------------------------------ 安装
 
-    private fun installHooks(cl: ClassLoader) {
+    /**
+     * 装输入法外观那一批 Hook。
+     *
+     * @return true = 已装好（含「本来就装过」）；false = 一个都没装上，调用方可以重试。
+     */
+    private fun installHooks(cl: ClassLoader): Boolean {
         if (!installed.compareAndSet(false, true)) {
             L.i("event=install_skipped reason=already_installed")
-            return
+            return true
         }
         var ok = 0
 
@@ -296,7 +370,13 @@ class XposedEntry : XposedModule() {
                 }
             },
         )
-        if (ok == 0) installed.set(false)
+        if (ok == 0) {
+            // 一个都没装上：放掉幂等位，让 installWithRetry 能重来一次
+            installed.set(false)
+            L.w("event=install_failed target=ime_appearance process=$processName")
+            return false
+        }
+        return true
     }
 
     /**

@@ -151,11 +151,16 @@ public final class CursorHooks {
 
     // -------------------------------------------------------- system_server
 
-    /** 由 {@code XposedEntry} 在 system_server（scope: system）里调用。 */
-    public synchronized void installSystemHooks(ClassLoader cl) {
+    /**
+     * 由 {@code XposedEntry} 在 system_server（scope: system）里调用。
+     *
+     * @return true = 至少装了 1 个 hook；false = 都没装上，可以重试。
+     */
+    public synchronized boolean installSystemHooks(ClassLoader cl) {
         if (systemHooksInstalled) {
-            return;
+            return true;
         }
+        int ok = 0;
         // 1) 只读 aconfig flag 放行（总开关关掉时交回系统原值）
         try {
             Class<?> flags = cl.loadClass(CLS_FLAGS);
@@ -165,10 +170,12 @@ public final class CursorHooks {
                             .setId(name)
                             .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                             .intercept(chain -> HookPrefs.cursorEnabled() ? Boolean.TRUE : chain.proceed());
+                    ok++;
                 } catch (Throwable ignored) {
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            L.INSTANCE.w("event=cursor_flags_hook_failed msg=" + t);
         }
 
         // 2) 接管光标图标
@@ -211,11 +218,17 @@ public final class CursorHooks {
                             }
                             return chain.proceed();
                         });
+                ok++;
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            L.INSTANCE.w("event=cursor_pointer_hook_failed msg=" + t);
         }
 
-        systemHooksInstalled = true;
+        systemHooksInstalled = ok > 0;
+        if (ok == 0) {
+            L.INSTANCE.w("event=cursor_install_failed reason=target_not_found");
+        }
+        return ok > 0;
     }
 
     private static long iconKey(int displayId, int type) {

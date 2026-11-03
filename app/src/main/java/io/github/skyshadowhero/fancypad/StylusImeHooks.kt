@@ -215,18 +215,26 @@ class StylusImeHooks(private val module: XposedModule) {
     /** 停笔延迟到点后触发的识别任务；连续落笔会把它重置。 */
     private val recognizeTask = Runnable { recognizeAndCommit() }
 
-    fun install(cl: ClassLoader) {
-        if (installed) return
-        installed = true
-        imeClass = runCatching { cl.loadClass(CLS_MI_IME) }.getOrNull()
-        if (imeClass == null) {
-            L.w("event=stylus_ime_class_missing（随手写只在输入法进程生效）")
+    /**
+     * @return true = 已装好（含「本来就装过」）；false = 目标类还没加载出来，可以重试。
+     */
+    fun install(cl: ClassLoader): Boolean {
+        if (installed) return true
+        val ime = runCatching { cl.loadClass(CLS_MI_IME) }.getOrNull()
+        if (ime == null) {
+            // 不是输入法进程、或类还没就绪。此时装框架 Hook 也没意义（isTarget 恒为 false），
+            // 直接交回外层重试；三次之后明确放弃并落日志。
+            L.w("event=stylus_ime_class_missing（随手写只在输入法进程生效，稍后重试）")
+            return false
         }
+        imeClass = ime
+        installed = true
         resolveHcr(cl)
         hookStart()
         hookPrepare()
         hookMotion()
         hookFinish()
+        return true
     }
 
     // ------------------------------------------------------------------ 反射

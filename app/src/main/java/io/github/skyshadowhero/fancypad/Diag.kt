@@ -48,13 +48,7 @@ object Diag {
         }
     }
 
-    private fun fileFor(name: String): File {
-        val host = name.substringBefore(':')
-        val system = host == "system" || host == "android"
-        return if (system) {
-            File("/data/system/fancypad-diag.txt")
-        } else {
-            File("/data/data/$host/files/fancypad-diag.txt")
-        }
-    }
+    /** 系统进程的判定统一走 [ProcessNames]（`system` / `system_server` / `android` 三种写法都认）。 */
+    private fun fileFor(name: String): File =
+        File(ProcessNames.diagDir(name), "fancypad-diag.txt")
 }

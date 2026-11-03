@@ -127,11 +127,14 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
     }
     private val diagCount = AtomicInteger()
 
-    /** 由 [XposedEntry] 在 com.android.systemui 进程里调用。可重复调用。 */
-    fun install(classLoader: ClassLoader) {
-        if (installed) return
-        installed = true
-        try {
+    /**
+     * 由 [XposedEntry] 在 com.android.systemui 进程里调用。可重复调用。
+     *
+     * @return true = 已装好（含「本来就装过」）；false = 这次没装上，可以重试。
+     */
+    fun install(classLoader: ClassLoader): Boolean {
+        if (installed) return true
+        return try {
             val cls = classLoader.loadClass(CLS_TOOLBAR)
             val showInfo = classLoader.loadClass(CLS_SHOW_INFO)
             val show = cls.getDeclaredMethod("show", showInfo).apply { isAccessible = true }
@@ -150,9 +153,12 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
                     runCatching { restyle(self) }
                     result
                 }
+            installed = true
             L.i("event=selection_toolbar_installed class=$CLS_TOOLBAR")
+            true
         } catch (t: Throwable) {
             L.w("event=selection_toolbar_install_failed ${t.javaClass.simpleName}: ${t.message}")
+            false
         }
     }
 

@@ -74,14 +74,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // ONNX Runtime 的 native 库**不打进 APK**：本机系统里本来就有同版本的
-        // `/system_ext/lib64/libonnxruntime.so` + `libonnxruntime4j_jni.so`（都是 1.15.1），
-        // 实测普通应用进程按名字/绝对路径都能 dlopen。这里只保留 AAR 里的 Java 绑定类（约 95KB），
-        // 否则 arm64 的两个 .so 会白白多占 ~15MB。
-        jniLibs {
-            excludes += "**/libonnxruntime.so"
-            excludes += "**/libonnxruntime4j_jni.so"
-        }
     }
 }
 
@@ -131,7 +123,12 @@ dependencies {
     implementation("io.github.neoruaa.glasmio:glasmio-ui:0.1.1")
     implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
 
-    // 识别模型功能：ONNX Runtime 的 **Java 绑定**（native 库由系统提供，见上面的 packaging 排除）。
-    // 版本必须跟系统里那份 .so 一致（1.15.1），否则 JNI 签名对不上会 UnsatisfiedLinkError。
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.15.1")
+    // 识别模型功能：**不走 ONNX Runtime**。手写识别用的是小爱自带的讯飞 HCR
+    // （见 IflytekHcrEngine）和系统笔引擎（见 PencilEngine，挂 /system_ext 的
+    // xiaomi-pencilengine-pad.jar + ocr_model.tflite），都不需要额外依赖。
+    // 早先这里引过 onnxruntime-android 1.15.1（配了一堆「系统里有同版本 so」的说明），
+    // 但全工程从未引用过它的任何类 —— 已删除，别按旧注释加回来。
+
+    // 纯 JVM 单元测试：只测不依赖 Android 框架的纯逻辑（编解码 / 阈值 / 常量契约）
+    testImplementation("junit:junit:4.13.2")
 }

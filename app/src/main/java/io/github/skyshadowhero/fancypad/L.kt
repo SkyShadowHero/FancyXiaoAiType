@@ -60,6 +60,15 @@ object L {
     /** 采样限流：热路径上避免刷爆日志（每个 key 最多记 N 次） */
     private val counts = HashMap<String, Int>()
 
+    /**
+     * 超过采样上限之后，每这么多次补一条「仍在发生」的汇总。
+     *
+     * 早先是超过上限就**永久静默**：常驻的 system_server 里前 8 次之后再也不会出声，
+     * 排障时看到日志停在很久以前，很容易误判成「后来根本没走到这里」。
+     * 现在保留稀疏的上报：既不刷屏，也还能看出「现在还在命中」。
+     */
+    private const val SUPPRESS_REPORT_EVERY = 200
+
     fun sampled(key: String, limit: Int = 8, block: () -> String) {
         val n = synchronized(counts) {
             val c = (counts[key] ?: 0) + 1
@@ -68,6 +77,8 @@ object L {
         }
         if (n <= limit) {
             i("${block()} (sample $n/$limit)")
+        } else if (n % SUPPRESS_REPORT_EVERY == 0) {
+            i("${block()} (已超过采样上限 $limit，count=$n)")
         }
     }
 }

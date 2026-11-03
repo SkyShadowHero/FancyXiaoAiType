@@ -33,11 +33,18 @@ public final class EmbeddingHooks {
         this.module = module;
     }
 
-    /** 由 {@code XposedEntry} 在 com.android.systemui 进程里调用。 */
-    public synchronized void install(ClassLoader classLoader) {
+    /**
+     * 由 {@code XposedEntry} 在 com.android.systemui 进程里调用。
+     *
+     * @return true = 已装好（含「本来就装过」）；false = 一个都没装上，可以重试。
+     *         早先无论成败都把 {@code installed} 钉成 true，一次偶发的类加载失败
+     *         就等于这块功能永久失效到 SystemUI 重启。
+     */
+    public synchronized boolean install(ClassLoader classLoader) {
         if (installed) {
-            return;
+            return true;
         }
+        int ok = 0;
         try {
             Class<?> util = classLoader.loadClass(CLS_UTIL);
             Class<?> runner = classLoader.loadClass(CLS_RUNNER);
@@ -47,33 +54,47 @@ public final class EmbeddingHooks {
                     .setId("use_folme_engine")
                     .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                     .intercept(chain -> folmeDisabled() ? Boolean.FALSE : chain.proceed());
+            ok++;
 
             // 2) MIUI 运行时可切换 provider 的那个布尔参数，钉死为 false
-            hookIfPresent(util, "createTransitionAnimationProvider", 3, chain -> {
+            if (hookIfPresent(util, "createTransitionAnimationProvider", 3, chain -> {
                 if (!folmeDisabled()) {
                     return chain.proceed();
                 }
                 return chain.proceed(new Object[]{chain.getArg(0), chain.getArg(1), Boolean.FALSE});
-            });
+            })) {
+                ok++;
+            }
 
             // 3) 不合并转场：合并失败会把正在播的动画取消掉
-            hookIfPresent(runner, "mergeAnimation", 5, chain -> {
+            if (hookIfPresent(runner, "mergeAnimation", 5, chain -> {
                 if (mergeDisabled()) {
                     chain.proceed();
                     return Boolean.FALSE;
                 }
                 return chain.proceed();
-            });
+            })) {
+                ok++;
+            }
 
             // 4) 不跳切：跳切等于这次转场不播动画
-            hookIfPresent(runner, "shouldUseJumpCutForChangeTransition", 1,
-                    chain -> jumpCutDisabled() ? Boolean.FALSE : chain.proceed());
-            hookIfPresent(runner, "shouldUseJumpCutForAnimation", 1,
-                    chain -> jumpCutDisabled() ? Boolean.FALSE : chain.proceed());
-        } catch (Throwable ignored) {
-            // 目标版本不匹配时静默跳过，不影响 SystemUI
+            if (hookIfPresent(runner, "shouldUseJumpCutForChangeTransition", 1,
+                    chain -> jumpCutDisabled() ? Boolean.FALSE : chain.proceed())) {
+                ok++;
+            }
+            if (hookIfPresent(runner, "shouldUseJumpCutForAnimation", 1,
+                    chain -> jumpCutDisabled() ? Boolean.FALSE : chain.proceed())) {
+                ok++;
+            }
+        } catch (Throwable t) {
+            // 目标版本不匹配时跳过，不影响 SystemUI；一个都没装上才允许外层重试
+            L.INSTANCE.w("event=embedding_install_partial ok=" + ok + " msg=" + t);
         }
-        installed = true;
+        installed = ok > 0;
+        if (ok == 0) {
+            L.INSTANCE.w("event=embedding_install_failed reason=target_not_found");
+        }
+        return ok > 0;
     }
 
     private static boolean folmeDisabled() {
@@ -89,7 +110,7 @@ public final class EmbeddingHooks {
     }
 
     /** 按「方法名 + 参数个数」定位，避免不同模块版本签名漂移时整体失效。 */
-    private void hookIfPresent(Class<?> cls, String name, int paramCount, XposedInterface.Hooker hooker) {
+    private boolean hookIfPresent(Class<?> cls, String name, int paramCount, XposedInterface.Hooker hooker) {
         for (Method method : cls.getDeclaredMethods()) {
             if (!name.equals(method.getName()) || method.getParameterCount() != paramCount) {
                 continue;
@@ -100,10 +121,12 @@ public final class EmbeddingHooks {
                         .setId(name + "_" + paramCount)
                         .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                         .intercept(hooker);
-            } catch (Throwable ignored) {
-                // 单个 hook 失败不影响其它
+                return true;
+            } catch (Throwable t) {
+                L.INSTANCE.w("event=embedding_hook_failed target=" + name + " msg=" + t);
+                return false;
             }
-            return;
         }
+        return false;
     }
 }

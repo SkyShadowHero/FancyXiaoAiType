@@ -3,6 +3,7 @@ package io.github.skyshadowhero.fancypad
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.ParcelFileDescriptor
+import io.github.libxposed.service.HookedTarget
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 
@@ -65,6 +66,32 @@ object RemoteConfig {
      * 不在 RemotePreferences 里。三个功能域共用这一个连接，不再各自注册监听器。
      */
     fun service(): XposedService? = service
+
+    // ---------------------------------------------------------- 框架 / 作用域
+
+    /** 框架 API 版本（101 / 102…）；未连接返回 -1。 */
+    fun apiVersion(): Int = runCatching { service?.apiVersion ?: -1 }.getOrDefault(-1)
+
+    /** 框架名（如 LSPosed）；未连接返回 null。 */
+    fun frameworkName(): String? = runCatching { service?.frameworkName }.getOrNull()
+
+    /**
+     * 当前 LSPosed 作用域（包名集合）。
+     *
+     * 首页卡片与「功能」页置灰都读它：作用域里没有目标包，注入根本不会发生，
+     * 那个域即使开关打开也不会生效。未连接时返回空集合（全部按「未加入」处理）。
+     */
+    fun scope(): Set<String> = runCatching {
+        service?.scope?.toSet() ?: emptySet()
+    }.getOrDefault(emptySet())
+
+    /**
+     * 正在被注入的进程（API 102 起）。用来区分「已生效」与「开了但进程还没重启」。
+     */
+    fun runningTargets(): List<HookedTarget> = runCatching {
+        val s = service ?: return emptyList()
+        if (s.apiVersion < XposedService.API_102) emptyList() else s.runningTargets
+    }.getOrDefault(emptyList())
 
     /** Remote Files 列表；未连接或出错时返回空列表。 */
     fun listRemoteFiles(): List<String> = try {

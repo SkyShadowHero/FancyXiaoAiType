@@ -155,15 +155,6 @@ class AppMenuHooks(private val module: XposedInterface) {
     private val lastAnimated = WeakHashMap<Any, Long>()
 
     /**
-     * 已知的菜单行 → 它该用的高亮 drawable。
-     *
-     * 用途见 [install] 里对 `View.setBackground` 的 hook：框架那套菜单（`MenuDropDownListView`）
-     * 是**在 hover 的时候**才往行上塞高亮背景的 —— 那发生在我们改造之后，
-     * 于是它和我们的 selector 叠在一起，表现就是「第二种菜单的遮罩更深、而且切换是闪现」。
-     */
-    private val rowHighlights = WeakHashMap<View, MiuixHighlightDrawable>()
-
-    /**
      * 每个弹窗实例「高亮原本挂在哪一层」的判定结果。
      *
      * 必须缓存：第一轮 restyle 就会把行背景里的 `RippleDrawable` 清掉，后面几轮重新判会
@@ -189,10 +180,16 @@ class AppMenuHooks(private val module: XposedInterface) {
 
     private val diagCount = AtomicInteger()
 
-    /** 由 [XposedEntry] 在目标应用进程里调用。可重复调用。 */
-    fun install(classLoader: ClassLoader) {
-        if (installed) return
-        installed = true
+    /**
+     * 由 [XposedEntry] 在目标应用进程里调用。可重复调用。
+     *
+     * @return true = 已装好（含「本来就装过」）；false = 一个都没装上，可以重试。
+     *
+     * 一旦有 hook 装上了就不再重试：这几个 Hook 挂在框架全局方法上，重复注册会把
+     * 同一个调用点叠加多层拦截，比「少装一个」危险得多。
+     */
+    fun install(classLoader: ClassLoader): Boolean {
+        if (installed) return true
         var ok = 0
         try {
             val cls = PopupWindow::class.java
@@ -254,27 +251,11 @@ class AppMenuHooks(private val module: XposedInterface) {
                 }
             ok++
 
-            // 行背景的兜底：框架在 hover 时会给行重新设背景（瞬时高亮），
-            // 对我们的菜单行一律替换成自己的动画高亮 —— 同一个槽位，不会叠加。
-            val setBackground = View::class.java
-                .getDeclaredMethod("setBackground", android.graphics.drawable.Drawable::class.java)
-            module.hook(setBackground)
-                .setId("appmenu_set_background")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val view = chain.getThisObject() as? View
-                    val replacement = if (view != null) {
-                        synchronized(rowHighlights) { rowHighlights[view] }
-                    } else {
-                        null
-                    }
-                    if (replacement != null) {
-                        chain.proceed(arrayOf<Any?>(replacement))
-                    } else {
-                        chain.proceed()
-                    }
-                }
-            ok++
+            // 注：这里曾经 hook `View.setBackground`，想把框架 hover 时塞回来的行背景
+            // 换成自己的动画高亮。但真正生效的槽位是 `foreground` 与 `ListView.selector`
+            // （见 applyMiuixHighlight），对应的 rowHighlights 映射从来没有被写入过 ——
+            // 等于在目标应用里白挂一个框架全局方法、每次 setBackground 还要抢一把锁。
+            // 已删除；要恢复请先确认真的有代码往那个映射里放东西。
 
             // 框架在 hover 时会把自己的 selector 塞回 ListView（实测就是「切换项没有过渡」的原因：
             // 我的 drawable 被换掉了）。这里拦截 setSelector，凡是我们的菜单列表，
@@ -330,10 +311,13 @@ class AppMenuHooks(private val module: XposedInterface) {
                 }
             ok++
         } catch (t: Throwable) {
-            L.w("event=app_menu_install_failed ${t.javaClass.simpleName}: ${t.message}")
-            return
+            L.w("event=app_menu_install_failed hooks=$ok ${t.javaClass.simpleName}: ${t.message}")
+            installed = ok > 0
+            return ok > 0
         }
+        installed = true
         L.i("event=app_menu_installed hooks=$ok")
+        return ok > 0
     }
 
     // ------------------------------------------------------------------ 判定

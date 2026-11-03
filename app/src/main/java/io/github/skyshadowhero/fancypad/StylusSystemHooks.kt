@@ -71,12 +71,17 @@ class StylusSystemHooks(private val module: XposedModule) {
     @Volatile
     private var securityCenterInstalled = false
 
-    /** system_server（作用域 `system`）：声明两道闸。 */
-    fun install(cl: ClassLoader) {
-        if (installed) return
-        installed = true
-        hookInputMethodInfo(cl)
-        hookBindingController(cl)
+    /**
+     * system_server（作用域 `system`）：声明两道闸。
+     *
+     * @return true = 至少一道装上了；false = 都没装上，可以重试。
+     */
+    fun install(cl: ClassLoader): Boolean {
+        if (installed) return true
+        val imi = hookInputMethodInfo(cl)
+        val bc = hookBindingController(cl)
+        installed = imi || bc
+        return installed
     }
 
     /**
@@ -84,11 +89,13 @@ class StylusSystemHooks(private val module: XposedModule) {
      *
      * 这里没有 `InputMethodBindingController`（那是 system_server 的类）。
      * 装它的目的见类注释：让 `p()` 的第一行判断对小爱返回 true，它就不改写 `default_input_method` 了。
+     *
+     * @return true = 装上了；false = `InputMethodInfo` 还没就绪，可以重试。
      */
-    fun installForSecurityCenter(cl: ClassLoader) {
-        if (securityCenterInstalled) return
-        securityCenterInstalled = true
-        hookInputMethodInfo(cl)
+    fun installForSecurityCenter(cl: ClassLoader): Boolean {
+        if (securityCenterInstalled) return true
+        securityCenterInstalled = hookInputMethodInfo(cl)
+        return securityCenterInstalled
     }
 
     /**
@@ -97,9 +104,11 @@ class StylusSystemHooks(private val module: XposedModule) {
      * MIUI 与 AOSP 共同的判定源，小爱为 false 的根因就在这里。改成 true 之后
      * `onImeConnected()` 会把 true 同步进 binding controller，`HandwritingConfigManager`
      * 也不会再把总闸写回 0。
+     *
+     * @return 是否装上（类/方法缺失时返回 false，调用方可重试）。
      */
-    private fun hookInputMethodInfo(cl: ClassLoader) {
-        try {
+    private fun hookInputMethodInfo(cl: ClassLoader): Boolean {
+        return try {
             val cls = cl.loadClass("android.view.inputmethod.InputMethodInfo")
             val getter = cls.getDeclaredMethod("supportsStylusHandwriting")
             module.hook(getter)
@@ -115,8 +124,10 @@ class StylusSystemHooks(private val module: XposedModule) {
                     }
                 }
             L.i("event=stylus_hook_imi_installed")
+            true
         } catch (t: Throwable) {
             L.e("event=stylus_hook_imi_failed", t)
+            false
         }
     }
 
@@ -128,8 +139,8 @@ class StylusSystemHooks(private val module: XposedModule) {
      * （App 侧 `isStylusHandwritingAvailable()` 有 PropertyInvalidatedCache，不是每次移动都调），
      * 所以直接反射读字段即可，不做额外缓存。
      */
-    private fun hookBindingController(cl: ClassLoader) {
-        try {
+    private fun hookBindingController(cl: ClassLoader): Boolean {
+        return try {
             val cls = cl.loadClass(CLS_BINDING_CONTROLLER)
             val getter = cls.getDeclaredMethod("getSupportsStylusHandwriting")
                 .apply { isAccessible = true }
@@ -149,8 +160,10 @@ class StylusSystemHooks(private val module: XposedModule) {
                     }
                 }
             L.i("event=stylus_hook_binding_controller_installed")
+            true
         } catch (t: Throwable) {
             L.e("event=stylus_hook_binding_controller_failed", t)
+            false
         }
     }
 

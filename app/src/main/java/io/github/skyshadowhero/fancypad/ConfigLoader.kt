@@ -64,23 +64,34 @@ object ConfigLoader {
     @Volatile
     private var cachedAtMs: Long = 0L
 
+    /**
+     * 缓存是否有效。
+     *
+     * 不能拿 `cachedAtMs == 0` 当哨兵：`SystemClock.uptimeMillis()` 从开机起算，
+     * 开机后第一秒内 `now - 0 < CACHE_TTL_MS` 会被判成「还没过期」，
+     * 于是返回 [Cfg.DEFAULT] 而不是真配置。用显式布尔位彻底避开这个边界。
+     */
+    @Volatile
+    private var cacheValid: Boolean = false
+
     /** 让缓存失效（配置变更 / 重新 attach 时调用）。 */
     fun invalidate() {
-        cachedAtMs = 0L
+        cacheValid = false
     }
 
     /** 完整配置快照（带缓存，见 [CACHE_TTL_MS] 的说明）。 */
     fun snapshot(): Cfg {
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - cachedAtMs < CACHE_TTL_MS) return cachedCfg
+        if (cacheValid && now - cachedAtMs < CACHE_TTL_MS) return cachedCfg
         return synchronized(this) {
             val t = android.os.SystemClock.uptimeMillis()
-            if (t - cachedAtMs < CACHE_TTL_MS) {
+            if (cacheValid && t - cachedAtMs < CACHE_TTL_MS) {
                 cachedCfg
             } else {
                 build().also {
                     cachedCfg = it
                     cachedAtMs = t
+                    cacheValid = true
                 }
             }
         }

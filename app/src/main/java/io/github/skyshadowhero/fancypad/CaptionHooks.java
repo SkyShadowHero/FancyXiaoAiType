@@ -170,20 +170,41 @@ public final class CaptionHooks {
         this.module = module;
     }
 
-    /** 由 {@code XposedEntry} 在 {@code com.android.systemui} 进程里调用。 */
-    public void install(ClassLoader classLoader) {
-        if (!installed.compareAndSet(false, true)) {
-            return;
+    /**
+     * 由 {@code XposedEntry} 在 {@code com.android.systemui} 进程里调用。
+     *
+     * @return true = 已装好（含「本来就装过」）；false = 目标还没就绪，可以重试。
+     *
+     * <p>只有**预检**（资源 ID + 两个类）失败才返回 false：那是「SystemUI 还没走到这一步」
+     * 或版本不符，晚一点重试有意义。预检通过后各 hook 自己兜异常，装完就置位 ——
+     * 之后再重试会把同一个方法重复 Hook 一遍，反而危险。
+     */
+    public synchronized boolean install(ClassLoader classLoader) {
+        if (installed.get()) {
+            return true;
         }
+        final int closeIcon;
+        final Class<?> frameCls;
+        final Class<?> stateCls;
         try {
-            closeIconId = resolveResId(classLoader, CLS_R_DRAWABLE, CLOSE_ICON_NAME);
-            if (closeIconId == 0) {
-                L.INSTANCE.w("event=caption_hook_skipped reason=drawable_not_resolved name="
+            closeIcon = resolveResId(classLoader, CLS_R_DRAWABLE, CLOSE_ICON_NAME);
+            if (closeIcon == 0) {
+                L.INSTANCE.w("event=caption_hook_not_ready reason=drawable_not_resolved name="
                         + CLOSE_ICON_NAME);
-                return;
+                return false;
             }
-            frameLayoutCls = classLoader.loadClass(CLS_FRAME_LAYOUT);
-            stateButtonCls = classLoader.loadClass(CLS_STATE_BUTTON);
+            frameCls = classLoader.loadClass(CLS_FRAME_LAYOUT);
+            stateCls = classLoader.loadClass(CLS_STATE_BUTTON);
+        } catch (Throwable t) {
+            L.INSTANCE.w("event=caption_hook_not_ready msg=" + t);
+            return false;
+        }
+
+        installed.set(true);
+        closeIconId = closeIcon;
+        frameLayoutCls = frameCls;
+        stateButtonCls = stateCls;
+        try {
             newWindowIconId = resolveResId(classLoader, CLS_R_DRAWABLE, NEW_WINDOW_ICON_NAME);
             pressSelectorId = resolveResId(classLoader, CLS_R_DRAWABLE, PRESS_SELECTOR_NAME);
 
@@ -214,6 +235,7 @@ public final class CaptionHooks {
         } catch (Throwable t) {
             L.INSTANCE.e("event=hook_failed target=caption_container", t);
         }
+        return true;
     }
 
     // ------------------------------------------------------------------ 1) × → −

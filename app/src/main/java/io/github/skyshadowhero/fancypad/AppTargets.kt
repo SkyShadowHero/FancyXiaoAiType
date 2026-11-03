@@ -351,6 +351,9 @@ object TargetCatalog {
                         "（最高分 $score/$MAX_SCORE，低于 $MIN_ACCEPT）；" +
                         "按类名定位的功能不可用，资源类功能不受影响"
                 )
+                // 允许外层重试：类可能只是还没加载好。真正的新版本重试几次依旧会走到这里，
+                // 代价只是多扫一遍候选类（24 次 loadClass），远小于「一次偶发失败就永久降级」。
+                attempted = false
                 return null
             }
             if (score == runnerUp) {
@@ -359,6 +362,7 @@ object TargetCatalog {
                         "（${scored.joinToString { "${it.first.label}=${it.second}" }}）；" +
                         "为避免指错混淆名，按类名定位的功能本次不启用"
                 )
+                attempted = false
                 return null
             }
 
