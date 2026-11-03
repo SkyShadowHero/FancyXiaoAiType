@@ -171,6 +171,38 @@ private fun HomeStatusCardContent(
     statusText: String,
     staleCount: Int,
 ) {
+    if (!healthy) {
+        // 「模块未激活」：标题 + 一句指引 + 右侧大图标（与参考设计一致）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 128.dp)
+                .padding(start = 18.dp, top = 18.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("模块未激活", style = DsTheme.textStyles.headline, color = primaryText)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "请在 LSPosed 中启用并重启系统界面",
+                    style = DsTheme.textStyles.body1,
+                    color = primaryText,
+                )
+            }
+            Box(
+                modifier = Modifier.width(96.dp).height(96.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                StatusMark(
+                    healthy = false,
+                    color = accent,
+                    modifier = Modifier.offset(x = 18.dp),
+                )
+            }
+        }
+        return
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()

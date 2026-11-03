@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
@@ -65,9 +69,14 @@ fun PageScaffold(
     header: (@Composable () -> Unit)? = null,
     bottomBar: (@Composable () -> Unit)? = null,
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
+    /** 宽屏分栏分隔线：画在模糊层之上、并随页面转场一起动（进/出与预测性返回同步）。 */
+    sidebarDivider: Boolean = false,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val backdrop = if (isGlasmio) rememberTopBlurBackdrop(DsTheme.colorScheme.surface) else rememberTopBlurBackdrop()
+    // 外层 Box 只为了把「分栏分隔线」画在内容（以及 progressive blur 的 backdrop）之上：
+    // 这样它既不会被顶栏模糊糊掉，又会跟随页面转场/预测性返回一起进出。
+    Box(modifier = Modifier.fillMaxSize()) {
     if (isGlasmio) {
         val glassBackdrop = rememberGlassLayerBackdrop()
         var glassScrollOffset by remember { mutableFloatStateOf(0f) }
@@ -177,6 +186,16 @@ fun PageScaffold(
                     content(innerPadding)
                 }
             }
+        }
+    }
+        if (sidebarDivider) {
+            Box(
+                modifier = Modifier
+                    .padding(start = DomainSidebarWidth, top = 56.dp)
+                    .fillMaxHeight()
+                    .width(0.5.dp)
+                    .background(DsTheme.colorScheme.separator),
+            )
         }
     }
 }

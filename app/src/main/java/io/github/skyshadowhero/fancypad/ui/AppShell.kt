@@ -625,24 +625,6 @@ fun AppShell(
     }
     // 宽屏分栏的分隔线：画在内容层（layerBackdrop）之外，所以不会被顶栏的
     // progressive blur 采样；从顶栏下沿开始，不盖住标题栏。
-    androidx.compose.animation.AnimatedVisibility(
-        visible = isWideLayout() && (current as? RouteDomain)?.scope?.pages?.size?.let { it > 1 } == true,
-        modifier = Modifier.align(Alignment.TopStart),
-        // 和页面转场同向淡入，避免「线先出现、页面后到」
-        // 慢一点浮现：等页面基本到位后再淡入，避免和页面抢注意力
-        enter = androidx.compose.animation.fadeIn(
-            androidx.compose.animation.core.tween(durationMillis = 360, delayMillis = 140),
-        ),
-        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)),
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(start = DomainSidebarWidth, top = PAGE_BAR_HEIGHT)
-                .fillMaxHeight()
-                .width(0.5.dp)
-                .background(DsTheme.colorScheme.separator),
-        )
-    }
     // 悬浮底栏：只在一级标签页出现，浮在内容之上一层（内容会从它下面滚过）。
     // 进出二级页面时跟着页面的转场一起滑出/滑入，而不是直接消失。
     androidx.compose.animation.AnimatedVisibility(
@@ -1016,6 +998,8 @@ private fun NavPages(
                     route = domain,
                     scaffoldPadding = pagePadding,
                     header = { if (!isWideLayout()) DomainTabs(domain.scope, domainPager) },
+                    // 分栏分隔线交给页面自己画：随页面转场/预测性返回一起进出
+                    sidebarDivider = isWideLayout() && domain.scope.pages.size > 1,
                 ) {
                     DomainHost(
                         scope = domain.scope,

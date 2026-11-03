@@ -33,6 +33,16 @@ object RemoteConfig {
         try {
             XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
                 override fun onServiceBind(s: XposedService) {
+        // 补写 service 未就绪期间被排队的设置
+        runCatching {
+            val p = prefs() ?: return@runCatching
+            while (pendingWrites.isNotEmpty()) {
+                val block = pendingWrites.removeAt(0)
+                val e = p.edit()
+                block(e)
+                e.apply()
+            }
+        }
                     service = s
                     L.i("event=service_bound framework=${s.frameworkName} version=${s.frameworkVersion}")
                     onServiceReady?.invoke()
@@ -127,10 +137,14 @@ object RemoteConfig {
     }
 
     /** 统一写入口，异常不外抛。 */
+    /** service 未就绪时把写入排队，绑定成功后补写，避免「开关自己关掉」。 */
+    private val pendingWrites = java.util.concurrent.CopyOnWriteArrayList<(android.content.SharedPreferences.Editor) -> Unit>()
+
     fun edit(block: (SharedPreferences.Editor) -> Unit): Boolean = try {
         val p = prefs()
         if (p == null) {
-            L.w("event=write_skipped reason=service_not_ready")
+            L.w("event=write_queued reason=service_not_ready")
+            if (pendingWrites.size < 64) pendingWrites.add(block)
             false
         } else {
             val editor = p.edit()

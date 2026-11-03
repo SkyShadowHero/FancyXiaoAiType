@@ -49,6 +49,7 @@ fun PageSurface(
     bottomBar: (@Composable () -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
+    sidebarDivider: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val title = when {
@@ -72,6 +73,7 @@ fun PageSurface(
             title = title,
             canGoBack = canGoBack,
             onBack = LocalPageOnBack.current,
+            sidebarDivider = sidebarDivider,
             header = resolvedHeader,
             bottomBar = bottomBar ?: LocalPageBottomBar.current,
             scaffoldPadding = scaffoldPadding,
