@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,23 +23,27 @@ import io.github.skyshadowhero.fancypad.BuildConfig
 import io.github.skyshadowhero.fancypad.L
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.UpdateChecker
+import io.github.skyshadowhero.fancypad.ui.ds.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import io.github.skyshadowhero.fancypad.ui.ds.*
 
 /** 项目仓库地址 */
 private const val REPO_URL = "https://github.com/SkyShadowHero/FancyXiaoAiType"
 
 /**
- * 「关于」页：外观 + 版本（检查更新）+ 项目仓库。
+ * 「信息」页：原来散在「关于」和「功能」页底部的设置都收到这里。
+ *
+ * 结构（和 miuix example 的 Settings 页同一套卡片分组）：
+ * 外观 → 主题设置；版本 → 检查更新；作用域 → 每个功能域缺哪个包；项目 → 仓库。
  *
  * 检查更新读 GitHub 的 tag：先用 releases/latest，仓库还没建 release 时退回 tags 列表。
- * 查到新版本会弹窗展示更新说明，再点「前往下载」跳浏览器。
  */
 @Composable
-fun AboutPage(
+fun InfoPage(
     uiState: AppUiState,
+    scopePackages: Set<String>,
+    onTheme: () -> Unit,
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
@@ -65,15 +70,26 @@ fun AboutPage(
     }
 
     LazyColumn(
-        modifier = Modifier.padding(padding),
+        modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(
             start = 12.dp,
             end = 12.dp,
             top = scaffoldPadding.calculateTopPadding() + 8.dp,
             bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, androidx.compose.ui.Alignment.Top),
     ) {
+        item { SmallTitle("外观") }
+        item {
+            Card {
+                ArrowPreference(
+                    title = "主题设置",
+                    summary = if (uiState.uiTheme == 1) "Glasmio（iOS 液态玻璃）" else "Miuix（HyperOS 风格）",
+                    onClick = onTheme,
+                )
+            }
+        }
+
         item { SmallTitle("版本") }
         item {
             Card {
@@ -89,7 +105,6 @@ fun AboutPage(
                         else -> "当前版本 $current"
                     },
                     onClick = {
-                        // 已经查到新版本时点一下先看说明，而不是重新检查
                         if (update != null) showUpdateDialog = true else startCheck()
                     },
                 )
@@ -102,9 +117,7 @@ fun AboutPage(
                 ArrowPreference(
                     title = "GitHub 仓库",
                     summary = REPO_URL,
-                    onClick = {
-                        runCatching { uriHandler.openUri(REPO_URL) }
-                    },
+                    onClick = { runCatching { uriHandler.openUri(REPO_URL) } },
                 )
             }
         }

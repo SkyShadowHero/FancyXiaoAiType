@@ -203,7 +203,23 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     // 主题先用本地缓存渲染首帧，避免每次冷启动先闪一下 Miuix 再变成 Glasmio；
     // 远端配置读进来之后以远端为准（见下面的 loadConfigInto）。
     val uiState = remember { AppUiState().also { it.uiTheme = ThemeCache.read(context) } }
-    val navigationEventOwner = rememberNavigationEventDispatcherOwner(parent = null)
+    // ★ 必须用**宿主自己的**返回分发器（ComponentActivity 在 onCreate 里把它挂到 decorView 的
+    //   ViewTree 上，`LocalNavigationEventDispatcherOwner` 会自动解析到它）。
+    //
+    //   早先这里是 `rememberNavigationEventDispatcherOwner(parent = null)`：按 libxposed 无关的
+    //   navigationevent 文档，parent 显式为 null 会建一条**游离的 root dispatcher**，
+    //   "you must use a NavigationEventInput to send it events. Otherwise, the dispatcher will be
+    //   detached and will not receive events." —— 结果就是 NavDisplay 的返回处理永远收不到系统返回，
+    //   事件落到 Activity 上直接把应用关掉（「无论在哪里返回都会退出」就是这么来的）。
+    //
+    //   只有宿主确实没提供时（非 ComponentActivity、或旧版 activity）才退回自建 root，
+    //   此时返回手势不可用，但不至于崩。
+    val ambientNavOwner = LocalNavigationEventDispatcherOwner.current
+    val fallbackNavOwner = if (ambientNavOwner == null) {
+        rememberNavigationEventDispatcherOwner(parent = null)
+    } else {
+        null
+    }
     // 进入应用时先直接取当前状态：RemoteConfig.init() 在 Application.onCreate 里就已经
     // 发起绑定，通常到这一帧已经绑好了，那就不必等。
     var serviceReady by remember { mutableStateOf<Boolean?>(RemoteConfig.isReady) }
@@ -244,11 +260,12 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     }
 
     CompositionLocalProvider(
-        LocalNavigationEventDispatcherOwner provides navigationEventOwner,
+        LocalNavigationEventDispatcherOwner provides (ambientNavOwner ?: fallbackNavOwner!!),
     ) {
         // 路由栈放在主题外层：切主题会重建整棵界面树，路由栈留在这里就不会被重置，
         // 用户点完「Glasmio」还停在主题设置页，能立刻看到当前页换了皮。
-        val backStack = remember { navBackStackOf(RouteScopes) }
+        // 根路由是 RouteHome（首页/功能/信息三个标签在它内部），不再是功能列表。
+        val backStack = remember { navBackStackOf(RouteHome) }
         AppTheme(uiStyle = UiStyle.of(uiState.uiTheme), colorMode = uiState.themeMode) {
             AppShell(
                 uiState = uiState,

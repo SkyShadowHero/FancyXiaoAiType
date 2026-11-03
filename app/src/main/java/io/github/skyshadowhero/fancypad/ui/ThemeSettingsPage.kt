@@ -104,8 +104,3 @@ fun ThemeSettingsPage(
 
     }
 }
-
-private fun UiStyle.description(): String = when (this) {
-    UiStyle.Miuix -> "HyperOS 风格：跟系统设置一致的圆角、配色与动效（默认）"
-    UiStyle.Glasmio -> "iOS 27 液态玻璃：毛玻璃、折射高光与 iOS 的控件与动效"
-}

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.LocalIndication
 import io.github.neoruaa.glasmio.ui.GlasmioIconButton
+import io.github.neoruaa.glasmio.ui.GlasmioTopBar
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.zIndex
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
@@ -33,6 +35,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -64,7 +68,7 @@ import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
 import kotlinx.coroutines.delay
 
 /**
- * iOS 风格顶栏：标题真正居中、左侧返回、右侧动作。
+ * iOS 风格顶栏：由 Glasmio 的 TopBar 和 toolbar action group 负责标题与玻璃按钮。
  *
  * 高度固定 56dp（不含状态栏），两个方向都一样 —— 之前按「一级页大标题 / 二级页小标题」
  * 切换会让内容区高度在导航时突变（标题消失、内容闪一下再上移），现在统一高度没有这个跳变。
@@ -79,75 +83,31 @@ fun GlasmioNavBar(
     onBack: () -> Unit,
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
-    val colors = DsTheme.colorScheme
-    // 顶栏自己不画底色：模糊层由 AppShell 用 Miuix 的 progressive blur 铺在它下面
-    //（内容被录进 layerBackdrop，顶栏再采样它）。这里留透明，模糊才透得出来。
     Column(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-        ) {
-            // 返回按钮：完全照 demo 的 header action 出现/消失 ——
-            // alpha = p、scale = 0.2 + 0.8p、blur = 10dp * (1 - p)（见 glassActionAppear）。
-            val backProgress by animateFloatAsState(
-                targetValue = if (canGoBack) 1f else 0f,
-                animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
-                label = "backButton",
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 8.dp)
-                    .glassActionAppear(backProgress),
-            ) {
-                GlasmioIconButton(onClick = onBack, enabled = canGoBack) {
-                    // demo 里返回箭头就是工具栏的 glass 图标按钮：SfIcon(ChevronBack, mirrored = true)，
-                    // 尺寸用 Glasmio 自己的 iconButtonSize，不写死。
-                    SfIcon(
-                        symbol = SfSymbol.ChevronBack,
-                        contentDescription = "返回",
-                        mirrored = true,
-                        tint = colors.accent,
-                    )
+        GlasmioTopBar(
+            title = title,
+            subtitle = subtitle.takeIf { it.isNotBlank() },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            navigation = if (canGoBack) {
+                {
+                    GlasmioIconButton(onClick = onBack) {
+                        SfIcon(
+                            symbol = SfSymbol.ChevronBack,
+                            contentDescription = "返回",
+                            mirrored = true,
+                            tint = DsTheme.colorScheme.accent,
+                        )
+                    }
                 }
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 72.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = title,
-                    style = DsTheme.textStyles.headline,
-                    color = colors.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = DsTheme.textStyles.footnote1,
-                        color = colors.onBackgroundVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
-                    .height(44.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                content = actions,
-            )
-        }
+            } else {
+                null
+            },
+            actions = actions,
+        )
     }
 }
 
@@ -157,17 +117,21 @@ fun <T> DsSegmentedRow(
     items: List<Pair<T, String>>,
     selected: T,
     onSelected: (T) -> Unit,
+    positionAnimation: Animatable<Float, AnimationVector1D>? = null,
     modifier: Modifier = Modifier,
 ) {
-    GlasmioSegmentedControl(
-        items = items,
-        selected = selected,
-        onSelected = onSelected,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        height = 34.dp,
-    )
+    Box(modifier = modifier.fillMaxWidth()) {
+        GlasmioSegmentedControl(
+            items = items,
+            selected = selected,
+            onSelected = onSelected,
+            positionAnimation = positionAnimation,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            height = 34.dp,
+        )
+    }
 }
 
 /**

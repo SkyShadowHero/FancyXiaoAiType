@@ -18,7 +18,10 @@
 | AOSP长按菜单 | `com.android.systemui` | 文本选择浮动工具栏改用 Miuix 外观 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
 
-各功能域的开关与参数都在同一个 App 里，界面统一用 **Miuix 0.9.4（Compose）**，平板 ≥840dp 走左侧栏、窄屏走底部菜单。
+各功能域的开关与参数都在同一个 App 里。界面有**两套皮**（设置 →「主题设置」里切换）：
+默认 **Miuix 0.9.4（HyperOS 风格）**，可切到 **Glasmio 0.1.1（iOS 27 液态玻璃）**；
+两套共用同一套页面与路由，只是外壳与控件不同。平板 ≥840dp 走左侧栏、窄屏走底部菜单
+（Glasmio 用顶部分段控件）。
 
 ## 开关
 
@@ -26,6 +29,7 @@
 - **平行窗口**：`恢复 AOSP 原生动画`（总开关）+ `禁用 Folme 引擎` / `禁止转场合并` / `禁止跳切` 三个子开关。
 - **随手写**：`随手写（触控笔手写）`（总开关，默认关）+ 停笔识别延迟 + **笔迹显示**（开关 / 颜色 / 粗细 px）+ `让小爱进入随手写白名单`（默认**开**，见下文）。
 - **输入法外观**：每个功能组各自一个开关（分离键盘、按键圆角、按键间距、候选词、悬浮键盘栏、超级材质、悬浮键盘大小…），沿用原 FancyType 的行为。
+- **界面外观**：设置页 →「主题设置」→ `Miuix` / `Glasmio` 两套皮，另可选明暗与莫奈配色。只影响模块自己的设置界面，不影响 Hook 效果。
 
 ### 随手写为什么白名单默认是「开」
 
@@ -36,8 +40,8 @@
 | 项目 | 说明 |
 |---|---|
 | 设备 | 小米平板 `2410CRP4CC`（uke）/ HyperOS 4.0 / Android 17（SDK 37） |
-| 框架 | LSPosed（libxposed API 102） |
-| 目标输入法 | 超级小爱输入法 `com.xiaomi.type`（已验证 0.2.910 ~ 0.2.1053） |
+| 框架 | LSPosed（libxposed **API 102**；模块 `minApiVersion=102`，用了 102 才有的热重载回调与 `libxposed:service`） |
+| 目标输入法 | 超级小爱输入法 `com.xiaomi.type`（已验证 0.2.910 ~ 0.2.1246） |
 | 最低 Android | 15（minSdk 35） |
 
 ## 安装
@@ -59,11 +63,17 @@
 | AGP | 9.2.1 |
 | Kotlin Compose 插件 | 2.4.20 |
 | Miuix | 0.9.4 |
+| Glasmio | 0.1.1 |
 
 ```bash
 echo "sdk.dir=/path/to/Android/SDK" > local.properties
-./gradlew :app:assembleDebug        # 或 assembleRelease
+./gradlew :app:assembleDebug         # 或 assembleRelease
+./gradlew :app:testDebugUnitTest     # 纯 JVM 单测：进程名归一 / 清单编解码 / 阈值 / 常量契约
 ```
+
+> 单测只覆盖**不依赖 Android 框架**的纯逻辑（`ProcessNames`、`MaterialPackages`、
+> `SpaceWarning`、`Target`/`PrefKeys` 的常量契约）。Hook 与 UI 仍靠真机验收，
+> 截图与 uiautomator dump 存在同级目录 `_shots/`。
 
 Termux 上可直接用：
 
@@ -78,25 +88,32 @@ bash ~/build-fancytype.sh           # 指向本工程，构建 debug
 ```
 app/src/main/
 ├── java/io/github/skyshadowhero/fancypad/
-│   ├── XposedEntry.kt        # 唯一入口：按进程分发各功能域
+│   ├── XposedEntry.kt        # 唯一入口：按包名分发各功能域 + 失败重试 + 热重载
+│   ├── ProcessNames.kt       # 进程名 → 包名归一（system / system_server / android）
 │   ├── HookPrefs.java        # Hook 侧开关缓存（各进程共用）
-│   ├── ConfigLoader.kt       # 输入法侧配置快照
-│   ├── Target.kt / AppTargets.kt  # 输入法侧按版本分档的混淆名
+│   ├── ConfigLoader.kt       # 输入法侧配置快照（1000ms 缓存 + 变更立即失效）
+│   ├── Target.kt / AppTargets.kt  # 资源名表 / 按版本分档的混淆名
 │   ├── CursorHooks.java      # [system] 光标接管
 │   ├── CursorIcons.java      # 【生成】25 种类型 × 各主题资源表
 │   ├── XCursor.kt            # Linux/XCursor 二进制解析（整包导入用，当前未挂入口）
 │   ├── StylusSystemHooks.kt  # [system / 安全中心] 把「支持随手写」声明成 true
-│   ├── StylusImeHooks.kt     # [输入法] 补 AOSP 四个 stylus 回调 + 识别 + 笔迹
-│   ├── StylusInkOverlay.kt   # 笔迹画布：挂进框架手写窗口，可见部分是一条横带
+│   ├── StylusImeHooks.kt     # [输入法] 补 AOSP 四个 stylus 回调 + 识别 + 笔迹 + 手势
+│   ├── StylusInkOverlay.kt   # 笔迹画布：挂进框架手写窗口，尺寸整屏
 │   ├── StylusInkView.kt      # 笔迹绘制（按线段包围盒重绘，不整屏刷）
+│   ├── StylusGestureEngine.kt# 圈选/删除/插入/换行/连接拆分（系统笔引擎的 GestureFacade）
 │   ├── PencilEngine.kt       # 系统笔引擎（xiaomi-pencilengine-pad）访问层
+│   ├── IflytekHcrEngine.kt   # 小爱自带讯飞 HCR（逐点流式）
 │   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
 │   ├── SelectionToolbarHooks.kt  # [SystemUI] 文本选择工具栏
 │   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
-│   └── ui/                   # Miuix 界面（各功能域页面）
+│   ├── Material*             # 超级材质：Gate（放行判定）/ Enhancer（离屏填充）/ Diag
+│   ├── Diag.kt / L.kt        # 落盘诊断 + 结构化日志（本机 logd 不可用）
+│   ├── TunerApp.kt / SettingsActivity.kt  # 模块 App 入口
+│   └── ui/                   # 两套皮的界面：Miuix + Glasmio（ds/ 为共享组件层）
 ├── res/drawable-nodpi/       # 光标素材（各主题原图 + 预览 + wait 24 帧）
 └── resources/META-INF/xposed/{module.prop,java_init.list,scope.list}
+app/src/test/                 # 纯 JVM 单测
 tools/cursor/                 # 光标素材生成器（gen_themes.py / gen_icons.py）
 ```
 
@@ -114,6 +131,7 @@ tools/cursor/                 # 光标素材生成器（gen_themes.py / gen_icon
 - 笔迹的颜色 / 粗细在**每次起笔时**读取，改完下一次落笔生效（不是即时刷新画布）。
 - **书写会话会短暂"接管"触控笔**：会话活着的时候系统把笔的事件从宿主应用抢给输入法（framework 的 `HandwritingModeController.pilferPointers`），所以这段时间里点界面是没反应的。模块把会话空闲超时压到秒级、并在字上屏后主动收会话 —— 一停笔笔就交回系统；之后"点一下"不会开手写会话（系统只在位移超过 touchSlop 时才开），只有画线才进入书写。
 - **点击 vs 画线的判据**与框架一致：整笔位移不超过系统 `touchSlop`（本机 ≈21px）就算点击，不识别、只把会话收掉。若发现汉字的「点」画被吃掉、或点一下仍会出字，看 LSPosed 日志里 `event=stylus_` 的行（本机 logd 不收集常规缓冲区，`L` 把日志镜像到 `/data/adb/lspd/log/`）；阈值定义在 `StylusImeHooks.tapSlop()`，取的就是系统 `touchSlop`，正常不需要调。
+- **热重载不保证所有东西都刷新**：`module.prop` 里开了 `autoHotReload=true`，替换 APK 后已注入的用户态进程会自动重载并按包名重装 Hook；但 system_server 是**开机注入**的，目标类里那些「进程内只算一次的静态门」（例如离屏填充能力位）已按旧值算好，重载 Hook 也回不到初始状态。所以换版本后建议**重启一次平板**，别只靠热重载验收。
 
 ## 许可
 

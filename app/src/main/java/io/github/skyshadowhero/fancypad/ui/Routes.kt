@@ -1,48 +1,50 @@
-package io.github.skyshadowhero.fancypad.ui
+﻿package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.GridView
-import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
+import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import io.github.skyshadowhero.fancypad.R
 import top.yukonga.miuix.kmp.nav.core.NavKey
-import androidx.compose.ui.unit.LayoutDirection
-import top.yukonga.miuix.kmp.nav.transition.NavTransition
-import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
 
 /**
- * 路由表。全部走 miuix-nav（`NavDisplay` + `NavKey` + `navBackStackOf`）。
+ * 路由表。
  *
- * 层级只有三层，一级页面按功能名列出，点进去才看到该功能域里的设置：
+ * 顶层只有**一个**路由 [RouteHome]：它里面是三个标签页（首页 / 功能 / 信息），
+ * 由底部导航 + `HorizontalPager` 承载（与 miuix example 的 `Route.Main` 同一个思路）。
+ * 功能域页面、主题设置这些是**压栈**的二级页，返回键逐层退回。
+ *
  * ```
- * 功能（一级）
- * ├── 小爱输入法 ──┬── 虚拟键盘
- * │                ├── 悬浮键盘
- * │                ├── 超级材质
- * │                └── 随手写（触控笔手写）
- * ├── 光标主题 ──┬── 主题预设
- * │              ├── 大小
- * │              ├── 导入
- * │              └── 颜色设置（二级，AOSP / GoogleDot 可改色时进入）
- * ├── 平行窗口动画 ── 平行窗口
- * ├── 小窗控制器 ──┬── 功能
- * │                └── 按钮
- * ├── AOSP长按菜单 ── AOSP长按菜单
- * ├── 右键菜单 ── 右键菜单
- * └── 关于
+ * RouteHome（底栏：首页 / 功能 / 信息，可左右滑）
+ * ├── 首页 ── 卡片：模块状态 + 各功能域状态
+ * ├── 功能 ──┬── 小爱输入法 ──┬── 虚拟键盘
+ * │          │                ├── 悬浮键盘
+ * │          │                ├── 超级材质
+ * │          │                └── 随手写
+ * │          ├── 光标主题 ──┬── 主题预设
+ * │          │              ├── 大小
+ * │          │              └── 导入
+ * │          │                  └── 颜色设置（三级）
+ * │          ├── 平行窗口动画
+ * │          ├── 小窗控制器 ──┬── 功能
+ * │          │                └── 按钮
+ * │          ├── AOSP长按菜单
+ * │          └── 右键菜单
+ * └── 信息 ── 主题设置 / 版本 / 作用域 / 仓库
  * ```
- * 各自对应的 LSPosed 作用域见 [AppScope.pkg]。（界面上没有单独的作用域页：
- * 需要用户去勾作用域的地方只有 `AppShell` 里那个「未连接到 LSPosed」提示。）
+ *
+ * 二级页各自对应的 LSPosed 作用域见 [AppScope.pkg]；作用域没勾的域在「功能」页里
+ * 是置灰不可点的（见 [AppScope.requiredScope]）。
  */
-data object RouteScopes : NavKey
+data object RouteHome : NavKey
 
 data object RouteImeVirtual : NavKey
 data object RouteImeFloating : NavKey
@@ -68,25 +70,38 @@ data object RouteTextMenu : NavKey
 
 data object RouteAppMenu : NavKey
 
-/** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。只影响模块自己的设置界面。 */
+/** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。从「信息」页进入。 */
 data object RouteTheme : NavKey
 
-data object RouteAbout : NavKey
+/**
+ * 一级页面的三个标签（底栏项）。
+ *
+ * 顺序就是底栏顺序，也是 `HorizontalPager` 的页序；返回键在非首页标签上先回到首页。
+ */
+enum class RootTab(val label: String, val icon: ImageVector) {
+    Home("首页", MiuixIcons.Home),
+    Features("功能", MiuixIcons.GridView),
+    Info("信息", MiuixIcons.Info),
+}
 
 /**
  * 一级页面里的一项 = 一个功能域。
  *
- * 一级页面只列功能名（[label] + 图标），**不带任何描述** —— 描述都留在各自的页面里。
- * [pkg] 是它对应的 LSPosed 作用域，只在「关于」页里列出来。
- * [pages] 是功能域里的页面：多页时用左侧栏 / 底部菜单切换，单页时不显示多页导航。
+ * [pkg] 是它对应的 LSPosed 作用域（仅用于「关于 / 信息」页展示）；
+ * [requiredScope] 是**必须全部在作用域里**才能使用这个域的包名集合 ——
+ * 缺任意一个，「功能」页里这一项就置灰、点不动（首页卡片同样标为未启用）。
  *
- * 图标两种来源：[iconRes] 是模块自带的矢量（从系统 / 输入法 / 设计稿提取，生成脚本在
+ * 右键菜单是特例：它没有固定目标包（用户自己往作用域里加应用），
+ * 所以 [requiredScope] 为空 = 永远可用，但首页卡片会提示「需自行添加目标应用」。
+ *
+ * [iconRes] 是模块自带的矢量（从系统 / 输入法 / 设计稿提取，生成脚本在
  * `tools/caption` 与 `tools/scope-icons`），非 0 时优先；否则用 [icon] 那个 Miuix 图标。
  */
 enum class AppScope(
     val label: String,
     val pkg: String,
     val pages: List<NavKey>,
+    val requiredScope: List<String>,
     /** 一级列表用的矢量 drawable；0 = 用 [icon]。 */
     val iconRes: Int = 0,
     val icon: ImageVector = MiuixIcons.Info,
@@ -95,43 +110,68 @@ enum class AppScope(
         label = "小爱输入法",
         pkg = "com.xiaomi.type",
         pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial, RouteImeStylus),
+        requiredScope = listOf("com.xiaomi.type"),
         iconRes = R.drawable.ic_scope_ime,
     ),
     Cursor(
         label = "光标主题",
         pkg = "system",
         pages = listOf(RouteCursorPreset, RouteCursorSize, RouteCursorImport),
+        requiredScope = listOf("system"),
         iconRes = R.drawable.ic_scope_cursor,
     ),
     Parallel(
         label = "平行窗口动画",
         pkg = "com.android.systemui",
         pages = listOf(RouteParallel),
+        requiredScope = listOf("com.android.systemui"),
         iconRes = R.drawable.ic_scope_embedding,
     ),
     Caption(
         label = "小窗控制器",
         pkg = "com.android.systemui",
         pages = listOf(RouteCaptionFeatures, RouteCaptionButtons),
+        requiredScope = listOf("com.android.systemui"),
         iconRes = R.drawable.ic_scope_caption,
     ),
     TextMenu(
         label = "AOSP长按菜单",
         pkg = "com.android.systemui",
         pages = listOf(RouteTextMenu),
+        requiredScope = listOf("com.android.systemui"),
         icon = MiuixIcons.SelectAll,
     ),
     AppMenu(
         label = "右键菜单",
         pkg = "mark.via",
         pages = listOf(RouteAppMenu),
+        // 目标应用由用户自己加进作用域，没有固定包名 → 永远可选
+        requiredScope = emptyList(),
         icon = MiuixIcons.ListView,
     ),
+    ;
+
+    /** 缺哪些作用域包（空 = 齐了）。[present] 来自 LSPosed 的当前作用域。 */
+    fun missingScope(present: Set<String>): List<String> = requiredScope.filterNot { it in present }
+
+    /** 这个域现在能不能用（作用域齐了）。 */
+    fun inScope(present: Set<String>): Boolean = missingScope(present).isEmpty()
+
+    /** 作用域说明（首页/功能页副标题用）。 */
+    fun scopeSummary(present: Set<String>): String {
+        if (requiredScope.isEmpty()) return "需自行添加目标应用"
+        val missing = missingScope(present)
+        return if (missing.isEmpty()) {
+            "作用域：" + requiredScope.joinToString("、")
+        } else {
+            "未加入作用域：" + missing.joinToString("、")
+        }
+    }
 }
 
 /** 路由 → 顶栏标题 */
 fun NavKey.title(): String = when (this) {
-    RouteScopes -> "功能"
+    RouteHome -> "首页"
     RouteImeVirtual -> "虚拟键盘"
     RouteImeFloating -> "悬浮键盘"
     RouteImeMaterial -> "超级材质"
@@ -146,7 +186,6 @@ fun NavKey.title(): String = when (this) {
     RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
     RouteTheme -> "主题设置"
-    RouteAbout -> "关于"
     else -> ""
 }
 
@@ -154,39 +193,19 @@ fun NavKey.title(): String = when (this) {
 fun NavKey.icon(): ImageVector = when (this) {
     RouteImeVirtual -> MiuixIcons.Tune
     RouteImeFloating -> MiuixIcons.Layers
-    RouteImeMaterial -> MiuixIcons.Background
+    RouteImeMaterial -> MiuixIcons.Settings
     RouteImeStylus -> MiuixIcons.Edit
     RouteCursorPreset -> MiuixIcons.GridView
     RouteCursorSize -> MiuixIcons.Tune
     RouteCursorImport -> MiuixIcons.Import
-    RouteParallel -> MiuixIcons.HorizontalSplit
+    RouteParallel -> MiuixIcons.Layers
     RouteCaptionFeatures -> MiuixIcons.Tune
     RouteCaptionButtons -> MiuixIcons.GridView
     RouteTextMenu -> MiuixIcons.SelectAll
     RouteAppMenu -> MiuixIcons.ListView
-    RouteAbout -> MiuixIcons.Info
+    RouteTheme -> MiuixIcons.Settings
     else -> MiuixIcons.Info
 }
 
-/** 路由所属的作用域；一级页面与「关于」返回 null。 */
+/** 路由所属的作用域；一级页面与「信息」返回 null。 */
 fun NavKey.scope(): AppScope? = AppScope.entries.firstOrNull { this in it.pages }
-
-/**
- * 轻量压栈转场：只有进入的页面从右侧滑入（离开时滑回右侧），被覆盖的页面**原地不动**。
- *
- * 不用 [NavTransitions.MiuixDefault] 的原因：它会给被覆盖页加 25% 宽度的视差位移 + alpha 衰减，
- * 再叠上默认的 0.5 暗层（`NavDisplayEffects.dimAmount`），也就是每帧要重绘**两整页**再加一层全屏
- * 暗色。这台平板是 3200×2136，实测转场明显发卡；而且被覆盖页被推开后还能看见，观感也乱。
- *
- * 这里只保留必需的位移，配合 [NavDisplayEffects] 关掉暗层与圆角裁切，每帧只有新页在动。
- */
-val PadPush: NavTransition = navGraphicsTransition(opaqueDepth = 1f) { scope ->
-    val width = scope.layoutSize.width.toFloat()
-    val d = scope.relativeDepth
-    val rtl = scope.layoutDirection == LayoutDirection.Rtl
-    if (d <= 0f) {
-        // 进入 / 离开栈顶：从尾边整屏滑入（RTL 镜像）
-        translationX = (if (rtl) -1f else 1f) * (-d).coerceIn(0f, 1f) * width
-    }
-    // d > 0：被覆盖页保持原位 —— 不位移、不淡出、不重绘
-}

@@ -82,7 +82,6 @@ import io.github.neoruaa.glasmio.ui.GlasmioSectionTitle
 import io.github.neoruaa.glasmio.ui.GlasmioSlider
 import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import io.github.neoruaa.glasmio.ui.GlasmioTextField
-import io.github.neoruaa.glasmio.ui.glasmioGroupedListSeparator
 import io.github.neoruaa.glasmio.glass.GlassEmphasis
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
@@ -121,6 +120,18 @@ private val LocalDsRowCounter = staticCompositionLocalOf<IntArray?> { null }
 private fun isNotFirstRow(): Boolean {
     val counter = LocalDsRowCounter.current ?: return true
     return remember { counter[0]++ > 0 }
+}
+
+private fun Modifier.insetSeparator(color: Color, visible: Boolean): Modifier = drawBehind {
+    if (visible) {
+        val inset = 16.dp.toPx()
+        drawLine(
+            color = color,
+            start = Offset(inset, 0f),
+            end = Offset(size.width - inset, 0f),
+            strokeWidth = 1.dp.toPx(),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------- 容器
@@ -511,7 +522,7 @@ fun SliderPreference(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .glasmioGroupedListSeparator(colors.separator, visible = showTop)
+                .insetSeparator(colors.separator, visible = showTop)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
