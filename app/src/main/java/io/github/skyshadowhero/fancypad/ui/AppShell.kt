@@ -995,7 +995,7 @@ private fun NavPages(
                 PageSurface(
                     route = domain,
                     scaffoldPadding = pagePadding,
-                    header = { DomainTabs(domain.scope, domainPager) },
+                    header = { if (!isWideLayout()) DomainTabs(domain.scope, domainPager) },
                 ) {
                     DomainHost(
                         scope = domain.scope,

@@ -1,21 +1,27 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.ui.ds.DsSegmentedRow
@@ -24,6 +30,7 @@ import io.github.skyshadowhero.fancypad.ui.ds.isGlasmio
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.nav.core.NavKey
+
 
 /**
  * 一个功能域 = **一个路由**，域内的兄弟页用 `HorizontalPager` 承载。
@@ -35,6 +42,11 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
  *
  * 现在切 tab 只是翻页：路由不变、组合不重建，动画与手势都连续。
  */
+/** 宽屏（平板/横屏）判断：和 AppShell 的侧栏断点保持一致。 */
+@Composable
+fun isWideLayout(): Boolean =
+    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 840
+
 @Composable
 fun DomainHost(
     scope: AppScope,
@@ -47,7 +59,7 @@ fun DomainHost(
     onPush: (NavKey) -> Unit,
 ) {
     val pages = scope.pages
-    Box(modifier = Modifier.fillMaxSize()) {
+    val pageContent: @Composable () -> Unit = {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -62,6 +74,56 @@ fun DomainHost(
                     gapMaxLand = gapMaxLand,
                     gapMaxPort = gapMaxPort,
                     onPush = onPush,
+                )
+            }
+        }
+    }
+    if (pages.size > 1 && isWideLayout()) {
+        // 平板：兄弟页切换从顶栏 TabRow 改成左侧栏（左列表 + 右详情）
+        Row(modifier = Modifier.fillMaxSize()) {
+            DomainSidebar(scope = scope, pagerState = pagerState)
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) { pageContent() }
+        }
+    } else {
+        pageContent()
+    }
+}
+
+/** 宽屏下的域内切换侧栏（窄屏仍用顶栏 TabRow）。 */
+@Composable
+private fun DomainSidebar(
+    scope: AppScope,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+) {
+    val pages = scope.pages
+    val colors = DsTheme.colorScheme
+    val tabScope = rememberCoroutineScope()
+    Column(
+        modifier = Modifier
+            .width(200.dp)
+            .fillMaxHeight()
+            .padding(
+                start = 12.dp,
+                end = 8.dp,
+                top = LocalPageScaffoldPadding.current.calculateTopPadding(),
+                bottom = 12.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        pages.forEachIndexed { index, page ->
+            val selected = pagerState.currentPage == index
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (selected) colors.accent.copy(alpha = 0.14f) else Color.Transparent)
+                    .clickable { tabScope.launch { pagerState.animateScrollToPage(index) } }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                androidx.compose.material3.Text(
+                    text = page.title(),
+                    color = if (selected) colors.accent else colors.onBackground,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                 )
             }
         }
@@ -190,3 +252,4 @@ private fun DomainPage(
         )
     }
 }
+
