@@ -304,7 +304,16 @@ private fun BottomBarContent(
                         val slot = (startSlot + travelled / slotPx).coerceIn(0f, lastSlot)
                         scope.launch {
                             if (onIndicator) state.position.snapTo(slot)
-                            state.pan.snapTo(travelled)
+                            // 猛地滑到最左/最右时 travelled 会累积很远，松手后 pan 要弹回一大段。
+                            // 这里把跟手偏移限到 0.6 格并做 sqrt 橡皮筋，越拖越沉。
+                            val maxPan = slotPx * 0.6f
+                            val easedPan = if (maxPan <= 0f) 0f else {
+                                val dir = if (travelled < 0f) -1f else 1f
+                                dir * maxPan * kotlin.math.sqrt(
+                                    (kotlin.math.abs(travelled) / maxPan).coerceIn(0f, 1f),
+                                )
+                            }
+                            state.pan.snapTo(easedPan)
                         }
                     }
 

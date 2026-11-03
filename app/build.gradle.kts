@@ -32,8 +32,8 @@ android {
         minSdk = 35
         targetSdk = 37
         // versionCode 用 major*10000 + minor*10 + patch，便于后续按语义递增
-        versionCode = 10012
-        versionName = "1.1.2"
+        versionCode = 10020
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -49,13 +49,27 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // 体积主要来自 Compose / Miuix / Glasmio 的未裁剪代码：
+            // 开启 R8 + 资源裁剪后 debug 的 ~78MB 能压到 10MB 量级。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             // 未提供签名信息时为 null，仍可正常产出 unsigned 包
-            signingConfig = signingConfigs.findByName("release")
+            // 没配 release 签名时退回 debug 签名，保证 assembleRelease 直接可安装
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         debug {
-            isMinifyEnabled = false
+            // debug 也跑 R8：不裁剪时 dex 里塞满未用的 Compose/Miuix/Glasmio，
+            // 包体 78MB；裁剪后 11MB 左右。调试信息仍在（isDebuggable 默认 true）。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
