@@ -1,4 +1,4 @@
-﻿package io.github.skyshadowhero.fancypad.ui
+package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -72,6 +72,14 @@ data object RouteAppMenu : NavKey
 
 /** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。从「信息」页进入。 */
 data object RouteTheme : NavKey
+
+/**
+ * 一个功能域 = 一个路由：域内兄弟页由 [DomainHost] 用 HorizontalPager 承载。
+ *
+ * 兄弟页不再是独立路由 —— 否则切 tab 会替换栈顶 key，整页重建：
+ * TabRow 的动画状态丢失、新旧两个 entry 同时转场还会闪一下。
+ */
+data class RouteDomain(val scope: AppScope) : NavKey
 
 /**
  * 一级页面的三个标签（底栏项）。
@@ -186,6 +194,7 @@ fun NavKey.title(): String = when (this) {
     RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
     RouteTheme -> "主题设置"
+    is RouteDomain -> scope.label
     else -> ""
 }
 

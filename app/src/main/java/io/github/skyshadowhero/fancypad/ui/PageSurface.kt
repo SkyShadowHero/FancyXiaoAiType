@@ -47,6 +47,7 @@ fun PageSurface(
     route: NavKey? = null,
     rootTitle: String? = null,
     bottomBar: (@Composable () -> Unit)? = null,
+    header: (@Composable () -> Unit)? = null,
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit,
 ) {
@@ -57,7 +58,7 @@ fun PageSurface(
     }
     val canGoBack = route?.let { it != RouteHome } ?: LocalPageCanGoBack.current
     val headerFactory = if (route?.scope() != null) LocalPageHeader.current else null
-    val header: (@Composable () -> Unit)? = if (route != null && headerFactory != null) {
+    val resolvedHeader: (@Composable () -> Unit)? = header ?: if (route != null && headerFactory != null) {
         { headerFactory(route) }
     } else {
         null
@@ -71,7 +72,7 @@ fun PageSurface(
             title = title,
             canGoBack = canGoBack,
             onBack = LocalPageOnBack.current,
-            header = header,
+            header = resolvedHeader,
             bottomBar = bottomBar ?: LocalPageBottomBar.current,
             scaffoldPadding = scaffoldPadding,
         ) { _ -> content() }

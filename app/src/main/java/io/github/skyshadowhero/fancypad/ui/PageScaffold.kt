@@ -207,13 +207,18 @@ private fun PageTopAppBar(
             navigationIcon = navigationIcon,
         )
     } else {
-        SmallTopAppBar(
-            title = title,
-            subtitle = subtitle,
-            color = barColor,
-            scrollBehavior = scrollBehavior,
-            navigationIcon = navigationIcon,
-            bottomContent = { header() },
-        )
+        // header（TabRow）放在 AppBar **外面**、但仍在 BlurredTopBar 的内容里：
+        // 这样整块顶栏（标题 + TabRow）的高度会被模糊层 matchParentSize 覆盖，
+        // 模糊带高度才和视觉上的顶栏一致。
+        Column(modifier = Modifier.fillMaxWidth()) {
+            SmallTopAppBar(
+                title = title,
+                subtitle = subtitle,
+                color = barColor,
+                scrollBehavior = scrollBehavior,
+                navigationIcon = navigationIcon,
+            )
+            header()
+        }
     }
 }

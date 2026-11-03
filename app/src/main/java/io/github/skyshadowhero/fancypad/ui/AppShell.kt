@@ -946,8 +946,29 @@ private fun NavPages(
                         scopePackages = scopePackages,
                         padding = padding,
                         scaffoldPadding = LocalPageScaffoldPadding.current,
-                        onOpenScope = { scope -> onPush(scope.pages.first()) },
+                        onOpenScope = { scope -> onPush(RouteDomain(scope)) },
                         onOpenTheme = { onPush(RouteTheme) },
+                    )
+                }
+            }
+            entry<RouteDomain>(swipeDismiss = NavSwipeDirection.LeftToRight) { domain ->
+                // pager 状态提到这里创建：顶栏（header）与内容区要共用同一个实例，
+                // header 里画 TabRow 才能既在模糊之上、又和 pager 同步。
+                val domainPager = rememberPagerState(pageCount = { domain.scope.pages.size })
+                PageSurface(
+                    route = domain,
+                    scaffoldPadding = pagePadding,
+                    header = { DomainTabs(domain.scope, domainPager) },
+                ) {
+                    DomainHost(
+                        scope = domain.scope,
+                        pagerState = domainPager,
+                        uiState = uiState,
+                        padding = padding,
+                        scaffoldPadding = LocalPageScaffoldPadding.current,
+                        gapMaxLand = gapMaxLand,
+                        gapMaxPort = gapMaxPort,
+                        onPush = { onPush(it) },
                     )
                 }
             }
@@ -960,7 +981,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteImeVirtual>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteImeVirtual>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteImeVirtual, scaffoldPadding = pagePadding) {
                     VirtualKeyboardPage(
                         uiState = uiState,
@@ -971,7 +992,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteImeFloating>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteImeFloating>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteImeFloating, scaffoldPadding = pagePadding) {
                     FloatingKeyboardPage(
                         uiState = uiState,
@@ -980,7 +1001,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteImeMaterial>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteImeMaterial>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteImeMaterial, scaffoldPadding = pagePadding) {
                     MaterialPage(
                         uiState = uiState,
@@ -989,7 +1010,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteImeStylus>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteImeStylus>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteImeStylus, scaffoldPadding = pagePadding) {
                     StylusPage(
                         uiState = uiState,
@@ -998,7 +1019,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCursorPreset>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCursorPreset>(contentKey = { "cursor" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCursorPreset, scaffoldPadding = pagePadding) {
                     CursorPresetPage(
                         cursorEnabled = uiState.cursorEnabled,
@@ -1012,7 +1033,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCursorSize>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCursorSize>(contentKey = { "cursor" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCursorSize, scaffoldPadding = pagePadding) {
                     CursorSizePage(
                         padding = padding,
@@ -1020,7 +1041,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCursorImport>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCursorImport>(contentKey = { "cursor" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCursorImport, scaffoldPadding = pagePadding) {
                     CursorImportPage(
                         padding = padding,
@@ -1028,7 +1049,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCursorColors>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCursorColors>(contentKey = { "cursor" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCursorColors, scaffoldPadding = pagePadding) {
                     CursorColorsPage(
                         padding = padding,
@@ -1045,7 +1066,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCaptionFeatures>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCaptionFeatures>(contentKey = { "caption" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCaptionFeatures, scaffoldPadding = pagePadding) {
                     CaptionFeaturesPage(
                         uiState = uiState,
@@ -1054,7 +1075,7 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteCaptionButtons>(swipeDismiss = NavSwipeDirection.LeftToRight) {
+            entry<RouteCaptionButtons>(contentKey = { "caption" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteCaptionButtons, scaffoldPadding = pagePadding) {
                     CaptionButtonsPage(
                         uiState = uiState,
@@ -1108,6 +1129,8 @@ private fun RootPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
     ) { page ->
+        // 同 DomainHost：每页必须撑满 pager 高度，否则内容少的页会被垂直居中
+        Box(modifier = Modifier.fillMaxSize()) {
         when (RootTab.entries[page]) {
             RootTab.Home -> HomePage(
                 uiState = uiState,
@@ -1132,6 +1155,7 @@ private fun RootPager(
                 padding = padding,
                 scaffoldPadding = scaffoldPadding,
             )
+        }
         }
     }
 }
