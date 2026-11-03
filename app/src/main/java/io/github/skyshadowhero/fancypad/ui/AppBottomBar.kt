@@ -252,16 +252,9 @@ private fun BottomBarContent(
     val currentIndex by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
 
-    // 拖拽松手时下面已经 animateTo 过一次；父级 selectedIndex 变化又会触发这个
-    // LaunchedEffect 从当前值再 animate 一次。两段弹簧叠在一起，观感就是「猛地弹一下」。
-    // selfDrivenIndex 记录「这次变化是我自己动画驱动的」，让 effect 跳过。
-    var selfDrivenIndex by remember { mutableIntStateOf(-1) }
-
+    // 与 dynamic-youth 完全一致：父级 selectedIndex 一变就弹一次。
+    // 这里传的是 pagerState.settledPage（等价于它那边的 navBackStackEntry，结算后才更新）。
     LaunchedEffect(selectedIndex) {
-        if (selectedIndex == selfDrivenIndex) {
-            selfDrivenIndex = -1
-            return@LaunchedEffect
-        }
         state.position.animateTo(selectedIndex.toFloat(), BottomBarSlideSpec)
     }
 
@@ -314,27 +307,16 @@ private fun BottomBarContent(
                         change.consume()
                         val slot = (startSlot + travelled / slotPx).coerceIn(0f, lastSlot)
                         scope.launch {
+                            // 与 dynamic-youth 一致：指示器跟手 + 整条栏轻微跟手偏移
                             if (onIndicator) state.position.snapTo(slot)
-                            // 猛地滑到最左/最右时 travelled 会累积很远，松手后 pan 要弹回一大段。
-                            // 这里把跟手偏移限到 0.6 格并做 sqrt 橡皮筋，越拖越沉。
-                            val maxPan = slotPx * 0.6f
-                            val easedPan = if (maxPan <= 0f) 0f else {
-                                val dir = if (travelled < 0f) -1f else 1f
-                                dir * maxPan * kotlin.math.sqrt(
-                                    (kotlin.math.abs(travelled) / maxPan).coerceIn(0f, 1f),
-                                )
-                            }
-                            state.pan.snapTo(easedPan)
+                            state.pan.snapTo(travelled)
                         }
                     }
 
                     val released = (startSlot + travelled / slotPx).coerceIn(0f, lastSlot)
                     val target = released.roundToInt().coerceIn(0, items.size - 1)
                     if (onIndicator) {
-                        if (target != currentIndex) {
-                            selfDrivenIndex = target
-                            currentOnSelect(target)
-                        }
+                        if (target != currentIndex) currentOnSelect(target)
                         scope.launch { state.position.animateTo(target.toFloat(), BottomBarSlideSpec) }
                     }
                     scope.launch { state.pan.animateTo(0f, BottomBarPanSpec) }

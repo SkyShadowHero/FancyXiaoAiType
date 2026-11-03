@@ -644,7 +644,7 @@ fun AppShell(
         ),
     ) {
         AppBottomBar(
-            selectedIndex = pagerState.currentPage,
+            selectedIndex = pagerState.settledPage,
             onSelect = { index ->
                 if (index != pagerState.currentPage) {
                     glassTabScope.launch { pagerState.animateScrollToPage(index) }
