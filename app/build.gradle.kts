@@ -32,8 +32,8 @@ android {
         minSdk = 35
         targetSdk = 37
         // versionCode 用 major*10000 + minor*10 + patch，便于后续按语义递增
-        versionCode = 10020
-        versionName = "1.2.0"
+        versionCode = 10013
+        versionName = "1.1.3"
     }
 
     signingConfigs {
