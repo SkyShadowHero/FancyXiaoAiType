@@ -152,7 +152,8 @@ fun AppBottomBar(
                 onExpand = {},
                 compactProgress = remember { mutableStateOf(0f) },
                 compactSize = 64.dp,
-                modifier = Modifier.fillMaxWidth(),
+                // 平板/横屏下不要让玻璃底栏拉满整行，与 Miuix 皮肤保持同样的最大宽度
+                modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth(),
             )
         }
         return
