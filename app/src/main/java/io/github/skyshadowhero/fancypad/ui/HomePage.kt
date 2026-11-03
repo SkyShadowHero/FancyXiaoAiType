@@ -126,7 +126,9 @@ private fun HomeStatusCard(
     if (isGlasmio) {
         Box(modifier = Modifier.fillMaxWidth()) {
             GlassSurface(
-                shape = RoundedCornerShape(16.dp),
+                // 与下方选项卡片一致：GlasmioGroupedList 用的是 26dp 连续圆角，
+                // 这里给 16dp 会显得比列表「方」一圈。
+                shape = RoundedCornerShape(26.dp),
                 style = GlassSurfaceStyle.Navigation,
                 material = NavigationGlassMaterial.Clear,
                 onClick = {},
@@ -135,7 +137,7 @@ private fun HomeStatusCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(2.dp)
-                        .background(statusSurface.copy(alpha = 0.22f), RoundedCornerShape(14.dp)),
+                        .background(statusSurface.copy(alpha = 0.22f), RoundedCornerShape(24.dp)),
                 ) {
                     HomeStatusCardContent(
                         healthy, statusAccent, primaryText, secondaryText,

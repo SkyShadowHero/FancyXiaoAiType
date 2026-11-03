@@ -678,6 +678,11 @@ private fun SiblingTabs(
                     }
                 },
         ) {
+            // 用 TabRowWithContour（轮廓胶囊）。
+            // 注意：它的指示器动画靠 `lastSettledSelectedTabIndex` 的 remember 状态驱动，
+            // 而兄弟页切换会**整页重建**（openSibling 换掉了栈顶 key）→ 每次都是新组合，
+            // 于是永远走 snapTo 分支，看起来"没有动画"。根治要把它挪出被重建的层级
+            // （见下一条建议：作用域内用 HorizontalPager 承载兄弟页）。
             TabRowWithContour(
                 tabs = pages.map { it.title() },
                 selectedTabIndex = targetIndex,
