@@ -98,7 +98,9 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
@@ -412,8 +414,18 @@ fun AppShell(
         }
     }
     CompositionLocalProvider(LocalPageHeader provides pageHeader) {
+    // 悬浮底栏要采样背后的内容 → 内容层单独注册进 backdrop，底栏作为**兄弟节点**叠在上面
+    // （不能放进被注册的那一层，否则会采样到自己）。
+    val barBackdrop = if (glasmio) null else rememberTopBlurBackdrop(DsTheme.colorScheme.surface)
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        // 只有内容层进 backdrop；底栏是它的兄弟节点，采样内容、不会采样到自己
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .then(if (barBackdrop != null) Modifier.layerBackdrop(barBackdrop) else Modifier),
+        ) {
             if (glasmio) {
         // ------------------------------------------------ Glasmio 外壳（iOS 风）
         //
@@ -610,6 +622,36 @@ fun AppShell(
         )
             }
         }
+    }
+    // 悬浮底栏：只在一级标签页出现，浮在内容之上一层（内容会从它下面滚过）。
+    // 进出二级页面时跟着页面的转场一起滑出/滑入，而不是直接消失。
+    androidx.compose.animation.AnimatedVisibility(
+        visible = current == RouteHome,
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = androidx.compose.animation.slideInVertically(
+            animationSpec = androidx.compose.animation.core.tween(300),
+            initialOffsetY = { it / 2 },
+        ) + androidx.compose.animation.fadeIn(
+            animationSpec = androidx.compose.animation.core.tween(220),
+        ),
+        exit = androidx.compose.animation.slideOutVertically(
+            animationSpec = androidx.compose.animation.core.tween(260),
+            targetOffsetY = { it },
+        ) + androidx.compose.animation.fadeOut(
+            animationSpec = androidx.compose.animation.core.tween(200),
+        ),
+    ) {
+        AppBottomBar(
+            selectedIndex = pagerState.currentPage,
+            onSelect = { index ->
+                if (index != pagerState.currentPage) {
+                    glassTabScope.launch { pagerState.animateScrollToPage(index) }
+                }
+            },
+            modifier = Modifier,
+            backdrop = barBackdrop,
+        )
+    }
     }
     }
 }
@@ -901,11 +943,13 @@ private fun NavPages(
         // 页面内容不再自己让位：顶栏由 PageScaffold 在页面内部占位，
         // 这里只保留底部 inset（底栏是应用级的那一条）。
         // 之前这里又加了状态栏高度，和 PageScaffold 的 inset 叠加，内容就被推到半屏以下。
+        val currentRoute = backStack.lastOrNull() ?: RouteHome
         val pagePadding = PaddingValues(
             top = 0.dp,
-            bottom = contentPadding.calculateBottomPadding(),
+            // 悬浮底栏不占布局高度，靠底部 padding 让内容能滚到它下面而不被永久遮住
+            bottom = contentPadding.calculateBottomPadding() +
+                if (currentRoute == RouteHome) BottomBarReservedHeight else 0.dp,
         )
-        val currentRoute = backStack.lastOrNull() ?: RouteHome
         val titleForPage = if (currentRoute == RouteHome) {
             RootTab.entries[pagerState.currentPage.coerceIn(0, RootTab.entries.lastIndex)].label
         } else {
@@ -931,13 +975,6 @@ private fun NavPages(
                 PageSurface(
                     route = RouteHome,
                     rootTitle = RootTab.entries[pagerState.currentPage.coerceIn(0, RootTab.entries.lastIndex)].label,
-                    bottomBar = {
-                        RootBottomBar(pagerState = pagerState) { index ->
-                            if (index != pagerState.currentPage) {
-                                rootTabScope.launch { pagerState.animateScrollToPage(index) }
-                            }
-                        }
-                    },
                     scaffoldPadding = pagePadding,
                 ) {
                     RootPager(
