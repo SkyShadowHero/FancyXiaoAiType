@@ -31,10 +31,6 @@
 - **输入法外观**：每个功能组各自一个开关（分离键盘、按键圆角、按键间距、候选词、悬浮键盘栏、超级材质、悬浮键盘大小…），沿用原 FancyType 的行为。
 - **界面外观**：设置页 →「主题设置」→ `Miuix` / `Glasmio` 两套皮，另可选明暗与莫奈配色。只影响模块自己的设置界面，不影响 Hook 效果。
 
-### 随手写为什么白名单默认是「开」
-
-关掉它会让 MIUI 设置页里的「随手写」开关**根本打不开**（小爱被判为不支持 → 用户不会去动模块开关 → 永远不支持），所以声明必须默认开。另外 `com.miui.securitycore` 必须进作用域：真正会把你切到搜狗的是安全中心，它在改写默认输入法前先问一句「当前输入法支持随手写吗」，那个进程里装上同一个声明它就自己早退了。
-
 ## 适用环境
 
 | 项目 | 说明 |
@@ -49,8 +45,7 @@
 1. 安装 APK
 2. LSPosed 管理器 → 模块 → 启用 **FancyPad**
 3. 作用域勾上：`com.xiaomi.type`、`system`、`com.android.systemui`、`com.miui.securitycore`
-   （最后一个是随手写必需：漏了它，系统设置里打开随手写会把你切到搜狗）
-   只在用「右键菜单」功能时才需要再加目标应用（默认 `mark.via`）
+   只在用「右键菜单」功能时才需要再加目标应用（例如 `mark.via`）
 4. `system` / `com.android.systemui` / 安全中心是开机注入的 → **重启一次平板**；输入法侧只需重启输入法进程
 
 ## 构建
@@ -74,14 +69,6 @@ echo "sdk.dir=/path/to/Android/SDK" > local.properties
 > 单测只覆盖**不依赖 Android 框架**的纯逻辑（`ProcessNames`、`MaterialPackages`、
 > `SpaceWarning`、`Target`/`PrefKeys` 的常量契约）。Hook 与 UI 仍靠真机验收，
 > 截图与 uiautomator dump 存在同级目录 `_shots/`。
-
-Termux 上可直接用：
-
-```bash
-bash ~/build-fancytype.sh           # 指向本工程，构建 debug
-```
-
-> release 若没提供签名信息会退化成未签名/调试签名包：把 `storeFile/storePassword/keyAlias/keyPassword` 写进根目录 `keystore.properties`，或用 `-PANDROID_SIGNING_*` 参数。
 
 ## 工程结构
 
