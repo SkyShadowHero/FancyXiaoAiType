@@ -31,8 +31,8 @@ fun ScopeListPage(
         contentPadding = PaddingValues(
             start = 12.dp,
             end = 12.dp,
-            // 与首页卡片的上边距保持一致（HomePage 那边是 24dp/16dp 的同一套规则）
-            top = scaffoldPadding.calculateTopPadding() + if (isGlasmio) 24.dp else 16.dp,
+            // 与首页卡片的上边距保持一致
+            top = scaffoldPadding.calculateTopPadding() + 16.dp,
             bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp, androidx.compose.ui.Alignment.Top),

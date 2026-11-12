@@ -1,7 +1,6 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,26 +18,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.skyshadowhero.fancypad.BuildConfig
 import io.github.skyshadowhero.fancypad.RemoteConfig
 import io.github.skyshadowhero.fancypad.ui.ds.*
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
-import io.github.neoruaa.glasmio.glass.GlassSurface
-import io.github.neoruaa.glasmio.glass.GlassSurfaceStyle
-import io.github.neoruaa.glasmio.glass.NavigationGlassMaterial
 
 /**
  * 首页：KernelSU 风格的卡片，一眼看清「这个模块现在到底有没有在生效」。
@@ -71,7 +64,7 @@ fun HomePage(
             end = 12.dp,
             // Tilt rotates around the touch point; a little outer room keeps the first card
             // from being clipped by LazyColumn's viewport without adding space inside it.
-            top = scaffoldPadding.calculateTopPadding() + if (isGlasmio) 24.dp else 16.dp,
+            top = scaffoldPadding.calculateTopPadding() + 16.dp,
             bottom = scaffoldPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
@@ -134,42 +127,17 @@ private fun HomeStatusCard(
         "$framework（API $api）· 作用域 $scopeCount 个包 · 已注入 $runningCount 个进程"
     }
 
-    if (isGlasmio) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            GlassSurface(
-                // 与下方选项卡片一致：GlasmioGroupedList 用的是 26dp 连续圆角，
-                // 这里给 16dp 会显得比列表「方」一圈。
-                shape = RoundedCornerShape(26.dp),
-                style = GlassSurfaceStyle.Navigation,
-                material = NavigationGlassMaterial.Clear,
-                onClick = {},
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(2.dp)
-                        .background(statusSurface.copy(alpha = 0.22f), RoundedCornerShape(24.dp)),
-                ) {
-                    HomeStatusCardContent(
-                        connecting, healthy, statusAccent, primaryText, secondaryText,
-                        statusText, staleCount,
-                    )
-                }
-            }
-        }
-    } else {
-        MiuixCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = MiuixCardDefaults.defaultColors(color = statusSurface, contentColor = primaryText),
-            insideMargin = PaddingValues(0.dp),
-            pressFeedbackType = PressFeedbackType.Tilt,
-            onClick = {},
-        ) {
-            HomeStatusCardContent(
-                connecting, healthy, statusAccent, primaryText, secondaryText,
-                statusText, staleCount,
-            )
-        }
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = MiuixCardDefaults.defaultColors(color = statusSurface, contentColor = primaryText),
+        insideMargin = PaddingValues(0.dp),
+        pressFeedbackType = PressFeedbackType.Tilt,
+        onClick = {},
+    ) {
+        HomeStatusCardContent(
+            connecting, healthy, statusAccent, primaryText, secondaryText,
+            statusText, staleCount,
+        )
     }
 }
 

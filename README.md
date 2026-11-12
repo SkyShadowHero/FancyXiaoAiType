@@ -18,10 +18,8 @@
 | AOSP长按菜单 | `com.android.systemui` | 文本选择浮动工具栏改用 Miuix 外观 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
 
-各功能域的开关与参数都在同一个 App 里。界面有**两套皮**（设置 →「主题设置」里切换）：
-默认 **Miuix 0.9.4（HyperOS 风格）**，可切到 **Glasmio 0.1.1（iOS 27 液态玻璃）**；
-两套共用同一套页面与路由，只是外壳与控件不同。平板 ≥840dp 走左侧栏、窄屏走底部菜单
-（Glasmio 用顶部分段控件）。
+各功能域的开关与参数都在同一个 App 里。界面用 **Miuix 0.9.4（HyperOS 风格）**：
+页面与路由只有一套，平板 ≥840dp 走左侧栏、窄屏走底部菜单。
 
 ## 开关
 
@@ -29,7 +27,7 @@
 - **平行窗口**：`恢复 AOSP 原生动画`（总开关）+ `禁用 Folme 引擎` / `禁止转场合并` / `禁止跳切` 三个子开关。
 - **随手写**：`随手写（触控笔手写）`（总开关，默认关）+ 停笔识别延迟 + **笔迹显示**（开关 / 颜色 / 粗细 px）+ `让小爱进入随手写白名单`（默认**开**，见下文）。
 - **输入法外观**：每个功能组各自一个开关（分离键盘、按键圆角、按键间距、候选词、悬浮键盘栏、超级材质、悬浮键盘大小…），沿用原 FancyType 的行为。
-- **界面外观**：设置页 →「主题设置」→ `Miuix` / `Glasmio` 两套皮，另可选明暗与莫奈配色。只影响模块自己的设置界面，不影响 Hook 效果。
+- **界面外观**：设置页 →「主题设置」→ 明暗模式与莫奈配色。只影响模块自己的设置界面，不影响 Hook 效果。
 
 ## 适用环境
 
@@ -58,7 +56,6 @@
 | AGP | 9.2.1 |
 | Kotlin Compose 插件 | 2.4.20 |
 | Miuix | 0.9.4 |
-| Glasmio | 0.1.1 |
 
 ```bash
 echo "sdk.dir=/path/to/Android/SDK" > local.properties
@@ -97,7 +94,7 @@ app/src/main/
 │   ├── Material*             # 超级材质：Gate（放行判定）/ Enhancer（离屏填充）/ Diag
 │   ├── Diag.kt / L.kt        # 落盘诊断 + 结构化日志（本机 logd 不可用）
 │   ├── TunerApp.kt / SettingsActivity.kt  # 模块 App 入口
-│   └── ui/                   # 两套皮的界面：Miuix + Glasmio（ds/ 为共享组件层）
+│   └── ui/                   # Miuix 界面（ds/ 为共享组件层）
 ├── res/drawable-nodpi/       # 光标素材（各主题原图 + 预览 + wait 24 帧）
 └── resources/META-INF/xposed/{module.prop,java_init.list,scope.list}
 app/src/test/                 # 纯 JVM 单测

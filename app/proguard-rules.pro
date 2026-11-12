@@ -15,10 +15,9 @@
     public static <fields>;
 }
 
-# Miuix / Glasmio / Compose 的可组合函数通过反射（Compose 编译器生成的
+# Miuix / Compose 的可组合函数通过反射（Compose 编译器生成的
 # 合成方法、`@Composable` 调用点）使用，保守保留其构建器与 ABI 名称。
 -keep class top.yukonga.miuix.kmp.** { *; }
--keep class io.github.neoruaa.glasmio.** { *; }
 
 # 避免 R8 把 Kotlin metadata 清掉后导致 Compose 反射取元数据失败
 -keepattributes RuntimeVisibleAnnotations,AnnotationDefault,InnerClasses,Signature

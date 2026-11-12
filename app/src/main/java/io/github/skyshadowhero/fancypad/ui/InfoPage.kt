@@ -24,7 +24,6 @@ private const val REPO_URL = "https://github.com/SkyShadowHero/FancyXiaoAiType"
  */
 @Composable
 fun InfoPage(
-    uiState: AppUiState,
     scopePackages: Set<String>,
     onTheme: () -> Unit,
     onCredits: () -> Unit,
@@ -48,7 +47,7 @@ fun InfoPage(
             Card {
                 ArrowPreference(
                     title = "主题设置",
-                    summary = if (uiState.uiTheme == 1) "Glasmio（iOS 液态玻璃）" else "Miuix（HyperOS 风格）",
+                    summary = "明暗模式与莫奈配色",
                     onClick = onTheme,
                 )
             }

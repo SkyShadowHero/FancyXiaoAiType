@@ -4,11 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
 import io.github.skyshadowhero.fancypad.ui.ds.Card
-import io.github.skyshadowhero.fancypad.ui.ds.RadioButtonPreference
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,21 +14,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.skyshadowhero.fancypad.PrefKeys
-import io.github.skyshadowhero.fancypad.ui.ds.DsSegmentedRow
 import io.github.skyshadowhero.fancypad.ui.ds.DsTheme
-import io.github.skyshadowhero.fancypad.ui.ds.isGlasmio
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.nav.core.NavKey
@@ -105,9 +95,7 @@ private fun DomainSidebar(
 ) {
     val pages = scope.pages
     val tabScope = rememberCoroutineScope()
-    // 直接复用皮肤自己的卡片与列表行：
-    // - Miuix → MiuixCard + MiuixRadioButtonPreference（HyperOS 列表的间距/圆角/按压遮罩）
-    // - Glass → GlasmioGroupedList + DsListRow（玻璃卡片 26dp 圆角、分隔线、勾选标记）
+    // 直接复用 Miuix 的卡片与列表行（HyperOS 列表的间距/圆角/按压遮罩）。
     Box(
         modifier = Modifier
             .width(DomainSidebarWidth)
@@ -125,26 +113,17 @@ private fun DomainSidebar(
                 val onClick: () -> Unit = {
                     tabScope.launch { pagerState.animateScrollToPage(index) }
                 }
-                if (isGlasmio) {
-                    // Glass 保持最初的样子：GlasmioGroupedList + DsListRow（勾选标记、分隔线）
-                    RadioButtonPreference(
-                        title = page.title(),
-                        selected = selected,
-                        onClick = onClick,
-                    )
-                } else {
-                    DsSidebarItem(
-                        title = page.title(),
-                        selected = selected,
-                        onClick = onClick,
-                    )
-                }
+                DsSidebarItem(
+                    title = page.title(),
+                    selected = selected,
+                    onClick = onClick,
+                )
             }
         }
     }
 }
 
-/** 侧栏条目：两套皮肤共用（左对齐 + 选中灰色遮罩，无勾选标记）。 */
+/** 侧栏条目（左对齐 + 选中灰色遮罩，无勾选标记）。 */
 @Composable
 private fun DsSidebarItem(
     title: String,
@@ -189,27 +168,16 @@ fun DomainTabs(
     val pages = scope.pages
     if (pages.size <= 1) return
     val tabScope = rememberCoroutineScope()
-    if (isGlasmio) {
-        DsSegmentedRow(
-            items = pages.map { it to it.title() },
-            selected = pages[pagerState.currentPage.coerceIn(0, pages.lastIndex)],
-            onSelected = { page ->
-                val index = pages.indexOf(page)
-                if (index >= 0) tabScope.launch { pagerState.animateScrollToPage(index) }
-            },
-        )
-    } else {
-        TabRowWithContour(
-            tabs = pages.map { it.title() },
-            selectedTabIndex = pagerState.currentPage,
-            onTabSelected = { index ->
-                if (index in pages.indices) tabScope.launch { pagerState.animateScrollToPage(index) }
-            },
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            minWidth = 0.dp,
-            maxWidth = 1000.dp,
-        )
-    }
+    TabRowWithContour(
+        tabs = pages.map { it.title() },
+        selectedTabIndex = pagerState.currentPage,
+        onTabSelected = { index ->
+            if (index in pages.indices) tabScope.launch { pagerState.animateScrollToPage(index) }
+        },
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        minWidth = 0.dp,
+        maxWidth = 1000.dp,
+    )
 }
 
 /** 兄弟页内容分发（原来在 NavDisplay 的 entry 里，现在由 pager 承载）。 */

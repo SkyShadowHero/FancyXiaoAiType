@@ -1,10 +1,8 @@
 package io.github.skyshadowhero.fancypad.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
@@ -13,9 +11,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.ui.ds.ArrowPreference
 import io.github.skyshadowhero.fancypad.ui.ds.Card
-import io.github.skyshadowhero.fancypad.ui.ds.DsTheme
 import io.github.skyshadowhero.fancypad.ui.ds.SmallTitle
-import io.github.skyshadowhero.fancypad.ui.ds.Text
 
 /**
  * 「致谢」页：用到的界面库、光标素材与参考实现。
@@ -48,11 +44,6 @@ fun CreditsPage(
                     title = "Miuix",
                     summary = "HyperOS 风格组件、模糊与导航",
                     onClick = { open("https://github.com/miuix-kotlin-multiplatform/miuix") },
-                )
-                ArrowPreference(
-                    title = "Glasmio",
-                    summary = "iOS 液态玻璃风格组件与图标",
-                    onClick = { open("https://github.com/neoruaa/glasmio") },
                 )
             }
         }

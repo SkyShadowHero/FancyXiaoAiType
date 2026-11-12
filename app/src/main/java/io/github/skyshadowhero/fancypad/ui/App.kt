@@ -15,10 +15,7 @@ import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import io.github.skyshadowhero.fancypad.L
 import io.github.skyshadowhero.fancypad.MaterialPackages
 import io.github.skyshadowhero.fancypad.PrefKeys
-import io.github.skyshadowhero.fancypad.ThemeCache
-import androidx.compose.ui.platform.LocalContext
 import io.github.skyshadowhero.fancypad.RemoteConfig
-import io.github.skyshadowhero.fancypad.ui.ds.UiStyle
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 
@@ -27,9 +24,6 @@ import top.yukonga.miuix.kmp.nav.core.navBackStackOf
  */
 class AppUiState {
     var themeMode by mutableIntStateOf(0)
-
-    /** 界面主题：0 = Miuix，1 = Glasmio（见 [UiStyle]）。 */
-    var uiTheme by mutableIntStateOf(0)
 
     var gapEnabled by mutableStateOf(false)
     var gapLand by mutableStateOf(284f)
@@ -205,10 +199,7 @@ private const val BIND_GRACE_MS = 1200L
  */
 @Composable
 fun App(padding: PaddingValues = PaddingValues(0.dp)) {
-    val context = LocalContext.current
-    // 主题先用本地缓存渲染首帧，避免每次冷启动先闪一下 Miuix 再变成 Glasmio；
-    // 远端配置读进来之后以远端为准（见下面的 loadConfigInto）。
-    val uiState = remember { AppUiState().also { it.uiTheme = ThemeCache.read(context) } }
+    val uiState = remember { AppUiState() }
     // ★ 必须用**宿主自己的**返回分发器（ComponentActivity 在 onCreate 里把它挂到 decorView 的
     //   ViewTree 上，`LocalNavigationEventDispatcherOwner` 会自动解析到它）。
     //
@@ -245,7 +236,6 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
         uiState.serviceReady = serviceReady
         if (RemoteConfig.isReady) {
             loadConfigInto(uiState)
-            ThemeCache.write(context, uiState.uiTheme)
             uiState.loaded = true
         }
 
@@ -260,7 +250,6 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
                 L.i("event=service_state_changed ready=$ready")
                 if (ready) {
                     loadConfigInto(uiState)
-                    ThemeCache.write(context, uiState.uiTheme)
                     uiState.loaded = true
                 }
             }
@@ -270,11 +259,9 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     CompositionLocalProvider(
         LocalNavigationEventDispatcherOwner provides (ambientNavOwner ?: fallbackNavOwner!!),
     ) {
-        // 路由栈放在主题外层：切主题会重建整棵界面树，路由栈留在这里就不会被重置，
-        // 用户点完「Glasmio」还停在主题设置页，能立刻看到当前页换了皮。
         // 根路由是 RouteHome（首页/功能/信息三个标签在它内部），不再是功能列表。
         val backStack = remember { navBackStackOf(RouteHome) }
-        AppTheme(uiStyle = UiStyle.of(uiState.uiTheme), colorMode = uiState.themeMode) {
+        AppTheme(colorMode = uiState.themeMode) {
             AppShell(
                 uiState = uiState,
                 backStack = backStack,
@@ -329,8 +316,6 @@ private fun loadConfigInto(uiState: AppUiState) {
 
     uiState.themeMode = p.runCatching { getInt(PrefKeys.THEME_MODE, 0) }.getOrDefault(0)
         .coerceIn(0, ThemeMode.entries.size - 1)
-    uiState.uiTheme = p.runCatching { getInt(PrefKeys.UI_THEME, 0) }.getOrDefault(0)
-        .coerceIn(0, UiStyle.entries.size - 1)
 
     uiState.materialEnabled = p.runCatching { getBoolean(PrefKeys.MATERIAL_ENABLED, false) }
         .getOrDefault(false)

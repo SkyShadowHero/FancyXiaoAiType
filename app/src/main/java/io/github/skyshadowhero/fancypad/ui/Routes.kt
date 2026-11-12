@@ -70,7 +70,7 @@ data object RouteTextMenu : NavKey
 
 data object RouteAppMenu : NavKey
 
-/** 主题设置：界面外观（Miuix / Glasmio）+ 明暗模式。从「信息」页进入。 */
+/** 主题设置：明暗模式与莫奈配色。从「信息」页进入。 */
 data object RouteTheme : NavKey
 
     /** 致谢（开源库与素材） */

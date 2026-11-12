@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import io.github.skyshadowhero.fancypad.ui.ds.*
@@ -23,10 +22,7 @@ val LocalPageOnBack = compositionLocalOf<() -> Unit> { {} }
 /** 页面底栏（首页/功能/信息）。由 AppShell 提供，页面自己画 —— 这样进二级页也不会突然消失。 */
 val LocalPageBottomBar = compositionLocalOf<(@Composable () -> Unit)?> { null }
 
-/**
- * 页面内的分段控件（作用域内的兄弟页切换）。二级页用它替代底栏 ——
- * Miuix 皮肤走 `TabRow`，Glasmio 皮肤走 `GlasmioSegmentedControl`。
- */
+/** 页面内的分段控件（作用域内的兄弟页切换）。二级页用它替代底栏，走 `TabRow`。 */
 val LocalPageHeader = compositionLocalOf<(@Composable (NavKey) -> Unit)?> { null }
 
 /** The active page's real scaffold insets, consumed by its scrollable content. */

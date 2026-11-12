@@ -49,7 +49,7 @@ android {
 
     buildTypes {
         release {
-            // 体积主要来自 Compose / Miuix / Glasmio 的未裁剪代码：
+            // 体积主要来自 Compose / Miuix 的未裁剪代码：
             // 开启 R8 + 资源裁剪后 debug 的 ~78MB 能压到 10MB 量级。
             isMinifyEnabled = true
             isShrinkResources = true
@@ -62,7 +62,7 @@ android {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         debug {
-            // debug 也跑 R8：不裁剪时 dex 里塞满未用的 Compose/Miuix/Glasmio，
+            // debug 也跑 R8：不裁剪时 dex 里塞满未用的 Compose/Miuix，
             // 包体 78MB；裁剪后 11MB 左右。调试信息仍在（isDebuggable 默认 true）。
             isMinifyEnabled = true
             isShrinkResources = true
@@ -126,16 +126,6 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
-
-    // Glasmio：iOS 27 Liquid Glass 风格的 Compose 组件库（主题设置里的另一套外观）。
-    // 只取 core / glass / icons / ui / preference：scaffold 会带进 navigation3 与
-    // 另一份 miuix-nav，跟本模块自己的 miuix-nav 冲突，那一层的两个壳（GlasmioScaffold /
-    // GlasmioListPage）本来就是十几行，直接在 DsChrome 里自己搭。
-    implementation("io.github.neoruaa.glasmio:glasmio-core:0.1.1")
-    implementation("io.github.neoruaa.glasmio:glasmio-glass:0.1.1")
-    implementation("io.github.neoruaa.glasmio:glasmio-icons:0.1.1")
-    implementation("io.github.neoruaa.glasmio:glasmio-ui:0.1.1")
-    implementation("io.github.neoruaa.glasmio:glasmio-preference:0.1.1")
 
     // 识别模型功能：**不走 ONNX Runtime**。手写识别用的是小爱自带的讯飞 HCR
     // （见 IflytekHcrEngine）和系统笔引擎（见 PencilEngine，挂 /system_ext 的

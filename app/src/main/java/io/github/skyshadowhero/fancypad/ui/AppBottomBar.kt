@@ -33,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,11 +62,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.neoruaa.glasmio.icons.SfSymbol
-import io.github.neoruaa.glasmio.ui.GlasmioNavigationBar
-import io.github.neoruaa.glasmio.ui.GlasmioTabItem
 import io.github.skyshadowhero.fancypad.ui.ds.DsTheme
-import io.github.skyshadowhero.fancypad.ui.ds.isGlasmio
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -122,7 +117,7 @@ private fun indicatorScaleY(velocity: Float): Float {
 val BottomBarReservedHeight = BottomBarItemHeight + 20.dp
 
 /**
- * 底栏：抄自 `dynamic-youth-kmp` 的 `AppBottomBar`（`fix/navigation-glass` 分支）。
+ * 底栏：抄自 `dynamic-youth-kmp` 的 `AppBottomBar`。
  *
  * 结构：底部渐变遮罩 → 限宽 400dp 的胶囊条（模糊 8dp）→ 滑块胶囊 + 两层内容
  * （下层常规色、上层强调色裁成胶囊形状）→ 拖动只认「按在胶囊上」。
@@ -137,29 +132,7 @@ fun AppBottomBar(
     backdrop: LayerBackdrop? = null,
 ) {
     val tabs = RootTab.entries
-    if (isGlasmio) {
-        val symbols = listOf(SfSymbol.House, SfSymbol.Settings, SfSymbol.InfoCircle)
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(start = 68.dp, end = 68.dp, top = 44.dp, bottom = 18.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            GlasmioNavigationBar(
-                items = tabs.mapIndexed { index, tab ->
-                    GlasmioTabItem(key = tab, label = tab.label, symbol = symbols[index % symbols.size])
-                },
-                selectedKey = tabs[selectedIndex.coerceIn(0, tabs.lastIndex)],
-                onSelected = { tab -> onSelect(tabs.indexOf(tab)) },
-                onExpand = {},
-                compactProgress = remember { mutableStateOf(0f) },
-                compactSize = 64.dp,
-                // 平板/横屏下不要让玻璃底栏拉满整行，与 Miuix 皮肤保持同样的最大宽度
-                modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth(),
-            )
-        }
-        return
-    }
+
 
     val colors = DsTheme.colorScheme
     val scrim = remember(colors.surface) {
