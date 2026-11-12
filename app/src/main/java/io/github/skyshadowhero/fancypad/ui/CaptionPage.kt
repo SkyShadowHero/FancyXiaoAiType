@@ -62,6 +62,7 @@ private val FRAMEWORK_MENU_BUTTONS = listOf(
     MenuButton(PrefKeys.CB_SPLIT_LEFT, "分屏·左/上", "分屏左", R.drawable.cap_btn_split_left),
     MenuButton(PrefKeys.CB_SPLIT_RIGHT, "分屏·右/下", "分屏右", R.drawable.cap_btn_split_right),
     MenuButton(PrefKeys.CB_FREEFORM, "小窗", "小窗", R.drawable.cap_btn_freeform),
+    MenuButton(PrefKeys.CB_EXTEND_MODE, "多分屏", "多分屏", R.drawable.cap_btn_multiplesplit),
     MenuButton(PrefKeys.CB_NEW_WINDOW, "新窗口", "新窗口", R.drawable.cap_btn_new_window),
     MenuButton(PrefKeys.CB_CLOSE, "关闭小窗", "关闭小窗", R.drawable.cap_btn_close),
 )

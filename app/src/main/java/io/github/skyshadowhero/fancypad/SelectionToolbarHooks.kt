@@ -97,6 +97,19 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
         const val EXIT_DURATION_MS = 160L
 
         /**
+         * 浮动工具栏的投影高度（dip）。elevation 决定阴影**扩散范围**：压太小（1.5dp）
+         * 只会留一圈贴着边缘的硬黑边，反而不自然。这里给到 8dp 让阴影铺开，
+         * 浓度改由 [SHADOW_ALPHA] 单独控制。
+         */
+        const val SHADOW_ELEVATION_DP = 8f
+
+        /**
+         * ambient / spot 阴影的 alpha（0~255）。8/255 ≈ 3%，几乎是「有一点点浮起感」
+         * 而看不到明显黑影。范围大、浓度极低，才是系统级菜单那种自然的层次。
+         */
+        const val SHADOW_ALPHA = 8
+
+        /**
          * 同一实例两次入场动画的最小间隔。
          * `show()` 在每次布局更新（拖动光标、改窗口大小）时也会被调用，不节流的话
          * 工具栏会反复「弹一下」。
@@ -203,6 +216,11 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
         )
         surface.clipToOutline = true
 
+        // 1b) 阴影：框架给内容层挂的 elevation 偏重（就是菜单四周那圈黑影）。
+        //     换成 Miuix 纯色底之后它特别抢眼，这里把阴影铺开但压到几乎透明，
+        //     不承担底色的那层连投影轮廓一起清掉，避免两层阴影叠在一起。
+        softenShadow(surface, container, holder, ctx)
+
         // 2) 溢出面板（ListView）自带一层不透明底色，会方方正正地盖住圆角，
         //    清掉让 surface 底色透出来。
         (field(self, "overflowPanel") as? View)?.background = null
@@ -229,6 +247,41 @@ class SelectionToolbarHooks(private val module: XposedInterface) {
         val bg = v.background
         return "${v.javaClass.simpleName} ${v.width}x${v.height} " +
             "bg=${bg?.javaClass?.simpleName ?: "none"}/op=${bg?.opacity ?: "-"}"
+    }
+
+    /**
+     * 把「长按菜单」的投影做成「范围大、浓度极淡」。
+     *
+     * `RemoteSelectionToolbar` 把内容放进 `contentContainer` / `contentHolder` 两层，
+     * 两层都可能带框架默认的 elevation（以及半透明的阴影 drawable）。只改一层的话，
+     * 另一层的黑影还在，看起来反而更脏。这里按 [surface] 区分：承担底色的那层用
+     * [SHADOW_ELEVATION_DP] 把阴影**铺开**，再用 [SHADOW_ALPHA] 把 ambient / spot
+     * 颜色压到近乎透明；其余层 elevation / outline / background 全部清掉。
+     * 全程只动 View 属性，不碰 `SurfaceControlViewHost` 的窗口参数，失败也不影响显示。
+     */
+    private fun softenShadow(surface: View, container: ViewGroup, holder: View?, ctx: Context) {
+        val spread = dp(ctx, SHADOW_ELEVATION_DP)
+        // 阴影范围由 elevation 撑开，浓度单独用 outline shadow color 压到极低。
+        // 这两个 API 是 API 28+ 的公开方法，个别 ROM 可能没接，包一层保底：
+        // 设不上就退回小 elevation，绝不留一圈默认深黑影。
+        val pale = Color.argb(SHADOW_ALPHA, 0, 0, 0)
+        for (v in listOf(container, holder)) {
+            if (v == null) continue
+            if (v === surface) {
+                val applied = runCatching {
+                    v.setOutlineAmbientShadowColor(pale)
+                    v.setOutlineSpotShadowColor(pale)
+                    true
+                }.getOrDefault(false)
+                v.elevation = if (applied) spread else dp(ctx, 1.5f)
+                v.translationZ = 0f
+            } else {
+                v.elevation = 0f
+                v.translationZ = 0f
+                v.outlineProvider = null
+                v.background = null
+            }
+        }
     }
 
     /** 这一层当前是否由不透明底色承载（= 它才是肉眼看到的那层表面） */

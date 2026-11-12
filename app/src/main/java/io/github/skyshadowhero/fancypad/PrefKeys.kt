@@ -19,8 +19,6 @@ object PrefKeys {
     /** 兼容旧键：早期版本只有一个 gap_dp */
     const val GAP_LEGACY = "gap_dp"
 
-    const val PORTRAIT_FORCE_NORMAL = "portrait_force_normal"
-
     /** 主题模式（ThemeMode 序号），跨启动记忆 */
     const val THEME_MODE = "theme_mode"
 
@@ -90,18 +88,6 @@ object PrefKeys {
 
     /** 动态上限占对应屏幕宽度的比例 */
     const val GAP_MAX_RATIO = 0.9f
-
-    // ---- 超级材质（放行 Hyper Material 毛玻璃键盘背景） ----
-    const val MATERIAL_ENABLED = "material_enabled"
-
-    /** 强制所有应用：不看清单，任何前台应用弹出键盘都启用材质 */
-    const val MATERIAL_FORCE_ALL = "material_force_all"
-
-    /**
-     * 手动选择的应用。存成换行分隔的字符串而不是 StringSet：
-     * RemotePreferences 的集合类型在跨进程同步上更容易出意外，字符串最稳且便于日志排查。
-     */
-    const val MATERIAL_PACKAGES = "material_packages"
 
     // ==================================================================
     // 悬浮候选词窗口（圆角 / 间距）
@@ -431,6 +417,8 @@ object PrefKeys {
     const val CB_FREEFORM = "freeform"
     const val CB_NEW_WINDOW = "new_window"
     const val CB_CLOSE = "close"
+    /** OS4 新增：多分屏入口（框架 id `state_extend_mode`）。 */
+    const val CB_EXTEND_MODE = "extend_mode"
     const val CB_FORCE_CLOSE = "force_close"
 
     /** 隐藏哪些按钮（逗号分隔的 [CB_FULLSCREEN] 等 key）；空串 = 全部显示 */
@@ -441,12 +429,16 @@ object PrefKeys {
 
     /**
      * 框架的自然顺序 —— 就是 `MiuiCaptionContainerView.init` 里的添加顺序：
-     * 全屏 → 投屏 → 分屏左/上 → 分屏右/下 → 小窗 → 新窗口 → 关闭。
+     * 全屏 → 投屏 → 分屏左/上 → 分屏右/下 → 小窗 → 多分屏 → 新窗口 → 关闭。
      * 红色「强制关闭」是模块追加的，排最后。
+     *
+     * 注：普通小窗的「分屏·左/上」和多分屏顶栏里的「多分屏」按钮复用同一个
+     * `state_splitleftortop` id，但它们由**两张不同的 id→key 表**解析：前者归
+     * [CB_SPLIT_LEFT]，后者归 [CB_EXTEND_MODE]（多分屏菜单里那个 id 表示「多分屏」入口）。
      */
     const val CAPTION_BUTTON_DEFAULT_ORDER =
         "$CB_FULLSCREEN,$CB_CASTING,$CB_SPLIT_LEFT,$CB_SPLIT_RIGHT," +
-            "$CB_FREEFORM,$CB_NEW_WINDOW,$CB_CLOSE,$CB_FORCE_CLOSE"
+            "$CB_FREEFORM,$CB_EXTEND_MODE,$CB_NEW_WINDOW,$CB_CLOSE,$CB_FORCE_CLOSE"
 
     /**
      * 隐藏「当前状态对应的那个按钮」：已经是全屏就藏「全屏」，已经是小窗就藏「小窗」。

@@ -76,8 +76,12 @@ import kotlin.math.sign
 private val BottomBarItemHeight = 50.dp
 private val BottomBarPillInset = 4.dp
 
-/** 指示器滑动弹簧：临界阻尼，快速到位不回弹（dynamic-youth 同款） */
-private val BottomBarSlideSpec = spring<Float>(dampingRatio = 1f, stiffness = 900f, visibilityThreshold = 0.001f)
+/**
+ * 指示器滑动弹簧：临界阻尼、不回弹。
+ * 刚度从 900 提到 1600：点击切页时胶囊约 150ms 到位，和页面滑动的 200ms
+ * 页面滑动同步收尾；原来的 900 会拖到 300ms 之后，观感上明显慢。
+ */
+private val BottomBarSlideSpec = spring<Float>(dampingRatio = 1f, stiffness = 1600f, visibilityThreshold = 0.001f)
 
 /** 按压缩放弹簧 */
 private val BottomBarPressSpec = spring<Float>(dampingRatio = 1f, stiffness = 1000f)

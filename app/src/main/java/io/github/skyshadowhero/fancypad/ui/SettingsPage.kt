@@ -108,20 +108,4 @@ fun LazyListScope.appearanceSection(
         }
     }
 
-    item { SmallTitle("键盘形态") }
-    item {
-        Card {
-            SwitchPreference(
-                checked = uiState.portraitForceNormal,
-                onCheckedChange = { checked ->
-                    uiState.portraitForceNormal = checked
-                    uiState.save { editor ->
-                        editor.putBoolean(PrefKeys.PORTRAIT_FORCE_NORMAL, checked)
-                    }
-                },
-                title = "竖屏强制普通键盘",
-                summary = "开启后：横屏保持分离，竖屏强制变为整块普通键盘",
-            )
-        }
-    }
 }

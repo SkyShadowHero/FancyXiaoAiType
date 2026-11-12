@@ -48,7 +48,6 @@ data object RouteHome : NavKey
 
 data object RouteImeVirtual : NavKey
 data object RouteImeFloating : NavKey
-data object RouteImeMaterial : NavKey
 
 /** 随手写（触控笔手写）：AOSP Android 14+ 的 stylus handwriting，不是「手写键盘」。 */
 data object RouteImeStylus : NavKey
@@ -120,7 +119,7 @@ enum class AppScope(
     Ime(
         label = "小爱输入法",
         pkg = "com.xiaomi.type",
-        pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeMaterial, RouteImeStylus),
+        pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeStylus),
         requiredScope = listOf("com.xiaomi.type"),
         iconRes = R.drawable.ic_scope_ime,
     ),
@@ -185,7 +184,6 @@ fun NavKey.title(): String = when (this) {
     RouteHome -> "首页"
     RouteImeVirtual -> "虚拟键盘"
     RouteImeFloating -> "悬浮键盘"
-    RouteImeMaterial -> "超级材质"
     RouteImeStylus -> "随手写"
     RouteCursorPreset -> "主题预设"
     RouteCursorSize -> "大小"
@@ -206,7 +204,6 @@ fun NavKey.title(): String = when (this) {
 fun NavKey.icon(): ImageVector = when (this) {
     RouteImeVirtual -> MiuixIcons.Tune
     RouteImeFloating -> MiuixIcons.Layers
-    RouteImeMaterial -> MiuixIcons.Settings
     RouteImeStylus -> MiuixIcons.Edit
     RouteCursorPreset -> MiuixIcons.GridView
     RouteCursorSize -> MiuixIcons.Tune

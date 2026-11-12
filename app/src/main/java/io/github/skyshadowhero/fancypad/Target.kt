@@ -35,11 +35,9 @@ object Target {
      */
     const val SECURITY_CENTER_PACKAGE = "com.miui.securitycore"
 
-    // ---- 分离键盘几何 / 开关 ----
     // 这里的常量都**与输入法版本无关**：包名、prefs 键、资源名、默认 dp 值。
     // 「按混淆类名定位」的目标不放在这里 —— R8 每次发版都会改名，
     // 那些按输入法版本分档记录在 AppTargets / TargetCatalog 里。
-    const val KEY_SPLIT_ENABLED = "split_keyboard_enabled"
 
     // ---- 分离键盘中心间隙资源 ----
     // 权威来源：apktool 解码的 res/values/public.xml，并与 z9.b 的 R 常量双向核对
@@ -186,9 +184,6 @@ object Target {
         RES_KEY_SPACING_LAND, RES_KEY_SPACING_PORT,
         RES_ROW_SPACING_LAND, RES_ROW_SPACING_PORT,
     )
-
-    // ---- 超级材质（Hyper Material / 毛玻璃键盘背景）----
-    const val MATERIAL_GATE_SET_CLASS = "java.util.LinkedHashMap\$LinkedKeySet"
 
     // ==================================================================
     // 触屏候选词 / 悬浮键盘的工具栏与候选窗口（0.2.974 实测资源名）

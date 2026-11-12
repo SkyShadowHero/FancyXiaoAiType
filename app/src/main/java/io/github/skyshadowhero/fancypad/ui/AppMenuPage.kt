@@ -150,7 +150,7 @@ fun AppMenuPage(
     )
 }
 
-/** 生效应用的多选列表（复用「超级材质」那套 AppCatalog + MaterialPackages 编解码）。 */
+/** 生效应用的多选列表（复用 AppCatalog + 包名编解码）。 */
 @Composable
 private fun AppMenuAppPickerDialog(
     show: Boolean,

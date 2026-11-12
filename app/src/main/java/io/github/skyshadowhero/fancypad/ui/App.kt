@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import io.github.skyshadowhero.fancypad.L
-import io.github.skyshadowhero.fancypad.MaterialPackages
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.RemoteConfig
 import kotlinx.coroutines.delay
@@ -28,7 +27,6 @@ class AppUiState {
     var gapEnabled by mutableStateOf(false)
     var gapLand by mutableStateOf(284f)
     var gapPort by mutableStateOf(113f)
-    var portraitForceNormal by mutableStateOf(false)
 
     var cornerEnabled by mutableStateOf(false)
     var cornerDp by mutableStateOf(8f)
@@ -45,11 +43,6 @@ class AppUiState {
     var spaceKeyHorizPort by mutableStateOf(8f)
     var spaceRowLand by mutableStateOf(10f)
     var spaceRowPort by mutableStateOf(10f)
-
-    // ---- 超级材质 ----
-    var materialEnabled by mutableStateOf(false)
-    var materialForceAll by mutableStateOf(false)
-    var materialPackages by mutableStateOf<Set<String>>(emptySet())
 
     // ---- 悬浮候选词窗口 ----
     var candidateEnabled by mutableStateOf(false)
@@ -202,6 +195,9 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     val uiState = remember { AppUiState() }
     // ★ 必须用**宿主自己的**返回分发器（ComponentActivity 在 onCreate 里把它挂到 decorView 的
     //   ViewTree 上，`LocalNavigationEventDispatcherOwner` 会自动解析到它）。
+    //   前提：androidx.activity ≥ 1.13.0 —— 只有它实现了 NavigationEventDispatcherOwner
+    //   并用 DirectNavigationEventInput 把系统返回事件喂进 dispatcher。1.11.0 上 ambient 恒为
+    //   null，会掉到下面的 fallback root，于是「按返回直接退出」（见 build.gradle.kts）。
     //
     //   早先这里是 `rememberNavigationEventDispatcherOwner(parent = null)`：按 libxposed 无关的
     //   navigationevent 文档，parent 显式为 null 会建一条**游离的 root dispatcher**，
@@ -284,9 +280,6 @@ private fun loadConfigInto(uiState: AppUiState) {
         .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_LAND
     uiState.gapPort = p.runCatching { getFloat(PrefKeys.GAP_PORT, 0f) }.getOrDefault(0f)
         .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_PORT
-    uiState.portraitForceNormal = p.runCatching { getBoolean(PrefKeys.PORTRAIT_FORCE_NORMAL, false) }
-        .getOrDefault(false)
-
     uiState.cornerEnabled = p.runCatching { getBoolean(PrefKeys.CORNER_ENABLED, false) }.getOrDefault(false)
     uiState.cornerDp = p.runCatching { getFloat(PrefKeys.CORNER_DP, 0f) }.getOrDefault(0f)
         .takeIf { it > 0f } ?: PrefKeys.CORNER_DEFAULT
@@ -316,14 +309,6 @@ private fun loadConfigInto(uiState: AppUiState) {
 
     uiState.themeMode = p.runCatching { getInt(PrefKeys.THEME_MODE, 0) }.getOrDefault(0)
         .coerceIn(0, ThemeMode.entries.size - 1)
-
-    uiState.materialEnabled = p.runCatching { getBoolean(PrefKeys.MATERIAL_ENABLED, false) }
-        .getOrDefault(false)
-    uiState.materialForceAll = p.runCatching { getBoolean(PrefKeys.MATERIAL_FORCE_ALL, false) }
-        .getOrDefault(false)
-    uiState.materialPackages = MaterialPackages.decode(
-        p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }.getOrDefault("")
-    )
 
     // ---- 悬浮候选词窗口 ----
     uiState.candidateEnabled = p.runCatching { getBoolean(PrefKeys.CANDIDATE_ENABLED, false) }

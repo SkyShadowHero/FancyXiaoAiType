@@ -10,6 +10,7 @@ import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
@@ -81,6 +82,16 @@ public final class CaptionHooks {
                     + ".MiuiDecorationDotView";
     private static final String CLS_R_DRAWABLE = "com.android.wm.shell.R$drawable";
     private static final String CLS_R_ID = "com.android.wm.shell.R$id";
+    /** OS4 多分屏模式的顶栏小窗菜单（另一套视图，但复用同一套 R.id.state_*）。 */
+    private static final String CLS_MULTI_SPLIT_CONTROLLER =
+            "com.android.wm.shell.multiplesplit.ui.menu.MultipleSplitTopMenuController";
+    /**
+     * 多分屏顶栏菜单的按钮：{@code setIcon(int)} 里 new 一个 View、设 background 再
+     * addViewInLayout —— 换 × → − 就 hook 它，和普通小窗的 {@code createStateButton}
+     * 是对称的两条路径。
+     */
+    private static final String CLS_MULTI_SPLIT_BUTTON =
+            "com.android.wm.shell.multiplesplit.ui.menu.MultipleSplitTopMenuButton";
 
     /** 框架「关闭」按钮的图标资源名（见 MiuiCaptionContainerView.init 里的 state_close）。 */
     private static final String CLOSE_ICON_NAME = "caption_close";
@@ -112,11 +123,49 @@ public final class CaptionHooks {
             {"state_freeform", PrefKeys.CB_FREEFORM},
             {"state_newwindow", PrefKeys.CB_NEW_WINDOW},
             {FRAMEWORK_CLOSE_ID_NAME, PrefKeys.CB_CLOSE},
+            // OS4 新增：多分屏（框架类名 MiuiExtendModeButton，id 直接挂在自己身上）
+            {"state_extend_mode", PrefKeys.CB_EXTEND_MODE},
+    };
+
+    /**
+     * OS4 多分屏顶栏菜单的 {@code R.id → PrefKeys.CB_*} 对照表。
+     *
+     * <p>它复用普通小窗那套 {@code state_*} id，但**语义并不一一对应**：
+     * 多分屏菜单里 {@code state_splitleftortop} 那个按钮其实是「多分屏」入口
+     * （{@code addMultipleSplitButton} 里硬编码 0x700a02d8），跟普通小窗的「分屏·左/上」
+     * 是两个东西。早先共用一张表，结果用户把「分屏·左/上」一关，多分屏菜单的
+     * 「多分屏」按钮就被一并删掉（表现就是「按钮消失了，切一下总开关又回来」）。
+     *
+     * <p>所以这里单独建表：多分屏入口归到 {@link PrefKeys#CB_EXTEND_MODE}
+     * （设置页里那一项就叫「多分屏」），其余按语义直译。
+     */
+    private static final String[][] MULTI_SPLIT_BUTTONS = {
+            {"state_fullscrren", PrefKeys.CB_FULLSCREEN},
+            {"state_appcasting", PrefKeys.CB_CASTING},
+            {"state_splitleftortop", PrefKeys.CB_EXTEND_MODE},
+            {"state_freeform", PrefKeys.CB_FREEFORM},
+            {"state_newwindow", PrefKeys.CB_NEW_WINDOW},
+            {FRAMEWORK_CLOSE_ID_NAME, PrefKeys.CB_CLOSE},
     };
 
     /** 给按钮条打的标记，{@code addWindow} 靠它把那条 bar 找回来算宽度。 */
     private static final int BAR_TAG_KEY = 0x7E0F0002;
     private static final Object BAR_TAG_VALUE = new Object();
+
+    /**
+     * 图标 View 上记录「我们已经换上去的那个 drawable」的 tag key。
+     *
+     * <p>值就是 {@link FrameWithMinusDrawable} 实例本身（不是布尔标记）：这样既能判断
+     * 换过没有，也能发现「tag 还在、背景已经被框架换回 ×」的情况。
+     */
+    private static final int MINUS_TAG_KEY = 0x7E0F0003;
+
+    /**
+     * 我们追加的按钮把「自己真正的点击监听」存在这个 tag 上。
+     * 框架的 {@code addMouseHoverEffect} 会遍历按钮条给每个子 View 重设
+     * {@code setOnClickListener}，所以 proceed 之后要按 tag 恢复回来。
+     */
+    private static final int LISTENER_TAG_KEY = 0x7E0F0004;
 
     /**
      * 我们那个红色「彻底关闭」按钮的 id（挂在包裹用的 FrameLayout 上）。
@@ -165,6 +214,10 @@ public final class CaptionHooks {
     private volatile View.OnClickListener frameworkMenuClickListener;
     /** 调 {@link #frameworkMenuClickListener} 时冒充「关闭」按钮用的哑 View（只用到它的 id）。 */
     private View closeProxyView;
+    /** 框架按钮 id → key 的对照表：普通小窗菜单与 OS4 多分屏顶栏菜单共用。 */
+    private volatile Map<Integer, String> idToKey = new HashMap<>();
+    /** 多分屏顶栏菜单单独一份（同一批 id，语义不同，见 {@link #MULTI_SPLIT_BUTTONS}）。 */
+    private volatile Map<Integer, String> multiSplitIdToKey = new HashMap<>();
 
     public CaptionHooks(XposedInterface module) {
         this.module = module;
@@ -208,8 +261,8 @@ public final class CaptionHooks {
             newWindowIconId = resolveResId(classLoader, CLS_R_DRAWABLE, NEW_WINDOW_ICON_NAME);
             pressSelectorId = resolveResId(classLoader, CLS_R_DRAWABLE, PRESS_SELECTOR_NAME);
 
-            // 框架按钮 id → key 的对照表（认按钮 / 隐藏 / 排序都要用）
-            final Map<Integer, String> idToKey = new HashMap<>();
+            // 框架按钮 id → key 的对照表（普通菜单 / 多分屏顶栏菜单各一张）
+            idToKey.clear();
             for (String[] pair : FRAMEWORK_BUTTONS) {
                 int id = resolveResId(classLoader, CLS_R_ID, pair[0]);
                 if (id == 0) {
@@ -222,10 +275,20 @@ public final class CaptionHooks {
                     newWindowId = id;
                 }
             }
+            multiSplitIdToKey.clear();
+            for (String[] pair : MULTI_SPLIT_BUTTONS) {
+                int id = resolveResId(classLoader, CLS_R_ID, pair[0]);
+                if (id != 0) {
+                    multiSplitIdToKey.put(id, pair[1]);
+                }
+            }
 
             installCloseIconHook(classLoader, closeIconId);
+            installMultiSplitCloseIconHook(classLoader, closeIconId);
             installMenuButtonsHook(classLoader, idToKey);
+            installMultipleSplitMenuHook(classLoader);
             installWidenMenuHook(classLoader);
+            installMultipleSplitWidenHook(classLoader);
             installHideDotsHook(classLoader);
 
             L.INSTANCE.i("event=caption_hooks_installed closeIcon=0x"
@@ -276,25 +339,117 @@ public final class CaptionHooks {
      * {@code addViewInLayout(view, -1, new FrameLayout.LayoutParams(-2, -2))}）。
      */
     private static void swapIconToMinus(Object button) {
-        View icon = firstChildOf(button);
+        swapIconDrawable(firstChildOf(button));
+    }
+
+    /**
+     * 把图标 View 的 × 换成 −（外框保留，字形改横线）。
+     *
+     * <p>幂等判断**不看「打过 tag」，而是看 tag 里记的 drawable 是不是当前这层背景**：
+     * 框架有时会在我们换完之后又 {@code setBackgroundResource} 一次（重建图标 / 切换状态），
+     * 这时 tag 还在、背景却已经不是我们的了。只认 tag 会漏掉，表现就是「图标不见了」。
+     * 反过来，背景本来就是我们的 drawable 时直接跳过，不会套娃。
+     */
+    private static void swapIconDrawable(View icon) {
         if (icon == null) {
             return;
         }
+        if (icon instanceof ViewGroup && ((ViewGroup) icon).getChildCount() > 0) {
+            return;  // 有子 View 的是容器，不是图标叶子
+        }
         Drawable original = icon.getBackground();
+        if (original instanceof FrameWithMinusDrawable) {
+            icon.setTag(MINUS_TAG_KEY, original);
+            return;
+        }
         int w = original == null ? 0 : original.getIntrinsicWidth();
         int h = original == null ? 0 : original.getIntrinsicHeight();
+        if (w <= 0 || h <= 0) {
+            // 少数图标 drawable 没给 intrinsic 尺寸，退回 View 的实测尺寸
+            w = icon.getWidth();
+            h = icon.getHeight();
+        }
         if (original == null || w <= 0 || h <= 0) {
             return;
         }
-        icon.setBackground(new FrameWithMinusDrawable(original, w, h, isNight(icon)));
+        FrameWithMinusDrawable swapped = new FrameWithMinusDrawable(original, w, h, isNight(icon));
+        icon.setBackground(swapped);
+        icon.setTag(MINUS_TAG_KEY, swapped);
         L.INSTANCE.i("event=caption_icon_swapped from=" + w + "x" + h);
+    }
+
+    /**
+     * 把按钮里**所有**图标子 View 都换成 −。
+     *
+     * <p>{@code MultipleSplitTopMenuButton.setIcon(int)} 的实现是「new 一个 View → addViewInLayout」，
+     * 从不清理旧子 View。按钮一旦被复用（关掉菜单再打开就是这样），旧图标留在下面、新的又叠一层，
+     * 只换索引 {@code before} 那一个的话，下面那层还是 ×。整组换掉最省心。
+     */
+    private static void swapIconGroup(ViewGroup button) {
+        boolean swappedAny = false;
+        for (int i = 0; i < button.getChildCount(); i++) {
+            View child = button.getChildAt(i);
+            if (child.getBackground() == null) {
+                continue;
+            }
+            swapIconDrawable(child);
+            swappedAny = true;
+        }
+        if (!swappedAny) {
+            // 结构变了（图标不是子 View 而是按钮自己的背景）时的兜底
+            swapIconToMinus(button);
+        }
+    }
+
+    /**
+     * OS4 多分屏顶栏菜单的 × → −。普通小窗走 {@code createStateButton}，这套走
+     * {@code MultipleSplitTopMenuButton.setIcon(int)}：它在方法里 new 一个 View、
+     * setBackgroundResource(iconRes) 后 addViewInLayout(..., -1, lp)。
+     *
+     * <p>proceed 之后把按钮里**所有**图标子 View 一起换掉（这个方法不清理旧子 View，
+     * 按钮复用时会叠出多层图标），不依赖子 View 顺序。
+     */
+    private void installMultiSplitCloseIconHook(ClassLoader cl, final int closeIconId) {
+        Method setIcon = findMethod(cl, CLS_MULTI_SPLIT_BUTTON, "setIcon", 1);
+        if (setIcon == null) {
+            L.INSTANCE.w("event=caption_hook_skipped reason=multi_split_setIcon_not_found");
+            return;
+        }
+        try {
+            setIcon.setAccessible(true);
+            module.hook(setIcon)
+                    .setId("caption_multi_split_set_icon")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept(chain -> {
+                        Object self = chain.getThisObject();
+                        Object result = chain.proceed();
+                        try {
+                            if (HookPrefs.captionEnabled()
+                                    && HookPrefs.captionCloseAsMinus()
+                                    && isArg(chain, 0, closeIconId)
+                                    && self instanceof ViewGroup) {
+                                // setIcon 每次都是 new 一个 View 追加进来（不清理旧子 View），
+                                // 所以不能只换「刚新增的那个」：按钮被复用时旧的 × 还留在下面，
+                                // 新的一次又叠上来。整组一起换才稳。
+                                swapIconGroup((ViewGroup) self);
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_multi_split_icon_swap_failed msg="
+                                    + t.getMessage());
+                        }
+                        return result;
+                    });
+        } catch (Throwable t) {
+            L.INSTANCE.e("event=hook_failed target=caption_multi_split_set_icon", t);
+        }
     }
 
     // ------------------------------------- 2) 菜单按钮：追加 / 隐藏 / 重排
     //
     // 都挂在 MiuiDecorationDot.addMouseHoverEffect 上 —— 它是框架**统一给按钮条里每个
-    // 子 View 挂点击监听**的地方（遍历子 View 调 setOnClickListener）。等它跑完再动：
-    // 追加不会被框架的监听覆盖，删/排序也不会破坏已经挂好的监听。
+    // 子 View 挂点击监听 + 小米私有 hover 属性**的地方。所以按钮必须在 chain.proceed()
+    // **之前**追加，让框架把它当亲儿子一起处理；proceed 之后恢复我们自己的点击监听，
+    // 再做隐藏 / 重排。顺序反过来（先 proceed 再追加）会缺私有属性，长按会把菜单关掉。
     private void installMenuButtonsHook(ClassLoader cl, final Map<Integer, String> idToKey) {
         Method addMouseHoverEffect =
                 findMethod(cl, CLS_DOT, "addMouseHoverEffect", 3);
@@ -308,11 +463,14 @@ public final class CaptionHooks {
                     .setId("caption_add_mouse_hover_effect")
                     .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                     .intercept(chain -> {
-                        Object result = chain.proceed();
+                        ViewGroup bar = chain.getArg(0) instanceof ViewGroup
+                                ? (ViewGroup) chain.getArg(0) : null;
+                        Object dot = chain.getThisObject();
+                        boolean active = HookPrefs.captionEnabled() && bar != null;
+                        // ① 先追加：让框架的 addMouseHoverEffect 把私有视图属性 /
+                        //    Folme hover 一并挂到我们的按钮上（长按一致性的关键）。
                         try {
-                            if (HookPrefs.captionEnabled() && chain.getArg(0) instanceof ViewGroup) {
-                                ViewGroup bar = (ViewGroup) chain.getArg(0);
-                                Object dot = chain.getThisObject();
+                            if (active) {
                                 // arg2 就是框架那个 MiuiCaptionClickListener，后面几个地方都要用
                                 if (chain.getArg(2) instanceof View.OnClickListener) {
                                     frameworkMenuClickListener = (View.OnClickListener) chain.getArg(2);
@@ -320,15 +478,25 @@ public final class CaptionHooks {
                                 // 打个标记：addWindow 靠它找回这条 bar 算宽度
                                 bar.setTag(BAR_TAG_KEY, BAR_TAG_VALUE);
                                 if (HookPrefs.captionForceClose()) {
-                                    addForceCloseButton(bar, dot);
+                                    addForceCloseButton(bar, dot, true);
                                 }
                                 if (HookPrefs.captionAlwaysNewWindow()) {
                                     addNewWindowButton(bar, chain.getArg(2));
                                 }
-                                applyButtonConfig(bar, idToKey, dot);
                             }
                         } catch (Throwable t) {
                             L.INSTANCE.w("event=caption_menu_button_failed msg=" + t.getMessage());
+                        }
+                        Object result = chain.proceed();
+                        // ② 框架重设过所有子 View 的点击监听，按 tag 恢复我们的；再做显隐 / 排序。
+                        try {
+                            if (active) {
+                                restoreOwnListeners(bar);
+                                applyButtonConfig(bar, idToKey, dot);
+                                ensureCloseMinus(bar);
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_menu_post_failed msg=" + t.getMessage());
                         }
                         return result;
                     });
@@ -436,21 +604,23 @@ public final class CaptionHooks {
     }
 
     /** 在框架挂完监听之后，把红色按钮追加到同一条 bar 里。 */
-    private void addForceCloseButton(ViewGroup bar, Object dot) throws Exception {
+    private void addForceCloseButton(ViewGroup bar, Object host, boolean useFrameworkProxy)
+            throws Exception {
         Context ctx = bar.getContext();
         if (bar.findViewById(FORCE_CLOSE_BUTTON_ID) != null) {
             return; // 已经有就不重复加（同一条 bar 只会构造一次）
         }
-        ActivityManager.RunningTaskInfo info = resolveTaskInfo(dot);
-        if (info == null) {
-            return;
-        }
-        String pkg = packageOf(info);
-        if (pkg == null) {
-            return;
-        }
-        final int userId = userIdOf(info);
-        final int taskId = info.taskId;
+        // OS4 多分屏顶栏菜单可能拿不到 RunningTaskInfo：按钮照样加，
+        // 只是退化成「代点关闭」而不做强杀（见 onClick 末尾）。
+        ActivityManager.RunningTaskInfo info = resolveTaskInfo(host);
+        final String pkg = info == null ? null : packageOf(info);
+        final int userId = info == null ? 0 : userIdOf(info);
+        final int taskId = info == null ? -1 : info.taskId;
+        // 多分屏顶栏菜单没有普通小窗那个全局 MiuiCaptionClickListener：在追加我们自己的
+        // 按钮**之前**从框架按钮上把监听取出来，否则 listenerFromBar 会读到自己的监听，
+        // 代点时递归调回来。
+        final View.OnClickListener ownMenuListener =
+                useFrameworkProxy ? null : listenerFromBar(bar);
 
         ViewGroup wrapper = (ViewGroup) frameLayoutCls
                 .getConstructor(Context.class).newInstance(ctx);
@@ -475,7 +645,7 @@ public final class CaptionHooks {
         if (pressSelectorId != 0) {
             button.setBackgroundResource(pressSelectorId);
         }
-        button.setOnClickListener(v -> {
+        View.OnClickListener ownClick = v -> {
             // 1) 先触发小米自己的「关闭」：关闭动画、任务移除、最近任务刷新全都跟正常关闭一致
             //    （这也是不自己画动画的原因）。绝对不能先调 closeHandleMenu ——
             //    MiuiCaptionClickListener.onClick 开头会判 isHandleMenuActive()，菜单先关了它
@@ -485,24 +655,36 @@ public final class CaptionHooks {
             //    按钮可能被「按钮开关」隐藏掉，代点会落空（表现就是没有关闭动画）。
             //    onClick 只按 view id 分派关闭动作，所以拿个哑 View 冒个 id 就够了。
             View.OnClickListener listener = frameworkMenuClickListener;
-            if (listener != null && closeButtonId != 0) {
+            if (useFrameworkProxy && listener != null && closeButtonId != 0) {
                 if (closeProxyView == null) {
                     View proxy = new View(ctx);
                     proxy.setId(closeButtonId);
                     closeProxyView = proxy;
                 }
                 listener.onClick(closeProxyView);
+            } else if (ownMenuListener != null && closeButtonId != 0) {
+                // 多分屏顶栏菜单：用它自己的框架监听配一个带 state_close id 的哑 View 代点
+                // （onClick 只按 view id 分派关闭动作，和框架按钮点下去完全同一条路径）。
+                View proxy = new View(ctx);
+                proxy.setId(closeButtonId);
+                ownMenuListener.onClick(proxy);
             } else {
-                // 拿不到监听（版本签名变了）才退化成代点按钮
+                // 连监听都拿不到才退化成 findViewByI 代点
                 View frameworkClose = bar.findViewById(closeButtonId);
                 if (frameworkClose != null) {
                     frameworkClose.performClick();
                 }
             }
             // 2) 等关闭转场播完，再彻底收掉：摘任务（卡片消失）+ 杀进程（后台不留）。
-            //    杀早了就是「动画闪一下」。
-            v.postDelayed(() -> killApp(ctx, pkg, userId, taskId), FORCE_KILL_DELAY_MS);
-        });
+            //    杀早了就是「动画闪一下」。拿不到任务信息的场合只做第 1 步。
+            if (taskId >= 0 && pkg != null) {
+                v.postDelayed(() -> killApp(ctx, pkg, userId, taskId), FORCE_KILL_DELAY_MS);
+            }
+        };
+        button.setOnClickListener(ownClick);
+        // 框架 addMouseHoverEffect 会重设按钮条里所有子 View 的监听，
+        // 把自己的先存起来，proceed 之后由 restoreOwnListeners 按 tag 恢复。
+        button.setTag(LISTENER_TAG_KEY, ownClick);
 
         wrapper.setId(FORCE_CLOSE_BUTTON_ID);
         wrapper.setPadding(1, 1, 1, 1);
@@ -514,6 +696,15 @@ public final class CaptionHooks {
             return;
         }
         bar.addView(wrapper, -1, lp);
+        // 与框架按钮对齐：magic view 三件套 + 菜单位置（长按别被外层当成「点外面」）
+        applyMagicFlags(wrapper);
+        applyMagicFlags(button);
+        applyMagicFlags(icon);
+        Object pos = readField(host, "mHandleMenuPosition");
+        if (pos instanceof Point) {
+            callIntSetter(wrapper, "setMiuiFreeformHandleMenuPositionX", ((Point) pos).x);
+            callIntSetter(wrapper, "setMiuiFreeformHandleMenuPositionY", ((Point) pos).y);
+        }
     }
 
     /**
@@ -551,7 +742,9 @@ public final class CaptionHooks {
             button.setBackgroundResource(pressSelectorId);
         }
         if (frameworkListener instanceof View.OnClickListener) {
-            button.setOnClickListener((View.OnClickListener) frameworkListener);
+            View.OnClickListener own = (View.OnClickListener) frameworkListener;
+            button.setOnClickListener(own);
+            button.setTag(LISTENER_TAG_KEY, own);
         }
 
         wrapper.setPadding(1, 1, 1, 1);
@@ -560,6 +753,9 @@ public final class CaptionHooks {
         ViewGroup.MarginLayoutParams lp = oneSlotParams(bar);
         if (lp != null) {
             bar.addView(wrapper, -1, lp);
+            applyMagicFlags(wrapper);
+            applyMagicFlags(button);
+            applyMagicFlags(icon);
         }
     }
 
@@ -596,6 +792,223 @@ public final class CaptionHooks {
         return null;
     }
 
+    // --------------------------------------------- 2b) OS4 多分屏顶栏小窗菜单
+
+    /**
+     * OS4 的「多分屏」模式下，窗口顶栏点开的是**另一套**视图：
+     * {@code MultipleSplitTopMenuController.createTopMenu} →
+     * {@code MultipleSplitTopMenuContainer.init}（全屏 / 投屏 / 多分屏 / 小窗 / 新窗口 / 关闭）
+     * → {@code addMouseHoverEffect(ViewGroup)}。
+     *
+     * <p>好消息是它复用同一套 {@code R.id.state_*}，所以按钮显隐 / 排序直接共用
+     * [idToKey]；坏消息是这里没有 {@code MiuiDecorationDot}，也就没有
+     * {@code frameworkMenuClickListener} 与下滑关闭逻辑 —— 红色按钮改成代点它自己的
+     * 关闭按钮（{@code addForceCloseButton} 的 useFrameworkProxy=false 分支）。
+     */
+    private void installMultipleSplitMenuHook(ClassLoader cl) {
+        Method m = findMethod(cl, CLS_MULTI_SPLIT_CONTROLLER, "addMouseHoverEffect", 1);
+        if (m == null) {
+            L.INSTANCE.w("event=caption_hook_skipped reason=multi_split_menu_method_not_found");
+            return;
+        }
+        try {
+            m.setAccessible(true);
+            module.hook(m)
+                    .setId("caption_multiple_split_menu")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept(chain -> {
+                        ViewGroup bar = chain.getArg(0) instanceof ViewGroup
+                                ? (ViewGroup) chain.getArg(0) : null;
+                        Object controller = chain.getThisObject();
+                        boolean active = HookPrefs.captionEnabled() && bar != null;
+                        // ① 先追加，让框架 addMouseHoverEffect 给新按钮挂私有 hover 属性；
+                        //    listenerFromBar 必须在追加之前取，否则会读到我们自己的监听。
+                        try {
+                            if (active) {
+                                bar.setTag(BAR_TAG_KEY, BAR_TAG_VALUE);
+                                View.OnClickListener frameworkListener = listenerFromBar(bar);
+                                if (HookPrefs.captionForceClose()) {
+                                    addForceCloseButton(bar, controller, false);
+                                }
+                                if (HookPrefs.captionAlwaysNewWindow()) {
+                                    addNewWindowButton(bar, frameworkListener);
+                                }
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_multi_split_menu_failed msg=" + t.getMessage());
+                        }
+                        Object result = chain.proceed();
+                        try {
+                            if (active) {
+                                restoreOwnListeners(bar);
+                                applyButtonConfig(bar, multiSplitIdToKey, controller);
+                                ensureCloseMinus(bar);
+                                dumpBarAfterLayout(bar);
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_multi_split_post_failed msg=" + t.getMessage());
+                        }
+                        return result;
+                    });
+        } catch (Throwable t) {
+            L.INSTANCE.e("event=hook_failed target=caption_multiple_split_menu", t);
+        }
+    }
+
+    /** 从菜单里已有的框架按钮上把 OnClickListener 取出来（补「新窗口」按钮时复用）。 */
+    private static View.OnClickListener listenerFromBar(ViewGroup bar) {
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View child = bar.getChildAt(i);
+            for (View v : new View[]{child, firstChildOf(child)}) {
+                if (v == null) continue;
+                try {
+                    Object listener = readField(readField(v, "mListenerInfo"), "mOnClickListener");
+                    if (listener instanceof View.OnClickListener) {
+                        return (View.OnClickListener) listener;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 恢复模块追加按钮自己的点击监听。
+     *
+     * <p>为了让新按钮和框架按钮走**完全相同**的触摸配置，把按钮的添加提前到
+     * {@code addMouseHoverEffect} 的 {@code chain.proceed()} 之前：框架会自己给它挂
+     * {@code setMagicView / setPointerHide / setWrapped / setXOffset / ... / Folme hover}。
+     * 代价是框架同时会 {@code setOnClickListener(frameworkMenuClickListener)} 覆盖我们的
+     * 监听（{@code MiuiCaptionFrameLayout} 把它转发给第一个子 View），所以 proceed 之后
+     * 按 [LISTENER_TAG_KEY] 恢复。
+     *
+     * <p>早先「proceed 之后追加 + 反射补私有属性」不可靠：hidden API 反射可能被拦，而
+     * {@code MiuiCaptionStateButton.onTouchEvent} 根本不调 super，补
+     * {@code setOnLongClickListener} / {@code setLongClickable} 不会被触发 —— 表现就是
+     * 新按钮长按仍被外层判成菜单外触摸、菜单直接退出（「按不住，只能点一下」）。
+     */
+    private static void restoreOwnListeners(ViewGroup bar) {
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View child = bar.getChildAt(i);
+            for (View v : new View[]{child, firstChildOf(child), firstChildOf(firstChildOf(child))}) {
+                if (v == null) {
+                    continue;
+                }
+                Object tag = v.getTag(LISTENER_TAG_KEY);
+                if (tag instanceof View.OnClickListener) {
+                    v.setOnClickListener((View.OnClickListener) tag);
+                }
+            }
+        }
+    }
+
+    /**
+     * 菜单建好之后**再确认一遍**「关闭」按钮的图标是不是 −。
+     *
+     * <p>只在 {@code setIcon} / {@code createStateButton} 里换一次是不够的：多分屏那套按钮会被
+     * 复用，关掉菜单再打开时框架可能不再调 {@code setIcon}，也可能又拿资源把背景重置了一次 ——
+     * 两种情况都会让 − 消失（表现就是「关闭后再打开，图标没了」）。这里在建好的按钮条上兜底
+     * 补一次，成本只有一次子树遍历。也因为它是幂等的（背景已经是 − 就直接返回），每次建菜单
+     * 都跑一遍不会有副作用。
+     */
+    private void ensureCloseMinus(ViewGroup bar) {
+        if (!HookPrefs.captionEnabled() || !HookPrefs.captionCloseAsMinus()) {
+            return;
+        }
+        View close = findCloseButton(bar);
+        if (close instanceof ViewGroup) {
+            swapIconGroup((ViewGroup) close);
+        } else if (close != null) {
+            swapIconDrawable(close);
+        }
+    }
+
+    /** 在按钮条里找出框架的「关闭」按钮（它的 R.id 直接挂在自己身上）。 */
+    private View findCloseButton(ViewGroup bar) {
+        if (bar == null || closeButtonId == 0) {
+            return null;
+        }
+        try {
+            return bar.findViewById(closeButtonId);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 把多分屏菜单的视图树（布局完成后）落盘一份。
+     *
+     * <p>「图标不显示」这类问题分两种：要么 drawable 没了（背景为 null / 尺寸为 0），
+     * 要么 View 被挤出窗口（宽高为 0）。日志本机收不到，只能靠这份诊断区分。
+     */
+    private static void dumpBarAfterLayout(final ViewGroup bar) {
+        try {
+            bar.post(() -> {
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("bar=").append(bar.getClass().getSimpleName())
+                            .append(" children=").append(bar.getChildCount())
+                            .append(" w=").append(bar.getWidth())
+                            .append(" h=").append(bar.getHeight());
+                    for (int i = 0; i < bar.getChildCount(); i++) {
+                        View child = bar.getChildAt(i);
+                        sb.append("\n[").append(i).append("] ")
+                                .append(child.getClass().getSimpleName())
+                                .append(" id=0x").append(Integer.toHexString(child.getId()))
+                                .append(" vis=").append(child.getVisibility())
+                                .append(" w=").append(child.getWidth())
+                                .append(" h=").append(child.getHeight())
+                                .append(" x=").append(child.getLeft())
+                                .append(" y=").append(child.getTop());
+                        if (child instanceof ViewGroup) {
+                            ViewGroup group = (ViewGroup) child;
+                            sb.append(" kids=").append(group.getChildCount());
+                            for (int j = 0; j < group.getChildCount(); j++) {
+                                View leaf = group.getChildAt(j);
+                                Drawable bg = leaf.getBackground();
+                                sb.append("\n    leaf").append(j)
+                                        .append(" id=0x").append(Integer.toHexString(leaf.getId()))
+                                        .append(" bg=").append(bg == null
+                                                ? "null" : bg.getClass().getSimpleName())
+                                        .append(" iw=").append(bg == null
+                                                ? -1 : bg.getIntrinsicWidth())
+                                        .append(" ih=").append(bg == null
+                                                ? -1 : bg.getIntrinsicHeight())
+                                        .append(" w=").append(leaf.getWidth())
+                                        .append(" h=").append(leaf.getHeight())
+                                        .append(" vis=").append(leaf.getVisibility());
+                                // 按钮里真正画图标的是再下一层（MultipleSplitTopMenuButton /
+                                // MiuiCaptionStateButton 都是 FrameLayout，setIcon 往里面 addView）。
+                                // 「图标消失」要看这层的背景与尺寸。
+                                if (leaf instanceof ViewGroup) {
+                                    ViewGroup lvg = (ViewGroup) leaf;
+                                    for (int k = 0; k < lvg.getChildCount(); k++) {
+                                        View glyph = lvg.getChildAt(k);
+                                        Drawable gbg = glyph.getBackground();
+                                        sb.append("\n      glyph").append(k)
+                                                .append(" bg=").append(gbg == null
+                                                        ? "null" : gbg.getClass().getSimpleName())
+                                                .append(" iw=").append(gbg == null
+                                                        ? -1 : gbg.getIntrinsicWidth())
+                                                .append(" ih=").append(gbg == null
+                                                        ? -1 : gbg.getIntrinsicHeight())
+                                                .append(" w=").append(glyph.getWidth())
+                                                .append(" h=").append(glyph.getHeight());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Diag.INSTANCE.write("caption_ms_menu_layout", sb.toString());
+                } catch (Throwable ignored) {
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+
     // --------------------------------------------- 3) 菜单窗口宽度跟随按钮数
     //
     // createHandleMenu 是按「按钮宽×个数 + 边距×(个数+1)」**算好宽高才调 addWindow** 的，
@@ -622,6 +1035,7 @@ public final class CaptionHooks {
                                 ViewGroup bar = findTaggedBar(container);
                                 if (bar != null && bar.getChildCount() > 0) {
                                     int originalX = (Integer) chain.getArg(1);
+                                    int originalY = (Integer) chain.getArg(2);
                                     int originalWidth = (Integer) chain.getArg(3);
                                     // 宽度按**实际按钮数**算，内容才刚好撑满窗口
                                     int width = barContentWidth(bar);
@@ -632,6 +1046,14 @@ public final class CaptionHooks {
                                     // 宽度没变时 newX == originalX，等于原样不动。
                                     int newX = originalX - (width - originalWidth) / 2;
                                     if (width > 0 && (width != originalWidth || newX != originalX)) {
+                                        // 换过宽度的窗口，MIUI 记下来的菜单位置还是旧的：
+                                        // mHandleMenuPosition 和每个按钮的
+                                        // setMiuiFreeformHandleMenuPositionX/Y 都停在 originalX 上。
+                                        // 于是 isTouchedInHandleMenu()（外面用来判断「是不是点在菜单里」）
+                                        // 和 magic view 的长按判定都用错坐标系 —— 缩窄时窗口右移半个差值，
+                                        // 最右边的按钮就会被判成「菜单外」，按住不放直接把菜单关掉。
+                                        // 位置一定要跟着窗口一起改。
+                                        syncMenuGeometry(chain.getThisObject(), bar, newX, originalY);
                                         Object[] args = chain.getArgs().toArray();
                                         args[1] = newX;
                                         args[3] = width;
@@ -651,6 +1073,71 @@ public final class CaptionHooks {
                     });
         } catch (Throwable t) {
             L.INSTANCE.e("event=hook_failed target=caption_add_window", t);
+        }
+    }
+
+    /**
+     * OS4 多分屏顶栏菜单的窗口宽高是 {@code createTopMenu} 的局部变量，传给
+     * {@code addWindow(View, int width, int height)}，在 {@code addMouseHoverEffect} 之前
+     * 就按框架按钮数算好了。我们在 hover 之后追加按钮，不重算就会让新按钮溢出窗口：
+     * 触点落到 {@code isTouchedInHandleMenu} 的范围外，表现就是「长按直接把菜单关掉」。
+     *
+     * <p>这里按 bar 的实际子 View 重算宽度，并同步 {@code mTopMenuBounds.right}
+     * （出现动画与触摸判定都读它）；left/top 不动，保持框架自己的定位。
+     */
+    private void installMultipleSplitWidenHook(ClassLoader cl) {
+        Method addWindow = findMethod(cl, CLS_MULTI_SPLIT_CONTROLLER, "addWindow", 3);
+        if (addWindow == null) {
+            L.INSTANCE.w("event=caption_hook_skipped reason=multi_split_add_window_not_found");
+            return;
+        }
+        try {
+            addWindow.setAccessible(true);
+            module.hook(addWindow)
+                    .setId("caption_multi_split_add_window")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept(chain -> {
+                        try {
+                            if (HookPrefs.captionEnabled()
+                                    && chain.getArg(0) instanceof View
+                                    && chain.getArg(1) instanceof Integer) {
+                                ViewGroup bar = findTaggedBar((View) chain.getArg(0));
+                                if (bar != null && bar.getChildCount() > 0) {
+                                    int originalWidth = (Integer) chain.getArg(1);
+                                    int width = barContentWidth(bar);
+                                    if (width > 0 && width != originalWidth) {
+                                        // 窗口 surface 的左上角就是 mTopMenuBounds.left/top，宽度只用
+                                        // 来 setWindowCrop。所以**只改 right 会让菜单向右多长一截**
+                                        // （左侧不动），看上去偏右半个差值。
+                                        // 正确做法：left 左移半个差值，right = left + 新宽度 ——
+                                        // 窗口中心仍是 calculateTopMenuPos 算出来的 stage 中心。
+                                        Object bounds = readField(chain.getThisObject(), "mTopMenuBounds");
+                                        if (bounds instanceof Rect) {
+                                            Rect rect = (Rect) bounds;
+                                            int oldWidth = rect.width();
+                                            if (oldWidth != width) {
+                                                int dx = (width - oldWidth) / 2;
+                                                rect.left -= dx;
+                                                rect.right = rect.left + width;
+                                            }
+                                        }
+                                        Diag.INSTANCE.write("caption_ms_widen",
+                                                "original=" + originalWidth + " new=" + width
+                                                        + " children=" + bar.getChildCount()
+                                                        + " bounds=" + bounds);
+                                        Object[] args = chain.getArgs().toArray();
+                                        args[1] = width;
+                                        return chain.proceed(args);
+                                    }
+                                }
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_multi_split_widen_failed msg=" + t.getMessage());
+                        }
+                        return chain.proceed();
+                    });
+        } catch (Throwable t) {
+            L.INSTANCE.e("event=hook_failed target=caption_multi_split_add_window", t);
         }
     }
 
@@ -680,6 +1167,70 @@ public final class CaptionHooks {
         }
     }
 
+
+    /**
+     * 把「菜单窗口在屏幕上的位置」同步到 MIUI 记着的所有地方。
+     *
+     * <p>{@code createHandleMenu} 先用旧按钮数算出 {@code mHandleMenuPosition}，再用它给
+     * bar 里每个按钮设 {@code setMiuiFreeformHandleMenuPositionX/Y}（magic view 自己的坐标系），
+     * 最后才调 {@code addWindow}。我们在 addWindow 里改了 x，
+     * 这两处就都留在旧位置上：
+     *
+     * <ul>
+     *   <li>{@code isTouchedInHandleMenu(MotionEvent)} = {@code pointInView(菜单根视图,
+     *       event.x - mHandleMenuPosition.x, ...)}，位置偏了就会把真实的按钮按点算到视图外面，
+     *       外部（SystemUI 的手势/触摸判定）就会当成「点在菜单外」→ 菜单被关掉；</li>
+     *   <li>magic view 的长按 / hover 也用这组坐标，偏了之后长按行为跟框架按钮不一致。</li>
+     * </ul>
+     *
+     * <p>缩窄窗口时（用户隐藏了若干按钮）窗口右移半个差值，最右边的按钮正好被算到右边界之外 ——
+     * 这就是「新加的关闭按钮一按住菜单就消失，而左边框架按钮正常」的由来。
+     */
+    private static void syncMenuGeometry(Object dot, ViewGroup bar, int x, int y) {
+        Object pos = readField(dot, "mHandleMenuPosition");
+        if (pos instanceof Point) {
+            ((Point) pos).x = x;
+            ((Point) pos).y = y;
+        }
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View child = bar.getChildAt(i);
+            callIntSetter(child, "setMiuiFreeformHandleMenuPositionX", x);
+            callIntSetter(child, "setMiuiFreeformHandleMenuPositionY", y);
+        }
+    }
+
+    /** 反射调 View 上的一个小米私有 int setter（不存在就跳过，不影响主流程）。 */
+    private static void callIntSetter(View view, String name, int value) {
+        try {
+            View.class.getMethod(name, int.class).invoke(view, value);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 反射调 View 上的一个小米私有 boolean setter。 */
+    private static void callBooleanSetter(View view, String name) {
+        try {
+            View.class.getMethod(name, boolean.class).invoke(view, true);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 给模块自己加的按钮补齐 magic view 属性。
+     *
+     * <p>正常情况下 {@code addMouseHoverEffect} 会遍历 bar 把这三个属性挂到每个子 View 上
+     * （长按不被当成「拖窗口 / 点外面」靠它）。但那条遍历发生在 {@code chain.proceed()} 里，
+     * 一旦我们的按钮是在 proceed 之后才补进去的（或父容器换了），属性就漏了。这里幂等地再设一遍 ——
+     * 已经是 true 的重复设置没有任何副作用。
+     */
+    private static void applyMagicFlags(View view) {
+        if (view == null) {
+            return;
+        }
+        callBooleanSetter(view, "setMagicView");
+        callBooleanSetter(view, "setPointerHide");
+        callBooleanSetter(view, "setWrapped");
+    }
 
     /** 找回打过标记的按钮条（在容器视图的子树里）。 */
     private static ViewGroup findTaggedBar(View root) {
@@ -781,11 +1332,40 @@ public final class CaptionHooks {
 
     // ------------------------------------------------------------------ 工具
 
-    private static ActivityManager.RunningTaskInfo resolveTaskInfo(Object dot) {
-        Object controller = readField(dot, "mMiuiDecorationController");
-        Object info = readField(controller, "mRunningTaskInfo");
-        return (info instanceof ActivityManager.RunningTaskInfo)
+    private static ActivityManager.RunningTaskInfo resolveTaskInfo(Object host) {
+        // 普通小窗菜单：MiuiDecorationDot → mMiuiDecorationController.mRunningTaskInfo
+        Object info = readField(readField(host, "mMiuiDecorationController"), "mRunningTaskInfo");
+        if (info instanceof ActivityManager.RunningTaskInfo) {
+            return (ActivityManager.RunningTaskInfo) info;
+        }
+        // OS4 多分屏顶栏菜单：controller 没有这个字段链，退而扫它自己/
+        // 关联对象里的 RunningTaskInfo。找不到就返回 null，按钮降级为「代点关闭」。
+        info = findTaskInfo(host, 0);
+        return info instanceof ActivityManager.RunningTaskInfo
                 ? (ActivityManager.RunningTaskInfo) info : null;
+    }
+
+    /** 沿对象字段做浅层搜索（最多 3 层），只在菜单弹出时跑一次。 */
+    private static Object findTaskInfo(Object obj, int depth) {
+        if (obj == null || depth > 3) return null;
+        if (obj instanceof ActivityManager.RunningTaskInfo) return obj;
+        for (Class<?> c = obj.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (f.getType().isPrimitive()) continue;
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(obj);
+                    if (v instanceof ActivityManager.RunningTaskInfo) return v;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        for (String name : new String[]{
+                "mMultipleSplitUIController", "mSplitLayout", "mParentContainerCallbacks"}) {
+            Object found = findTaskInfo(readField(obj, name), depth + 1);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static String packageOf(ActivityManager.RunningTaskInfo info) {
@@ -871,8 +1451,8 @@ public final class CaptionHooks {
      *   <li>外框：圆角矩形 0.9..19.1，strokeWidth 1.8，strokeAlpha 0.3；</li>
      *   <li>字形：× ，fillColor 与外框同色（日间 #ff191919，夜间 #ffffffff）。</li>
      * </ol>
-     * 这里保留外框，把字形换成横线；颜色<b>从原 drawable 中心点采样</b>
-     * （× 的交叉点必然是实心的），所以日/夜、以及小米以后改配色都能自动跟上，
+     * 这里保留外框，把字形换成横线；颜色<b>从原 drawable 里采样</b>
+     * （取 alpha 最大的像素，也就是笔画的实心处），所以日/夜、以及小米以后改配色都能自动跟上，
      * 只有采样失败才退回按夜间标志猜。
      *
      * <p>所有几何都按 viewport(20) 归一化后乘真实宽度，因此换分辨率/密度不会走形。
@@ -886,6 +1466,8 @@ public final class CaptionHooks {
         /** 横线半长：原 × 的横向范围是 6.113..13.887（半长 3.887）。 */
         private static final float BAR_HALF_LEN = 3.887f / 20f;
         private static final float BAR_THICKNESS = 1.8f / 20f;
+        /** 横线的 alpha 下限：避免采到极淡的字形色后「线在，但看不见」。 */
+        private static final int MIN_GLYPH_ALPHA = 0x60;
 
         private final int intrinsicWidth;
         private final int intrinsicHeight;
@@ -908,18 +1490,39 @@ public final class CaptionHooks {
             barPaint.setColor(glyphColor);
         }
 
-        /** 把原 drawable 画到 1×1 位图上，取中心像素当字形颜色。 */
+        /**
+         * 从原 drawable 里取「字形色」。
+         *
+         * <p>不再只采中心 1 个像素 —— 图标尺寸/变体一变，中心点就可能落在 × 两条笔画之间的
+         * 空隙上，采到的 alpha 极小（甚至 0～几个单位），画出来的横线等于看不见，表现就是
+         * 「图标没了」。这里按缩放后的小图**全量扫一遍取 alpha 最大的像素**：那必然是笔画的
+         * 实心处，颜色和粗细都能跟原图标对齐。alpha 再兜一个下限，避免本来就极淡的图标
+         * 被我们改得毫无存在感。
+         */
         private static int sampleGlyphColor(Drawable original, int w, int h, boolean night) {
             Bitmap bmp = null;
             try {
-                bmp = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+                float scale = Math.min(1f, 96f / Math.max(w, h));
+                int sw = Math.max(1, Math.round(w * scale));
+                int sh = Math.max(1, Math.round(h * scale));
+                bmp = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bmp);
-                canvas.translate(-w / 2f, -h / 2f);
-                original.setBounds(0, 0, w, h);
+                original.setBounds(0, 0, sw, sh);
                 original.draw(canvas);
-                int sampled = bmp.getPixel(0, 0);
-                if (Color.alpha(sampled) != 0) {
-                    return sampled;
+                int[] pixels = new int[sw * sh];
+                bmp.getPixels(pixels, 0, sw, 0, 0, sw, sh);
+                int best = 0;
+                int bestAlpha = 0;
+                for (int px : pixels) {
+                    int a = px >>> 24;
+                    if (a > bestAlpha) {
+                        bestAlpha = a;
+                        best = px;
+                    }
+                }
+                if (bestAlpha > 0) {
+                    int alpha = Math.max(bestAlpha, MIN_GLYPH_ALPHA);
+                    return (best & 0x00FFFFFF) | (alpha << 24);
                 }
             } catch (Throwable ignored) {
                 // 采样失败就走下面的兜底

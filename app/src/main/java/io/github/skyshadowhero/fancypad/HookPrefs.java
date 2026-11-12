@@ -493,7 +493,7 @@ public final class HookPrefs {
         if (list == null || list.trim().isEmpty()) {
             return false;
         }
-        // 注意分隔符：App 侧用 MaterialPackages 编码，是**换行**分隔；这里兼容逗号与换行
+        // 注意分隔符：App 侧用包名编解码器编码，是**换行**分隔；这里兼容逗号与换行
         for (String part : list.split("[,\\n]")) {
             if (part.trim().equals(pkg)) {
                 return true;

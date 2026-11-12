@@ -290,7 +290,7 @@ internal fun ScopeIcon(scope: AppScope, alpha: Float = 1f) {
 /** 这个域里是否有任意一个总开关打开（用来区分「没启用」与「启用了但没生效」）。 */
 internal fun AppScope.enabledIn(s: AppUiState): Boolean = when (this) {
     AppScope.Ime -> s.gapEnabled || s.cornerEnabled || s.marginEnabled || s.spaceEnabled ||
-        s.candidateEnabled || s.floatBarEnabled || s.materialEnabled || s.stylusEnabled
+        s.candidateEnabled || s.floatBarEnabled || s.stylusEnabled
 
     AppScope.Cursor -> s.cursorEnabled
     AppScope.Parallel -> s.embeddingEnabled

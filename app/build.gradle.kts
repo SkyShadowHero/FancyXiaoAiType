@@ -106,7 +106,11 @@ dependencies {
     implementation("io.github.libxposed:service:102.0.0")
 
     implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.activity:activity-compose:1.11.0")
+    // 1.13.0 起 ComponentActivity 才实现 NavigationEventDispatcherOwner，并把
+    // OnBackPressedDispatcher 用 DirectNavigationEventInput 接到 NavigationEventDispatcher。
+    // 1.11.0 缺这一层，Miuix NavDisplay / NavigationBackHandler 全部收不到系统返回键
+    // （表现：无论在哪一页按返回都直接退出 App）。不要降回去。
+    implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
 
     // Miuix 弹层（MiuixPopupHost）内部注册 NavigationBackHandler，需要此宿主

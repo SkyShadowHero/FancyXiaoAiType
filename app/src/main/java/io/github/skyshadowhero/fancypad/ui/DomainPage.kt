@@ -206,12 +206,6 @@ private fun DomainPage(
             scaffoldPadding = scaffoldPadding,
         )
 
-        RouteImeMaterial -> MaterialPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = scaffoldPadding,
-        )
-
         RouteImeStylus -> StylusPage(
             uiState = uiState,
             padding = padding,

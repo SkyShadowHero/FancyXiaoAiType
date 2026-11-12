@@ -109,9 +109,6 @@ object ConfigLoader {
                     .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_LAND,
                 gapPort = p.runCatching { getFloat(PrefKeys.GAP_PORT, 0f) }.getOrDefault(0f)
                     .takeIf { it > 0f } ?: PrefKeys.GAP_DEFAULT_PORT,
-                portraitForceNormal = p.runCatching {
-                    getBoolean(PrefKeys.PORTRAIT_FORCE_NORMAL, false)
-                }.getOrDefault(false),
                 cornerEnabled = p.runCatching { getBoolean(PrefKeys.CORNER_ENABLED, false) }.getOrDefault(false),
                 cornerDp = p.runCatching { getFloat(PrefKeys.CORNER_DP, PrefKeys.CORNER_DEFAULT) }
                     .getOrDefault(PrefKeys.CORNER_DEFAULT),
@@ -138,13 +135,6 @@ object ConfigLoader {
                     .getOrDefault(PrefKeys.SPACE_ROW_LAND_DEFAULT),
                 spaceRowPort = p.runCatching { getFloat(PrefKeys.SPACE_ROW_PORT, PrefKeys.SPACE_ROW_PORT_DEFAULT) }
                     .getOrDefault(PrefKeys.SPACE_ROW_PORT_DEFAULT),
-                materialEnabled = p.runCatching { getBoolean(PrefKeys.MATERIAL_ENABLED, false) }
-                    .getOrDefault(false),
-                materialForceAll = p.runCatching { getBoolean(PrefKeys.MATERIAL_FORCE_ALL, false) }
-                    .getOrDefault(false),
-                materialPackages = p.runCatching { getString(PrefKeys.MATERIAL_PACKAGES, "") }
-                    .getOrDefault("")
-                    .let(::splitPackages),
                 // ---- 悬浮候选词窗口 ----
                 candidateEnabled = p.runCatching { getBoolean(PrefKeys.CANDIDATE_ENABLED, false) }
                     .getOrDefault(false),
@@ -249,7 +239,6 @@ object ConfigLoader {
         val gapEnabled: Boolean,
         val gapLand: Float,
         val gapPort: Float,
-        val portraitForceNormal: Boolean,
         val cornerEnabled: Boolean,
         val cornerDp: Float,
         /** 按键预览气泡圆角（dip） */
@@ -265,10 +254,6 @@ object ConfigLoader {
         val spaceKeyHorizPort: Float,
         val spaceRowLand: Float,
         val spaceRowPort: Float,
-        // ---- 超级材质 ----
-        val materialEnabled: Boolean,
-        val materialForceAll: Boolean,
-        val materialPackages: Set<String>,
         // ---- 悬浮候选词窗口（圆角 / 间距）----
         val candidateEnabled: Boolean,
         val candidateCornerDp: Float,
@@ -312,18 +297,11 @@ object ConfigLoader {
         /** 按当前是否横屏取对应间隙 */
         fun gapFor(landscape: Boolean): Float = if (landscape) gapLand else gapPort
 
-        /** 该前台应用是否应当放行超级材质 */
-        fun materialAllowedFor(pkg: String?): Boolean {
-            if (!materialEnabled || pkg.isNullOrEmpty()) return false
-            return materialForceAll || materialPackages.contains(pkg)
-        }
-
         companion object {
             val DEFAULT = Cfg(
                 gapEnabled = false,
                 gapLand = PrefKeys.GAP_DEFAULT_LAND,
                 gapPort = PrefKeys.GAP_DEFAULT_PORT,
-                portraitForceNormal = false,
                 cornerEnabled = false,
                 cornerDp = PrefKeys.CORNER_DEFAULT,
                 bubbleCornerDp = PrefKeys.BUBBLE_CORNER_DEFAULT,
@@ -336,9 +314,6 @@ object ConfigLoader {
                 spaceKeyHorizPort = PrefKeys.SPACE_KEY_HORIZ_PORT_DEFAULT,
                 spaceRowLand = PrefKeys.SPACE_ROW_LAND_DEFAULT,
                 spaceRowPort = PrefKeys.SPACE_ROW_PORT_DEFAULT,
-                materialEnabled = false,
-                materialForceAll = false,
-                materialPackages = emptySet(),
                 candidateEnabled = false,
                 candidateCornerDp = PrefKeys.CANDIDATE_CORNER_DEFAULT,
                 candidateSpacingDp = PrefKeys.CANDIDATE_SPACING_DEFAULT,

@@ -105,9 +105,4 @@ class TargetContractTest {
         assertNotEquals(0, port.size)
     }
 
-    @Test
-    fun materialGateMatchesLinkedKeySet() {
-        // MaterialGate.decide 用类名字符串判定白名单集合；写成别的类名会静默失效
-        assertEquals("java.util.LinkedHashMap\$LinkedKeySet", Target.MATERIAL_GATE_SET_CLASS)
-    }
 }

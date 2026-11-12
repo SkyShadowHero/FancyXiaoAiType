@@ -200,7 +200,7 @@ fun AppShell(
         state = rootNavState,
         isBackEnabled = rootBackEnabled,
         onBackCompleted = {
-            tabScope.launch { pagerState.animateScrollToPage(RootTab.Home.ordinal) }
+            tabScope.launch { pagerState.animateScrollToPage(RootTab.Home.ordinal, animationSpec = TabSwitchSpec) }
         },
     )
 
@@ -409,10 +409,12 @@ fun AppShell(
         ),
     ) {
         AppBottomBar(
-            selectedIndex = pagerState.settledPage,
+            // 用 targetPage：点击瞬间就指向目标页，胶囊立刻开始动；
+            // settledPage 要等页面滑动结算才更新，观感上会「慢半拍」。
+            selectedIndex = pagerState.targetPage,
             onSelect = { index ->
                 if (index != pagerState.currentPage) {
-                    tabScope.launch { pagerState.animateScrollToPage(index) }
+                    tabScope.launch { pagerState.animateScrollToPage(index, animationSpec = TabSwitchSpec) }
                 }
             },
             modifier = Modifier,
@@ -804,15 +806,6 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteImeMaterial>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
-                PageSurface(route = RouteImeMaterial, scaffoldPadding = pagePadding) {
-                    MaterialPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = LocalPageScaffoldPadding.current,
-                    )
-                }
-            }
             entry<RouteImeStylus>(contentKey = { "ime" }, swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteImeStylus, scaffoldPadding = pagePadding) {
                     StylusPage(
@@ -927,7 +920,7 @@ private fun RootPager(
 ) {
     val tabScope = rememberCoroutineScope()
     val openFeatures: () -> Unit = {
-        tabScope.launch { pagerState.animateScrollToPage(RootTab.Features.ordinal) }
+        tabScope.launch { pagerState.animateScrollToPage(RootTab.Features.ordinal, animationSpec = TabSwitchSpec) }
     }
     HorizontalPager(
         state = pagerState,
@@ -1023,3 +1016,12 @@ private fun maxWindowMetricsOrNull(context: android.content.Context): ScreenSize
     L.e("event=max_window_metrics_failed", t)
     null
 }
+
+/**
+ * 底栏点标签切页：`animateScrollToPage` 的默认 spring 要 400ms 以上才结算，
+ * 点击后明显「慢半拍」。改成 200ms 定值曲线，和底栏胶囊的 spring 同步收尾。
+ */
+private val TabSwitchSpec = tween<Float>(
+    durationMillis = 200,
+    easing = androidx.compose.animation.core.FastOutSlowInEasing,
+)

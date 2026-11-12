@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * | 包名（scope） | 功能 |
  * |---|---|
- * | `com.xiaomi.type` | 输入法外观增强（分离键盘 / 按键圆角间距 / 悬浮键盘 / 超级材质）+ 随手写的输入法侧 |
+ * | `com.xiaomi.type` | 输入法外观增强（分离键盘 / 按键圆角间距 / 悬浮键盘）+ 随手写的输入法侧 |
  * | `android`（scope: `system`） | 光标主题接管（`PointerIconCache` + 两个只读 aconfig flag）+ 随手写声明 |
  * | `com.android.systemui` | 平行窗口动画 / 小窗控制菜单 / 文本选择工具栏 |
  * | `com.miui.securitycore` | 随手写白名单（让它别把默认输入法改写掉） |
@@ -334,26 +334,17 @@ class XposedEntry : XposedModule() {
         }
         var ok = 0
 
-        // 1) 与输入法版本无关的两类 Hook，先装：
-        //    - 资源尺寸覆写：按资源名解析，不碰混淆类名
-        //    - SystemProperties.get 强制离屏填充属性
-        //    顺序要紧：属性 Hook 必须早于诊断 —— 诊断会读离屏填充门的静态字段，
-        //    那一步会触发它的 <clinit>，一旦在 Hook 之前触发，那个门就被永久算成 false 了。
+        // 1) 与输入法版本无关的 Hook 先装：资源尺寸覆写按资源名解析，不碰混淆类名。
         ok += hookResourcesDimension(cl)
-        ok += hookSystemPropertiesForMaterial(cl)
 
         // 2) 按混淆类名定位的部分：先从分档表挑出匹配当前输入法版本的一档。
-        //    未记录的新版本会返回 null —— 此时只有上面两类 Hook 生效，
-        //    资源类功能（圆角 / 间距 / 宽度 / 边距等）照常工作，日志里会明确提示。
+        //    未记录的新版本会返回 null —— 此时只有上面的资源类 Hook 生效，
+        //    （圆角 / 间距 / 宽度 / 边距等）照常工作，日志里会明确提示。
         val t = TargetCatalog.resolve(cl)
         if (t == null) {
-            L.w("event=hooks_degraded reason=unknown_app_version 材质与分离键盘开关等按类名定位的功能不可用")
+            L.w("event=hooks_degraded reason=unknown_app_version 按类名定位的功能不可用")
         } else {
             ok += hookPadSplitDims(cl, t)
-            ok += hookSplitEnabledGetter(cl, t)
-            ok += hookPrefBool(cl, t)
-            ok += hookMaterial(cl, t)
-            ok += hookMaterialDiagnostics(cl, t)
             ok += hookFloatingSize(cl, t)
         }
 
@@ -437,38 +428,6 @@ class XposedEntry : XposedModule() {
         return ok
     }
 
-
-    /**
-     * 定位集合工具类里的「集合包含」判定方法（签名 `(Iterable, Object) -> boolean`）。
-     *
-     * **不能按名字找**：0.2.910 叫 `L0`，0.2.974 改成了 `x0`（0.2.974 上按 `L0` 找会落空，
-     * 表现就是超级材质整个失效）。签名 `(Iterable, Object) -> boolean` 在这些版本里
-     * 都是该类中唯一的一个，所以按签名定位，改名也不受影响。
-     */
-    private fun findIterableContains(cls: Class<*>?): Method? {
-        if (cls == null) return null
-        val picked = try {
-            cls.declaredMethods.firstOrNull {
-                it.parameterCount == 2 &&
-                    it.returnType == Boolean::class.javaPrimitiveType &&
-                    it.parameterTypes[0] == Iterable::class.java &&
-                    it.parameterTypes[1] == Any::class.java
-            }
-        } catch (t: Throwable) {
-            L.w("event=methods_scan_failed class=${cls.name}")
-            return null
-        }
-        if (picked == null) {
-            L.w("event=method_missing class=${cls.name} signature=(Iterable,Object)->boolean")
-            return null
-        }
-        picked.isAccessible = true
-        L.i(
-            "event=method_resolved class=${cls.name} method=${picked.name}" +
-                "(java.lang.Iterable,java.lang.Object) -> boolean (按签名匹配)"
-        )
-        return picked
-    }
 
     /** 资源名 -> ID（运行时解析，缓存）。ID 随版本变化，名字稳定。 */
     private val nameToId = HashMap<String, Int>()
@@ -810,156 +769,6 @@ class XposedEntry : XposedModule() {
         }
     }
 
-    /** 功能 2 的读取入口：prefs 门面里的 0 参 boolean 方法（分离键盘开关）。 */
-    private fun hookSplitEnabledGetter(cl: ClassLoader, target: AppTargets): Int {
-        val cls = loadClass(cl, target.prefFacade) ?: return 0
-        val m = findMethodByArity(cls, target.mSplitGetter, 0) {
-            it.returnType == Boolean::class.javaPrimitiveType
-        } ?: return 0
-        return try {
-            hook(m)
-                .setId("split_enabled")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val raw = (chain.proceed() as? Boolean) ?: false
-                    val final = PortraitGuard.apply(raw)
-                    L.sampled("splitgate") {
-                        "event=split_gate raw=$raw final=$final landscape=${PortraitGuard.isLandscape()}"
-                    }
-                    final
-                }
-            1
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=split_enabled", t); 0
-        }
-    }
-
-    /** 覆盖走通用入口 `(String, boolean)` 读取 split_keyboard_enabled 的调用点。 */
-    private fun hookPrefBool(cl: ClassLoader, target: AppTargets): Int {
-        val cls = loadClass(cl, target.prefFacade) ?: return 0
-        val m = findMethodByArity(cls, target.mPrefBool, 2) {
-            it.returnType == Boolean::class.javaPrimitiveType &&
-                it.parameterTypes[0] == String::class.java &&
-                it.parameterTypes[1] == Boolean::class.javaPrimitiveType
-        } ?: return 0
-        return try {
-            hook(m)
-                .setId("pref_bool")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val key = chain.getArg(0) as? String
-                    val raw = (chain.proceed() as? Boolean) ?: false
-                    if (key == Target.KEY_SPLIT_ENABLED) PortraitGuard.apply(raw) else raw
-                }
-            1
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=pref_bool", t); 0
-        }
-    }
-
-    /**
-     * 超级材质：把「哪些应用能用毛玻璃键盘背景」的判定接管过来。
-     *
-     * 先挂材质状态机里的 0 参方法（只为把拦截范围收紧到它内部，不改它的行为），
-     * 再挂集合工具的 `(Iterable, Object) -> boolean` 做真正的放行判定。
-     * 即使前者挂不上，判定仍靠集合类名生效，只是范围略宽 —— 会降级但不会失效。
-     *
-     * 具体类名/方法名来自 [AppTargets]，按输入法版本分档，不再写死。
-     */
-    private fun hookMaterial(cl: ClassLoader, target: AppTargets): Int {
-        var ok = 0
-
-        // 1) 范围锚点：材质状态机里的 0 参方法
-        val helperCls = loadClass(cl, target.materialHelper)
-        val applyMethod = findMethodByArity(helperCls, target.mMaterialApply, 0) {
-            it.returnType == Void.TYPE
-        }
-        if (applyMethod != null) {
-            try {
-                hook(applyMethod)
-                    .setId("material_apply")
-                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                    .intercept { chain ->
-                        MaterialGate.enterHelper()
-                        try {
-                            chain.proceed()
-                        } finally {
-                            MaterialGate.exitHelper()
-                        }
-                    }
-                MaterialGate.helperHooked = true
-                ok++
-            } catch (t: Throwable) {
-                L.e("event=hook_failed target=material_apply", t)
-            }
-        }
-
-        // 2) 判定入口：集合工具类里的 (Iterable, Object) -> boolean
-        val utilCls = loadClass(cl, target.collectionsUtil) ?: return ok
-        val contains = findIterableContains(utilCls) ?: return ok
-        return try {
-            hook(contains)
-                .setId("material_contains")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val decision = try {
-                        MaterialGate.decide(chain.getArg(0), chain.getArg(1))
-                    } catch (t: Throwable) {
-                        L.e("event=material_decide_failed", t)
-                        null
-                    }
-                    decision ?: chain.proceed()
-                }
-            ok + 1
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=material_contains", t)
-            ok
-        }
-    }
-
-    /**
-     * 材质描述符应用入口 `(View, 描述符) -> void`。
-     *
-     * 1) 观测：把描述符里的模糊参数 / 混合色打出来（采样限流），便于核对材质是否真的带上模糊。
-     * 2) 修正：描述符应用完后，补上离屏填充标记 —— 默认因为
-     *    `persist.sys.advanced_visual_release` 只有 5 而跳过了这一步，
-     *    导致模糊采不到窗口背后的内容，看着是实色。这里直接补，拨开关即时生效。
-     */
-    private fun hookMaterialDiagnostics(cl: ClassLoader, target: AppTargets): Int {
-        MaterialDiag.logEnvironment(cl)
-        MaterialEnhancer.probe()
-        val cls = loadClass(cl, target.materialApplier) ?: return 0
-        val apply = findMethodByArity(cls, target.mApplyMaterial, 2) {
-            it.returnType == Void.TYPE && it.parameterTypes[0] == android.view.View::class.java
-        } ?: return 0
-        return try {
-            hook(apply)
-                .setId("material_apply_effect")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val view = chain.getArg(0) as? android.view.View
-                    val result = chain.proceed()
-                    L.sampled("material_desc", limit = 12) {
-                        "event=material_desc ${MaterialDiag.describe(chain.getArg(1))}"
-                    }
-                    if (view != null) {
-                        val cfg = ConfigLoader.snapshot()
-                        if (cfg.materialEnabled) {
-                            try {
-                                MaterialEnhancer.ensureOffscreenFill(view)
-                            } catch (t: Throwable) {
-                                L.e("event=offscreen_fill_failed", t)
-                            }
-                        }
-                    }
-                    result
-                }
-            1
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=material_apply_effect", t); 0
-        }
-    }
-
     /**
      * 解锁悬浮键盘最大尺寸。
      *
@@ -1079,49 +888,4 @@ class XposedEntry : XposedModule() {
         return kotlin.math.abs(fwFromLo - fwFromHi) < 1.5f
     }
 
-    /**
-     * 修正「背景不透明」：离屏填充门（[AppTargets.advancedVisualGate]）用
-     * `persist.sys.advanced_visual_release >= 6`
-     * 判断设备是否支持离屏填充，为假时不调 `setMiBlurWinType`，模糊就没有内容可采样。
-     * 这里在该属性被读取时按配置上报 6。
-     *
-     * 只在「启用超级材质」时生效；其余情况原样透传，
-     * 避免影响系统里其它读这个属性的代码。
-     */
-    private fun hookSystemPropertiesForMaterial(cl: ClassLoader): Int {
-        val cls = try {
-            Class.forName("android.os.SystemProperties", false, cl)
-        } catch (t: Throwable) {
-            L.w("event=sysprop_missing")
-            return 0
-        }
-        val get = try {
-            cls.getDeclaredMethod("get", String::class.java, String::class.java)
-                .also { it.isAccessible = true }
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=sysprop_get", t)
-            return 0
-        }
-        return try {
-            hook(get)
-                .setId("material_sysprop")
-                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
-                .intercept { chain ->
-                    val key = chain.getArg(0) as? String
-                    if (key == MaterialDiag.PROP_ADVANCED_VISUAL) {
-                        if (ConfigLoader.snapshot().materialEnabled) {
-                            L.sampled("sysprop_force", limit = 4) {
-                                "event=sysprop_force key=$key -> ${MaterialDiag.FORCED_ADVANCED_VISUAL}"
-                            }
-                            return@intercept MaterialDiag.FORCED_ADVANCED_VISUAL
-                        }
-                    }
-                    chain.proceed()
-                }
-            1
-        } catch (t: Throwable) {
-            L.e("event=hook_failed target=sysprop_get", t); 0
-        }
-    }
 }
-

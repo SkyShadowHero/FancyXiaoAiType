@@ -22,6 +22,7 @@ ICONS = {
     "cap_btn_casting": "caption_normal_padcasting",
     "cap_btn_split_left": "caption_normal_splitleft",
     "cap_btn_split_right": "caption_normal_splitright",
+    "cap_btn_multiplesplit": "caption_normal_multiplesplit",
     "cap_btn_freeform": "caption_normal_freeform",
     "cap_btn_new_window": "caption_newwindow",
     "cap_btn_close": "caption_close",
@@ -49,13 +50,17 @@ def dump(name):
 
 
 def parse_paths(xml):
-    """从 aapt2 的 xmltree 输出里抓 <path> 的属性。"""
+    """从 aapt2 的 xmltree 输出里抓 <path> 的属性（`<clip-path>` 记成 {"_clip": pathData}）。"""
     paths = []
     cur = None
     for raw in xml.splitlines():
         line = raw.strip()
         if line.startswith("E: path"):
             cur = {}
+            paths.append(cur)
+            continue
+        if line.startswith("E: clip-path"):
+            cur = {"_clip": ""}
             paths.append(cur)
             continue
         if not line.startswith("A: ") or cur is None:
@@ -71,6 +76,10 @@ def parse_paths(xml):
             # pathData 后面可能跟 (Raw: "...")，只取第一个引号对
             end = value.find('"', 1)
             value = value[1:end]
+        if "_clip" in cur:
+            if key == "pathData":
+                cur["_clip"] = value
+            continue
         cur[key] = value
     return paths
 
@@ -101,6 +110,10 @@ def norm_enum(value, table):
 def build(paths):
     out = []
     for p in paths:
+        if "_clip" in p:
+            # clip-path 作用于它**后面**的 path，顺序不能打乱
+            out.append(f'    <clip-path\n        android:pathData="{p["_clip"]}" />')
+            continue
         attrs = []
         if "pathData" in p:
             attrs.append(f'android:pathData="{p["pathData"]}"')
