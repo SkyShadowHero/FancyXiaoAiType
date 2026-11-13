@@ -70,9 +70,6 @@ class XposedEntry : XposedModule() {
     /** 平行窗口域（com.android.systemui）。 */
     private val embeddingHooks by lazy { EmbeddingHooks(this) }
 
-    /** AOSP长按菜单域（com.android.systemui，与平行窗口同进程但互不相关）。 */
-    private val selectionToolbarHooks by lazy { SelectionToolbarHooks(this) }
-
     /**
      * 小窗控制菜单域（com.android.systemui）。
      *
@@ -85,7 +82,7 @@ class XposedEntry : XposedModule() {
     /**
      * 右键菜单域（**目标应用自身**的进程，本机先只挂 mark.via）。
      *
-     * 与 [selectionToolbarHooks] 是两条完全不同的路径：长按/选中菜单由 SystemUI 画，
+     * 与 SystemUI 那几域是两条完全不同的路径：长按/选中菜单由 SystemUI 画，
      * 右键菜单是应用自己 `PopupWindow.showAsDropDown()` 弹的，只能逐应用注入。
      */
     private val appMenuHooks by lazy { AppMenuHooks(this) }
@@ -212,7 +209,6 @@ class XposedEntry : XposedModule() {
                 L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
                 installWithRetry("sysui_embedding") { embeddingHooks.install(cl) }
-                installWithRetry("sysui_selection") { selectionToolbarHooks.install(cl) }
                 installWithRetry("sysui_caption") { captionHooks.install(cl) }
             }
 
@@ -306,7 +302,6 @@ class XposedEntry : XposedModule() {
         stylusImeHooks.resetInstalled()
         stylusSystemHooks.resetInstalled()
         appMenuHooks.resetInstalled()
-        selectionToolbarHooks.resetInstalled()
         retryCounts.clear()
         // ★ 按**包名**分派，不能拿进程名当包名：
         //   system_server 的 packageName 是 android，processName 却是 system / system_server，

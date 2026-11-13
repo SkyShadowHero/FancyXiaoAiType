@@ -880,15 +880,6 @@ private fun NavPages(
                     )
                 }
             }
-            entry<RouteTextMenu>(swipeDismiss = NavSwipeDirection.LeftToRight) {
-                PageSurface(route = RouteTextMenu, scaffoldPadding = pagePadding) {
-                    TextMenuPage(
-                        uiState = uiState,
-                        padding = padding,
-                        scaffoldPadding = LocalPageScaffoldPadding.current,
-                    )
-                }
-            }
             entry<RouteAppMenu>(swipeDismiss = NavSwipeDirection.LeftToRight) {
                 PageSurface(route = RouteAppMenu, scaffoldPadding = pagePadding) {
                     AppMenuPage(

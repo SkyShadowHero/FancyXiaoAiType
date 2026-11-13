@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * ```
  *
  * 右键菜单是这个应用自己 `PopupWindow.showAsDropDown()` 弹出来的 —— 而
- * 「长按/选中菜单」（见 [SelectionToolbarHooks]）是 SystemUI 画的。两者是**两条完全不同的路径**：
+ * 「长按/选中菜单」是 SystemUI 画的（模块已不再介入）。两者是**两条完全不同的路径**：
  * 后者改一处全局生效，前者**只能逐应用注入**（LSPosed 没有通配符作用域）。
  *
  * ## 为什么 hook 在 PopupWindow 这个公共漏斗上

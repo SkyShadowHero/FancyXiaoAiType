@@ -54,9 +54,6 @@ public final class HookPrefs {
     private static volatile boolean captionAlwaysNewWindow = false;
     /** 隐藏三个控制点（不画，但点击区域还在）。 */
     private static volatile boolean captionHideDots = false;
-    private static volatile boolean toolbarEnabled = false;
-    private static volatile float toolbarCornerDp = PrefKeys.TOOLBAR_CORNER_DEFAULT;
-    private static volatile float toolbarTextSp = PrefKeys.TOOLBAR_TEXT_DEFAULT;
     private static volatile boolean appMenuEnabled = false;
     private static volatile boolean appMenuWebviewEnabled = true;
     /** 生效白名单（空串 = 不限制）。只读字符串，判断时按逗号切分。 */
@@ -190,18 +187,6 @@ public final class HookPrefs {
         } catch (Throwable ignored) {
         }
         try {
-            toolbarEnabled = p.getBoolean(PrefKeys.TOOLBAR_ENABLED, false);
-        } catch (Throwable ignored) {
-        }
-        try {
-            toolbarCornerDp = p.getFloat(PrefKeys.TOOLBAR_CORNER_DP, PrefKeys.TOOLBAR_CORNER_DEFAULT);
-        } catch (Throwable ignored) {
-        }
-        try {
-            toolbarTextSp = p.getFloat(PrefKeys.TOOLBAR_TEXT_SP, PrefKeys.TOOLBAR_TEXT_DEFAULT);
-        } catch (Throwable ignored) {
-        }
-        try {
             appMenuEnabled = p.getBoolean(PrefKeys.APPMENU_ENABLED, false);
         } catch (Throwable ignored) {
         }
@@ -327,21 +312,6 @@ public final class HookPrefs {
     /** 隐藏三个控制点。 */
     public static boolean captionHideDots() {
         return captionHideDots;
-    }
-
-
-    // ---- 文本选择菜单（SystemUI 侧） ----
-
-    public static boolean toolbarEnabled() {
-        return toolbarEnabled;
-    }
-
-    public static float toolbarCornerDp() {
-        return toolbarCornerDp;
-    }
-
-    public static float toolbarTextSp() {
-        return toolbarTextSp;
     }
 
     // ---- 随手写（system_server + com.xiaomi.type） ----

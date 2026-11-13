@@ -1,6 +1,6 @@
 # FancyPad
 
-多个 LSPosed 功能域合并成的**单模块**：小米平板（HyperOS 4 / Android 17）上的输入法外观增强、触控笔随手写、系统光标主题、平行窗口动画修复、小窗控制菜单与文本/长按菜单改造。
+多个 LSPosed 功能域合并成的**单模块**：小米平板（HyperOS 4 / Android 17）上的输入法外观增强、触控笔随手写、系统光标主题、平行窗口动画修复、小窗控制菜单与右键菜单改造。
 
 > 本分支（`fancypad`）是合并版；`master` 仍是原 **FancyType**（只有输入法外观）。
 
@@ -15,7 +15,6 @@
 | 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
 | 平行窗口动画 | `com.android.systemui` | 把平行窗口（Activity Embedding）的转场从小米 Folme 引擎换回 AOSP 原生实现，并禁止转场合并与跳切 |
 | 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |
-| AOSP长按菜单 | `com.android.systemui` | 文本选择浮动工具栏改用 Miuix 外观 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
 
 各功能域的开关与参数都在同一个 App 里。界面用 **Miuix 0.9.4（HyperOS 风格）**：
@@ -89,9 +88,8 @@ app/src/main/
 │   ├── IflytekHcrEngine.kt   # 小爱自带讯飞 HCR（逐点流式）
 │   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
-│   ├── SelectionToolbarHooks.kt  # [SystemUI] 文本选择工具栏
 │   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
-│   ├── Material*             # 超级材质：Gate（放行判定）/ Enhancer（离屏填充）/ Diag
+│   ├── MaterialPackages.kt   # 需要「Miuix 材质」处理的目标包名（右键菜单复用）
 │   ├── Diag.kt / L.kt        # 落盘诊断 + 结构化日志（本机 logd 不可用）
 │   ├── TunerApp.kt / SettingsActivity.kt  # 模块 App 入口
 │   └── ui/                   # Miuix 界面（ds/ 为共享组件层）

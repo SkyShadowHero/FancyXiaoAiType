@@ -9,7 +9,6 @@ import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.ListView
-import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import io.github.skyshadowhero.fancypad.R
@@ -27,7 +26,6 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
  * ├── 首页 ── 卡片：模块状态 + 各功能域状态
  * ├── 功能 ──┬── 小爱输入法 ──┬── 虚拟键盘
  * │          │                ├── 悬浮键盘
- * │          │                ├── 超级材质
  * │          │                └── 随手写
  * │          ├── 光标主题 ──┬── 主题预设
  * │          │              ├── 大小
@@ -36,7 +34,6 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
  * │          ├── 平行窗口动画
  * │          ├── 小窗控制器 ──┬── 功能
  * │          │                └── 按钮
- * │          ├── AOSP长按菜单
  * │          └── 右键菜单
  * └── 信息 ── 主题设置 / 版本 / 作用域 / 仓库
  * ```
@@ -52,6 +49,16 @@ data object RouteImeFloating : NavKey
 /** 随手写（触控笔手写）：AOSP Android 14+ 的 stylus handwriting，不是「手写键盘」。 */
 data object RouteImeStylus : NavKey
 
+/**
+ * 设置界面里是否显示「随手写」入口。
+ *
+ * **只影响入口，不影响逻辑**：`StylusImeHooks` / `StylusSystemHooks` / `StylusPage`
+ * 与全部 `STYLUS_*` 偏好都保留，Hook 侧照旧按 `PrefKeys.STYLUS_ENABLED` 生效。
+ * 置为 `false` 时 [AppScope.Ime.pages] 不含 [RouteImeStylus]，输入法域里就不再有
+ * 这个标签页（AppShell 里的 `entry<RouteImeStylus>` 一并保留，改回 `true` 即可恢复）。
+ */
+const val STYLUS_ENTRY_VISIBLE = false
+
 data object RouteCursorPreset : NavKey
 data object RouteCursorSize : NavKey
 data object RouteCursorImport : NavKey
@@ -64,8 +71,6 @@ data object RouteCaptionFeatures : NavKey
 
 /** 小窗控制器 · 按钮：每个按钮的显隐与顺序。 */
 data object RouteCaptionButtons : NavKey
-
-data object RouteTextMenu : NavKey
 
 data object RouteAppMenu : NavKey
 
@@ -119,7 +124,11 @@ enum class AppScope(
     Ime(
         label = "小爱输入法",
         pkg = "com.xiaomi.type",
-        pages = listOf(RouteImeVirtual, RouteImeFloating, RouteImeStylus),
+        pages = listOfNotNull(
+            RouteImeVirtual,
+            RouteImeFloating,
+            RouteImeStylus.takeIf { STYLUS_ENTRY_VISIBLE },
+        ),
         requiredScope = listOf("com.xiaomi.type"),
         iconRes = R.drawable.ic_scope_ime,
     ),
@@ -143,13 +152,6 @@ enum class AppScope(
         pages = listOf(RouteCaptionFeatures, RouteCaptionButtons),
         requiredScope = listOf("com.android.systemui"),
         iconRes = R.drawable.ic_scope_caption,
-    ),
-    TextMenu(
-        label = "AOSP长按菜单",
-        pkg = "com.android.systemui",
-        pages = listOf(RouteTextMenu),
-        requiredScope = listOf("com.android.systemui"),
-        icon = MiuixIcons.SelectAll,
     ),
     AppMenu(
         label = "右键菜单",
@@ -192,7 +194,6 @@ fun NavKey.title(): String = when (this) {
     RouteParallel -> "平行窗口"
     RouteCaptionFeatures -> "功能"
     RouteCaptionButtons -> "按钮"
-    RouteTextMenu -> "AOSP长按菜单"
     RouteAppMenu -> "右键菜单"
     RouteTheme -> "主题设置"
     RouteCredits -> "致谢"
@@ -211,7 +212,6 @@ fun NavKey.icon(): ImageVector = when (this) {
     RouteParallel -> MiuixIcons.Layers
     RouteCaptionFeatures -> MiuixIcons.Tune
     RouteCaptionButtons -> MiuixIcons.GridView
-    RouteTextMenu -> MiuixIcons.SelectAll
     RouteAppMenu -> MiuixIcons.ListView
     RouteTheme -> MiuixIcons.Settings
     RouteCredits -> MiuixIcons.Info

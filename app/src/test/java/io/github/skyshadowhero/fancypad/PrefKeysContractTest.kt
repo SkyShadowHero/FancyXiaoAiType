@@ -116,9 +116,6 @@ class PrefKeysContractTest {
             PrefKeys.FLOAT_KB_MAX_SCALE_DEFAULT,
             PrefKeys.FLOAT_KB_MAX_SCALE_MAX,
         ),
-        // AOSP 长按菜单
-        Range("text_toolbar_corner", PrefKeys.TOOLBAR_CORNER_MIN, PrefKeys.TOOLBAR_CORNER_DEFAULT, PrefKeys.TOOLBAR_CORNER_MAX),
-        Range("text_toolbar_text", PrefKeys.TOOLBAR_TEXT_MIN, PrefKeys.TOOLBAR_TEXT_DEFAULT, PrefKeys.TOOLBAR_TEXT_MAX),
         // 右键菜单
         Range("appmenu_corner", PrefKeys.APPMENU_CORNER_MIN, PrefKeys.APPMENU_CORNER_DEFAULT, PrefKeys.APPMENU_CORNER_MAX),
         Range("appmenu_text", PrefKeys.APPMENU_TEXT_MIN, PrefKeys.APPMENU_TEXT_DEFAULT, PrefKeys.APPMENU_TEXT_MAX),

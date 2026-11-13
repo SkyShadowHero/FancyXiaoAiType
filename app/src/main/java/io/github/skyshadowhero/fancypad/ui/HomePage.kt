@@ -297,7 +297,6 @@ internal fun AppScope.enabledIn(s: AppUiState): Boolean = when (this) {
     AppScope.Caption -> s.captionEnabled || s.captionCloseAsMinus || s.captionForceClose ||
         s.captionHideCurrentState || s.captionAlwaysNewWindow || s.captionHideDots
 
-    AppScope.TextMenu -> s.toolbarEnabled
     AppScope.AppMenu -> s.appMenuEnabled
 }
 
@@ -320,7 +319,7 @@ private fun AppScope.matchesProcess(name: String): Boolean {
     return when (this) {
         AppScope.Ime -> host == "com.xiaomi.type"
         AppScope.Cursor -> host == "system" || host == "system_server" || host == "android"
-        AppScope.Parallel, AppScope.Caption, AppScope.TextMenu -> host == "com.android.systemui"
+        AppScope.Parallel, AppScope.Caption -> host == "com.android.systemui"
         // 右键菜单：注入的是用户自己加的目标应用，这里按「非系统、非输入法」粗判
         AppScope.AppMenu -> host != "com.xiaomi.type" && host != "system" &&
             host != "system_server" && host != "android" && host != "com.android.systemui"

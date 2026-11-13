@@ -245,12 +245,6 @@ private fun DomainPage(
             scaffoldPadding = scaffoldPadding,
         )
 
-        RouteTextMenu -> TextMenuPage(
-            uiState = uiState,
-            padding = padding,
-            scaffoldPadding = scaffoldPadding,
-        )
-
         RouteAppMenu -> AppMenuPage(
             uiState = uiState,
             padding = padding,
