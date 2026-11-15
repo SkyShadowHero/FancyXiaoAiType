@@ -202,7 +202,7 @@ fun CaptionFeaturesPage(
                         }
                     },
                     title = "隐藏当前状态的按钮",
-                    summary = "全屏时藏「全屏」，小窗时藏「小窗」",
+                    summary = "按框架标记的当前状态藏：全屏 / 小窗 / 分屏·左|上 / 分屏·右|下",
                 )
                 SwitchPreference(
                     checked = uiState.captionAlwaysNewWindow && newWindowOn,

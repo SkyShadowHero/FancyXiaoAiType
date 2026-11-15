@@ -33,14 +33,6 @@ data class AppTargets(
     val prefFacade: String,
     /** 集合包含判定工具类（材质放行判定的宿主） */
     val collectionsUtil: String,
-    /** 材质状态机（拦截范围的宿主） */
-    val materialHelper: String,
-    /** 材质描述符应用入口 */
-    val materialApplier: String,
-    /** 离屏填充能力门 */
-    val advancedVisualGate: String,
-    /** 模糊能力位所在类 */
-    val blurGate: String,
     /** 夹取工具（Kotlin `coerceIn` 的实现）所在类 */
     val clampUtil: String,
 
@@ -49,25 +41,16 @@ data class AppTargets(
     val mPrefBool: String,
     /** `static boolean ()` 读取 split_keyboard_enabled */
     val mSplitGetter: String,
-    /** 材质状态机里的 0 参 void 方法（拦截范围锚点） */
-    val mMaterialApply: String,
-    /** 材质应用入口的方法（`(View, …) -> void`） */
-    val mApplyMaterial: String,
     /** 夹取工具里 `(float, float, float) -> float` */
     val mClampFloat: String,
     /** 夹取工具里 `(int, int, int) -> int` */
     val mClampInt: String,
 
     // ---- 诊断字段名 ----
-    val fOffscreenFill: String,
-    val fBlurSupported: String,
-    val fBlurVersion: String,
-    val fBlurStatusDefault: String,
-    val fBionicMaterial: String,
 ) {
 
     /**
-     * 用结构特征给本档打分（0..8）。分数最高且大于 0 的档位即为当前输入法版本。
+     * 用结构特征给本档打分（0..4）。分数最高且大于 0 的档位即为当前输入法版本。
      *
      * 每一项都校验「形状」而不是「名字」：
      * 例如判定工具类必须真的有一个 `(Iterable, Object) -> boolean` 的静态方法，
@@ -77,11 +60,7 @@ data class AppTargets(
         var s = 0
         if (hasIterableContainsShape(cl, collectionsUtil)) s++
         if (hasPrefFacadeShape(cl, prefFacade)) s++
-        if (hasNoArgVoidMethod(cl, materialHelper)) s++
         if (has13ParamCtor(cl, padSplitDims)) s++
-        if (hasStaticBooleanField(cl, advancedVisualGate)) s++
-        if (hasStaticBooleanField(cl, blurGate)) s++
-        if (hasViewArgVoidMethod(cl, materialApplier)) s++
         if (hasClampShape(cl, clampUtil)) s++
         return s
     }
@@ -130,48 +109,11 @@ private fun hasPrefFacadeShape(cl: ClassLoader, name: String): Boolean {
     }
 }
 
-/** 是否有 0 参 void 方法（材质状态机的锚点方法就是这种形状） */
-private fun hasNoArgVoidMethod(cl: ClassLoader, name: String): Boolean {
-    val c = loadOrNull(cl, name) ?: return false
-    return try {
-        c.declaredMethods.any { it.parameterCount == 0 && it.returnType == Void.TYPE }
-    } catch (t: Throwable) {
-        false
-    }
-}
-
 /** 是否有 13 参构造（PadSplitQwertyDims 是 13 个 float） */
 private fun has13ParamCtor(cl: ClassLoader, name: String): Boolean {
     val c = loadOrNull(cl, name) ?: return false
     return try {
         c.declaredConstructors.any { it.parameterCount == 13 }
-    } catch (t: Throwable) {
-        false
-    }
-}
-
-/** 是否有静态 boolean 字段（能力门类都是这种形状） */
-private fun hasStaticBooleanField(cl: ClassLoader, name: String): Boolean {
-    val c = loadOrNull(cl, name) ?: return false
-    return try {
-        c.declaredFields.any {
-            java.lang.reflect.Modifier.isStatic(it.modifiers) &&
-                it.type == Boolean::class.javaPrimitiveType
-        }
-    } catch (t: Throwable) {
-        false
-    }
-}
-
-/** 是否有 `(View, 某类型) -> void` 方法（材质应用入口的形状） */
-private fun hasViewArgVoidMethod(cl: ClassLoader, name: String): Boolean {
-    val c = loadOrNull(cl, name) ?: return false
-    return try {
-        c.declaredMethods.any {
-            it.parameterCount == 2 &&
-                it.returnType == Void.TYPE &&
-                it.parameterTypes[0] == android.view.View::class.java
-        }
     } catch (t: Throwable) {
         false
     }
@@ -215,22 +157,11 @@ object TargetCatalog {
         padSplitDims = "la.n",
         prefFacade = "n9.e",
         collectionsUtil = "pc.m",
-        materialHelper = "bb.b0",
-        materialApplier = "xe.b",
-        advancedVisualGate = "z7.a",
-        blurGate = "xe.b",
         clampUtil = "z7.s",
         mPrefBool = "a",
         mSplitGetter = "o",
-        mMaterialApply = "j",
-        mApplyMaterial = "a",
         mClampFloat = "t",
         mClampInt = "u",
-        fOffscreenFill = "f18746a",
-        fBlurSupported = "f18279a",
-        fBlurVersion = "f18281d",
-        fBlurStatusDefault = "f18280c",
-        fBionicMaterial = "b",
     )
 
     /** 0.2.1053：包名与类名整体重排，并于本版新增了材质黑名单判定。 */
@@ -239,22 +170,33 @@ object TargetCatalog {
         padSplitDims = "ka.n",
         prefFacade = "m9.e",
         collectionsUtil = "oc.m",
-        materialHelper = "ab.i0",
-        materialApplier = "we.h",
-        advancedVisualGate = "y7.a",
-        blurGate = "we.b",
         clampUtil = "ed.a",
         mPrefBool = "a",
         mSplitGetter = "q",
-        mMaterialApply = "k",
-        mApplyMaterial = "x",
         mClampFloat = "j",
         mClampInt = "k",
-        fOffscreenFill = "f17073a",
-        fBlurSupported = "f16477a",
-        fBlurVersion = "f16479d",
-        fBlurStatusDefault = "f16478c",
-        fBionicMaterial = "b",
+    )
+
+    /**
+     * 0.2.1363（2026-11-11 更新）：R8 又整体重排了一轮（`u1`→`b8`、`o9`→`j9`）。
+     *
+     * 定位依据（反编译后的结构 + 字符串引用，不是猜的）：
+     * - `b8.h`：唯一同时有 `r(F,F,F)->F` 与 `s(I,I,I)->I` 两个 `coerceIn` 实现的类 →
+     *   夹取工具。原来挂的 `u1.c` 已不存在，**悬浮键盘尺寸解锁就死在这里**。
+     * - `j9.e`：`a(String,boolean)->boolean` + `s()`（`s()` 读 `split_keyboard_enabled`）→ prefs 门面。
+     * - `zc.n`：`Z(Iterable,Object)->boolean` → 集合判定工具。
+     * - `fb.e2`：13 个 float 的数据类 → 分离键盘几何（仅诊断用）。
+     */
+    private val V1363 = AppTargets(
+        label = "0.2.1363",
+        padSplitDims = "fb.e2",
+        prefFacade = "j9.e",
+        collectionsUtil = "zc.n",
+        clampUtil = "b8.h",
+        mPrefBool = "a",
+        mSplitGetter = "s",
+        mClampFloat = "r",
+        mClampInt = "s",
     )
 
     /**
@@ -278,35 +220,29 @@ object TargetCatalog {
         padSplitDims = "jb.z0",
         prefFacade = "o9.e",
         collectionsUtil = "dd.o",
-        materialHelper = "jb.f0",
-        materialApplier = "mf.j",
-        advancedVisualGate = "y7.a",
-        blurGate = "mf.b",
         clampUtil = "u1.c",
         mPrefBool = "a",
         mSplitGetter = "s",
-        mMaterialApply = "k",
-        mApplyMaterial = "x",
         mClampFloat = "n",
         mClampInt = "o",
-        fOffscreenFill = "a",
-        fBlurSupported = "a",
-        fBlurVersion = "d",
-        fBlurStatusDefault = "c",
-        fBionicMaterial = "b",
     )
 
-    val known: List<AppTargets> = listOf(V1246, V1053, V910_974)
+    val known: List<AppTargets> = listOf(V1363, V1246, V1053, V910_974)
 
-    private const val MAX_SCORE = 8
+    /** 满分 = [AppTargets.score] 里实际校验的项数（材质域删掉后是 4 项）。 */
+    private const val MAX_SCORE = 4
 
     /**
      * 接受一档所需的最低分。
      *
-     * 留 2 分的余量：某一版改掉一两个类的形状时仍能命中，
+     * 留 1 分余量：某一版改掉一个类的形状时仍能命中，
      * 但「只碰巧对上两三处」的无关混淆类会被挡在门外。
+     *
+     * ⚠️ 这个值必须跟着 [MAX_SCORE] 走 —— 材质域删掉后 MAX_SCORE 从 8 降到 4，
+     * 门槛还留在 6 的话**任何版本都永远选不出来**（真机踩过：diag 里
+     * `candidate=0.2.1363 score=4` 却 `target=unknown`）。
      */
-    private const val MIN_ACCEPT = 6
+    private const val MIN_ACCEPT = 3
 
     @Volatile
     private var resolved: AppTargets? = null

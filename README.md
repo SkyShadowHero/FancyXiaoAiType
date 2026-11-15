@@ -23,7 +23,7 @@
 |---|---|
 | 设备 | 小米平板 `2410CRP4CC`（uke）/ HyperOS 4.0 / Android 17（SDK 37） |
 | 框架 | LSPosed（libxposed **API 102**；模块 `minApiVersion=102`，用了 102 才有的热重载回调与 `libxposed:service`） |
-| 目标输入法 | 超级小爱输入法 `com.xiaomi.type`（已验证 0.2.910 ~ 0.2.1246） |
+| 目标输入法 | 超级小爱输入法 `com.xiaomi.type`（已验证 0.2.910 ~ 0.2.1363） |
 | 最低 Android | 15（minSdk 35） |
 
 ## 安装

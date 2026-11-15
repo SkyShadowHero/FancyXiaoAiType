@@ -73,6 +73,10 @@ public final class CaptionHooks {
     private static final String CLS_STATE_BUTTON =
             "com.android.wm.shell.multitasking.miuimultiwinswitch.miuiwindowdecor.handlemenu"
                     + ".MiuiCaptionStateButton";
+    /** 按钮条本体（纯代码搭出来的，没有 layout XML）。 */
+    private static final String CLS_CAPTION_CONTAINER =
+            "com.android.wm.shell.multitasking.miuimultiwinswitch.miuiwindowdecor.handlemenu"
+                    + ".MiuiCaptionContainerView";
     private static final String CLS_DOT =
             "com.android.wm.shell.multitasking.miuimultiwinswitch.miuiwindowdecor.decoration"
                     + ".MiuiDecorationDot";
@@ -216,6 +220,9 @@ public final class CaptionHooks {
     private View closeProxyView;
     /** 框架按钮 id → key 的对照表：普通小窗菜单与 OS4 多分屏顶栏菜单共用。 */
     private volatile Map<Integer, String> idToKey = new HashMap<>();
+
+    /** 当前进程里的 id→key 快照（诊断用：把 setSelectedPos 的 id 翻成名字）。 */
+    private static volatile Map<Integer, String> sIdToKey = new HashMap<>();
     /** 多分屏顶栏菜单单独一份（同一批 id，语义不同，见 {@link #MULTI_SPLIT_BUTTONS}）。 */
     private volatile Map<Integer, String> multiSplitIdToKey = new HashMap<>();
 
@@ -285,7 +292,9 @@ public final class CaptionHooks {
 
             installCloseIconHook(classLoader, closeIconId);
             installMultiSplitCloseIconHook(classLoader, closeIconId);
+            sIdToKey = idToKey;
             installMenuButtonsHook(classLoader, idToKey);
+            installHideCurrentStateHook(classLoader);
             installMultipleSplitMenuHook(classLoader);
             installWidenMenuHook(classLoader);
             installMultipleSplitWidenHook(classLoader);
@@ -450,6 +459,117 @@ public final class CaptionHooks {
     // 子 View 挂点击监听 + 小米私有 hover 属性**的地方。所以按钮必须在 chain.proceed()
     // **之前**追加，让框架把它当亲儿子一起处理；proceed 之后恢复我们自己的点击监听，
     // 再做隐藏 / 重排。顺序反过来（先 proceed 再追加）会缺私有属性，长按会把菜单关掉。
+    /**
+     * 「隐藏当前状态对应的按钮」——按**框架自己标记的选中项**来隐藏。
+     *
+     * <p>早先只判了 {@code mWindowingMode == FREEFORM / FULLSCREEN} 两种，所以只有在
+     * 全屏、小窗时才对得上；左/右（上/下）分屏、多分屏这些状态一个都没被隐藏 ——
+     * 表现就是「开关开了，分屏时那个分屏按钮还在」。
+     *
+     * <p>框架其实把「当前状态是哪个」明确标出来了：{@code MiuiCaptionContainerView.init()}
+     * 末尾调用 {@code setSelectedPos(int id, boolean freeform)}，给对应按钮
+     * {@code setSelected(true)}（选中态还会换 {@code caption_selector_press_selected} 底）。
+     * 所以挂在 {@code setSelectedPos} 后面、把被选中的子 View 从按钮条里移掉，
+     * 就天然覆盖了 全屏 / 小窗 / 分屏·左|上 / 分屏·右|下 —— 不用自己维护模式枚举。
+     *
+     * <p>保留 {@link #applyButtonConfig} 里那两条按 {@code mWindowingMode} 的兜底：
+     * 某些版本 {@code setSelectedPos} 可能没被调用（例如按钮条被复用重建），
+     * 两条路径命中的是同一批 key，重复隐藏无副作用。
+     */
+    private void installHideCurrentStateHook(ClassLoader cl) {
+        Method setSelectedPos = findMethod(cl, CLS_CAPTION_CONTAINER, "setSelectedPos", 2);
+        if (setSelectedPos == null) {
+            L.INSTANCE.w("event=caption_hook_skipped reason=setSelectedPos_not_found");
+            return;
+        }
+        try {
+            setSelectedPos.setAccessible(true);
+            module.hook(setSelectedPos)
+                    .setId("caption_selected_pos")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        try {
+                            Object container = chain.getThisObject();
+                            int selId = (Integer) chain.getArg(0);
+                            String selKey = sIdToKey.get(selId);
+                            Diag.INSTANCE.write("caption", "setSelectedPos id=0x"
+                                    + Integer.toHexString(selId) + "(" + selKey + ")"
+                                    + " freeform=" + chain.getArg(1) + " bar=" + dumpBar(container));
+                            if (HookPrefs.captionEnabled() && HookPrefs.captionHideCurrentState()) {
+                                hideSelectedStateButtons(container);
+                            }
+                        } catch (Throwable t) {
+                            L.INSTANCE.w("event=caption_hide_selected_failed msg=" + t.getMessage());
+                        }
+                        return result;
+                    });
+            L.INSTANCE.i("event=caption_hook_installed target=setSelectedPos");
+            Diag.INSTANCE.write("caption", "setSelectedPos hook installed");
+        } catch (Throwable t) {
+            L.INSTANCE.e("event=hook_failed target=caption_selected_pos", t);
+            Diag.INSTANCE.write("caption", "setSelectedPos hook FAILED: " + t);
+        }
+    }
+
+    /**
+     * 把按钮条里被框架标成「当前状态」的那个按钮摘掉。
+     *
+     * <p>从后往前删，避免删除时下标错位；只动 {@code isSelected()} 为真的子 View，
+     * 其它按钮（新窗口 / 关闭 / 强制关闭 / 我们追加的）一概不碰。
+     */
+    /** 按钮条快照：`id[是否选中]` 列表，排查「当前状态到底标在哪个按钮上」。 */
+    private static String dumpBar(Object container) {
+        Object group = container instanceof ViewGroup ? container : readField(container, "mCaptionButtonContainer");
+        if (!(group instanceof ViewGroup)) {
+            return "n/a";
+        }
+        ViewGroup bar = (ViewGroup) group;
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View c = bar.getChildAt(i);
+            if (c == null) continue;
+            if (i > 0) sb.append(' ');
+            sb.append(Integer.toHexString(c.getId()));
+            if (c.isSelected()) sb.append('*');
+        }
+        return sb.append(']').toString();
+    }
+
+    private static void hideSelectedStateButtons(Object container) {
+        Object group = readField(container, "mCaptionButtonContainer");
+        if (!(group instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup bar = (ViewGroup) group;
+        for (int i = bar.getChildCount() - 1; i >= 0; i--) {
+            View wrapper = bar.getChildAt(i);
+            // 每个按钮外面还包了一层 MiuiCaptionFrameLayout（之前直接判子 View 的
+            // isSelected()，永远为 false —— 选中态标在**内层** MiuiCaptionStateButton 上，
+            // 所以分屏/多分屏这些状态一个都没被藏掉，只有全屏那两条按模式兜底生效）。
+            if (wrapper != null && containsSelected(wrapper)) {
+                bar.removeViewAt(i);
+            }
+        }
+    }
+
+    /** 递归找「选中态」：选中标记打在按钮本体上，外面还套着 wrapper。 */
+    private static boolean containsSelected(View view) {
+        if (view.isSelected()) {
+            return true;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child != null && containsSelected(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private void installMenuButtonsHook(ClassLoader cl, final Map<Integer, String> idToKey) {
         Method addMouseHoverEffect =
                 findMethod(cl, CLS_DOT, "addMouseHoverEffect", 3);
@@ -514,6 +634,10 @@ public final class CaptionHooks {
      * <p>另外有个「隐藏当前状态对应的按钮」：全屏时再显示「全屏」没意义，小窗同理。
      */
     private static void applyButtonConfig(ViewGroup bar, Map<Integer, String> idToKey, Object dot) {
+        Diag.INSTANCE.write("caption", "applyConfig mode=" + readIntField(dot, "mWindowingMode")
+                + " hideCurrent=" + HookPrefs.captionHideCurrentState()
+                + " bar=" + dumpBar(bar.getParent() instanceof ViewGroup
+                        ? (ViewGroup) bar.getParent() : bar));
         List<String> hidden = splitKeys(HookPrefs.captionButtonHidden());
         if (HookPrefs.captionHideCurrentState()) {
             int mode = readIntField(dot, "mWindowingMode");

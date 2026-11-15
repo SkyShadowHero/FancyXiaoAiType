@@ -99,40 +99,7 @@ fun AppShell(
     uiState: AppUiState,
     backStack: SnapshotStateList<NavKey>,
     padding: PaddingValues,
-    serviceMissing: Boolean = false,
-    onRetryService: () -> Unit = {},
 ) {
-    // 未连上 LSPosed：启动即弹窗警告（不阻断界面，但明确告知改动不会保存/生效）
-    var serviceWarningDismissed by remember { mutableStateOf(false) }
-    WindowDialog(
-        show = serviceMissing && !serviceWarningDismissed,
-        title = "未连接到 LSPosed",
-        summary = "本模块依赖 LSPosed 框架才能生效，当前未能连接到框架服务。\n\n" +
-            "请检查：\n" +
-            "1. 已在 LSPosed 管理器中启用本模块\n" +
-            "2. 作用域已勾选 com.xiaomi.type、system、com.android.systemui、com.miui.securitycore\n" +
-            "   （只在用「右键菜单」功能时才需要再加 mark.via）\n" +
-            "3. 启用后已重启输入法进程（system / SystemUI / 安全中心的作用域变更需重启平板）\n\n" +
-            "在框架就绪前，此处的改动不会被保存，也不会生效。",
-        onDismissRequest = { },
-        content = {
-            Row(horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(
-                    text = "重试连接",
-                    onClick = { onRetryService() },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = "我知道了",
-                    onClick = { serviceWarningDismissed = true },
-                    modifier = Modifier.weight(1f),
-                    colors = DsButtonDefaults.textButtonColorsPrimary(),
-                )
-            }
-        },
-    )
-
     val configuration = LocalConfiguration.current
     val useRail = configuration.screenWidthDp >= RAIL_BREAKPOINT_DP
 

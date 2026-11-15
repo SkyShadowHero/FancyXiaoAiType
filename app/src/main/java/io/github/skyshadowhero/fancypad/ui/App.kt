@@ -214,11 +214,13 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
     }
     // 进入应用时先直接取当前状态：RemoteConfig.init() 在 Application.onCreate 里就已经
     // 发起绑定，通常到这一帧已经绑好了，那就不必等。
-    var serviceReady by remember { mutableStateOf<Boolean?>(RemoteConfig.isReady) }
-    // 供「重试」按钮触发重新绑定检测
-    var retryTick by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(retryTick) {
+    // 三态：null = 还在判定（服务可能下一帧才绑上），true/false = 已确定。
+    // 早先这里直接塞 RemoteConfig.isReady（false），于是首帧就是"未激活红"，
+    // 等绑定完成再变绿 —— 每次进首页都闪一下红。
+    var serviceReady by remember {
+        mutableStateOf<Boolean?>(if (RemoteConfig.isReady) true else null)
+    }
+    LaunchedEffect(Unit) {
         // 还没绑上时给一小段缓冲（绑定是异步的），但不再像以前那样盲等 15 秒才出结论
         if (!RemoteConfig.isReady) {
             var waited = 0
@@ -261,11 +263,6 @@ fun App(padding: PaddingValues = PaddingValues(0.dp)) {
                 uiState = uiState,
                 backStack = backStack,
                 padding = padding,
-                serviceMissing = serviceReady == false,
-                onRetryService = {
-                    RemoteConfig.reset()
-                    retryTick++
-                },
             )
         }
     }
