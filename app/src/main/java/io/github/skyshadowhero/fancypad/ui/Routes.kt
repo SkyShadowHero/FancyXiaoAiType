@@ -31,7 +31,7 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
  * │          │              ├── 大小
  * │          │              └── 导入
  * │          │                  └── 颜色设置（三级）
- * │          ├── 平行窗口动画
+ * │          ├── 平板动画修复（平行窗口 / 一镜到底）
  * │          ├── 小窗控制器 ──┬── 功能
  * │          │                └── 按钮
  * │          └── 右键菜单
@@ -140,10 +140,12 @@ enum class AppScope(
         iconRes = R.drawable.ic_scope_cursor,
     ),
     Parallel(
-        label = "平行窗口动画",
+        label = "平板动画修复",
         pkg = "com.android.systemui",
         pages = listOf(RouteParallel),
-        requiredScope = listOf("com.android.systemui"),
+        // 这一域现在横跨两处：平行窗口动画在 SystemUI，一镜到底在 system_server（system），
+        // 目标 App 还要各自加进作用域 —— 这里只把"必须"的两个列出来。
+        requiredScope = listOf("com.android.systemui", "system"),
         iconRes = R.drawable.ic_scope_embedding,
     ),
     Caption(
@@ -191,7 +193,7 @@ fun NavKey.title(): String = when (this) {
     RouteCursorSize -> "大小"
     RouteCursorImport -> "导入"
     RouteCursorColors -> "颜色设置"
-    RouteParallel -> "平行窗口"
+    RouteParallel -> "平板动画修复"
     RouteCaptionFeatures -> "功能"
     RouteCaptionButtons -> "按钮"
     RouteAppMenu -> "右键菜单"

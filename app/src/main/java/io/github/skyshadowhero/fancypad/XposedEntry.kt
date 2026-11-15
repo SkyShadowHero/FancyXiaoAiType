@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * | `com.xiaomi.type` | 输入法外观增强（分离键盘 / 按键圆角间距 / 悬浮键盘）+ 随手写的输入法侧 |
  * | `android`（scope: `system`） | 光标主题接管（`PointerIconCache` + 两个只读 aconfig flag）+ 随手写声明 |
  * | `com.android.systemui` | 平行窗口动画 / 小窗控制菜单 / 文本选择工具栏 |
+ * | 目标 App（小红书 / B站 …） | 一镜到底 HyperViewScale（App 侧那道闸） |
  * | `com.miui.securitycore` | 随手写白名单（让它别把默认输入法改写掉） |
  * | 其它（用户自加） | 右键菜单：目标应用进程内的 `PopupWindow` |
  *
@@ -66,6 +67,16 @@ class XposedEntry : XposedModule() {
 
     /** 光标域（system_server）：懒建，只有真的进了 system 作用域才会用到。 */
     private val cursorHooks by lazy { CursorHooks(this) }
+
+    /**
+     * 一镜到底（HyperViewScale）域：**跨两个位置**。
+     *
+     * - system_server：放开两份 `checkFeatureSupport()` 里的 `!Build.IS_TABLET`；
+     * - 目标 App 进程：放开 App 侧那份，外加 `isFeatureEnable()` / `getAnimHandler()`。
+     *
+     * 两半缺一不可，详见 [HyperViewScaleHooks] 的类注释。
+     */
+    private val hyperViewScaleHooks by lazy { HyperViewScaleHooks(this) }
 
     /** 平行窗口域（com.android.systemui）。 */
     private val embeddingHooks by lazy { EmbeddingHooks(this) }
@@ -144,6 +155,11 @@ class XposedEntry : XposedModule() {
         L.i("event=system_server_starting process=$processName")
         installWithRetry("system_cursor") { cursorHooks.installSystemHooks(param.classLoader) }
         installWithRetry("system_stylus") { stylusSystemHooks.install(param.classLoader) }
+        // 一镜到底：必须在 WM 起来之前放开配置管理器那道闸，否则开机时
+        // mEnable 就被钉成 false，App 侧连 viewScaleInfo 都拿不到。
+        installWithRetry("system_hyper_view_scale") {
+            hyperViewScaleHooks.installSystemHooks(param.classLoader)
+        }
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
@@ -244,6 +260,11 @@ class XposedEntry : XposedModule() {
                 L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
                 installWithRetry("app_menu") { appMenuHooks.install(cl) }
+                // 一镜到底：目标 App 侧那道闸。装在**所有**普通应用上也不亏 ——
+                // 系统没在 view_scale_config.json 里收录的包拿不到 viewScaleInfo，
+                // HyperViewScaleRemoteManager 自己会在 handleBindApplication 里早退，
+                // 触发不到我们这几个 hook（类在 boot classpath，加载成本也接近零）。
+                installWithRetry("app_hyper_view_scale") { hyperViewScaleHooks.installAppHooks(pkg, cl) }
             }
         }
     }
@@ -302,6 +323,7 @@ class XposedEntry : XposedModule() {
         stylusImeHooks.resetInstalled()
         stylusSystemHooks.resetInstalled()
         appMenuHooks.resetInstalled()
+        hyperViewScaleHooks.resetInstalled()
         retryCounts.clear()
         // ★ 按**包名**分派，不能拿进程名当包名：
         //   system_server 的 packageName 是 android，processName 却是 system / system_server，

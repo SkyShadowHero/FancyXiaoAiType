@@ -103,6 +103,41 @@ object RemoteConfig {
         if (s.apiVersion < XposedService.API_102) emptyList() else s.runningTargets
     }.getOrDefault(emptyList())
 
+    /**
+     * 一键申请作用域：把这些包提交给框架，弹 LSPosed 自己的确认框。
+     *
+     * 为什么需要：一镜到底的触发点（`View.performClick` / `Activity.startActivityForResult`）
+     * 在 **App 进程**里，只有被注入的包才能改；而它和「右键菜单」不同 —— 目标 App 集合
+     * 是系统配置表给定的，用户没必要手动一个一个勾。
+     *
+     * @param onDone 回调在主线程；第一个参数是成功与否，第二个是给用户看的说明。
+     */
+    fun requestScope(packages: List<String>, onDone: (Boolean, String) -> Unit) {
+        val s = service
+        if (s == null) {
+            onDone(false, "未连接到 LSPosed，请先确认模块已启用")
+            return
+        }
+        if (packages.isEmpty()) {
+            onDone(false, "读不到系统的一镜到底配置表")
+            return
+        }
+        try {
+            s.requestScope(packages, object : XposedService.OnScopeEventListener {
+                override fun onScopeRequestApproved(scope: List<String>) {
+                    onDone(true, "已加入作用域：" + scope.joinToString("、"))
+                }
+
+                override fun onScopeRequestFailed(message: String) {
+                    onDone(false, message)
+                }
+            })
+        } catch (t: Throwable) {
+            L.e("event=request_scope_failed", t)
+            onDone(false, t.message ?: "申请作用域失败")
+        }
+    }
+
     /** Remote Files 列表；未连接或出错时返回空列表。 */
     fun listRemoteFiles(): List<String> = try {
         service?.listRemoteFiles()?.toList() ?: emptyList()

@@ -94,6 +94,10 @@ class AppUiState {
     var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
 
+    // ---- 一镜到底（HyperViewScale，作用域 system + 各目标 App）----
+    /** 默认开：平板本来就有完整实现，只是被 `!Build.IS_TABLET` 挡掉。 */
+    var hyperViewScaleEnabled by mutableStateOf(true)
+
     // ---- 小窗控制器（作用域 com.android.systemui）----
     /** 小窗控制器总开关（默认开）：关掉后这一域所有设置全部失效、回到系统原样。 */
     var captionEnabled by mutableStateOf(true)
@@ -411,6 +415,11 @@ private fun loadConfigInto(uiState: AppUiState) {
     }.getOrDefault(true)
     uiState.embeddingJumpCutDisable = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true)
+    }.getOrDefault(true)
+
+    // ---- 一镜到底（默认开）----
+    uiState.hyperViewScaleEnabled = p.runCatching {
+        getBoolean(PrefKeys.HYPER_VIEW_SCALE_ENABLED, true)
     }.getOrDefault(true)
 
     // ---- 小窗控制器（默认：总开关开、各功能关）----

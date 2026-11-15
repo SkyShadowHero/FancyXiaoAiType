@@ -12,7 +12,8 @@
 |---|---|---|
 | 小爱输入法 | `com.xiaomi.type` | 分离键盘宽度/中心间隙、按键圆角与间距、悬浮键盘工具栏与候选窗口尺寸 |
 | 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
-| 平行窗口动画 | `com.android.systemui` | 把平行窗口（Activity Embedding）的转场从小米 Folme 引擎换回 AOSP 原生实现，并禁止转场合并与跳切 |
+| 平板动画修复 · 平行窗口 | `com.android.systemui` | 把平行窗口（Activity Embedding）的转场从小米 Folme 引擎换回 AOSP 原生实现，并禁止转场合并与跳切 |
+| 平板动画修复 · 一镜到底 | `system` + 各目标 App | 放开 HyperViewScale 的 `!Build.IS_TABLET` 限制：列表点开→详情页封面展开、返回收回（小红书 / B站） |
 | 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
 
@@ -30,6 +31,7 @@
 1. 安装 APK
 2. LSPosed 管理器 → 模块 → 启用 **FancyPad**
 3. 作用域勾上：`com.xiaomi.type`、`system`、`com.android.systemui`、`com.miui.securitycore`
+   「一镜到底」另需把目标 App 自身（`com.xingin.xhs`、`tv.danmaku.bili`）加进作用域
    只在用「右键菜单」功能时才需要再加目标应用（例如 `mark.via`）
 4. `system` / `com.android.systemui` / 安全中心是开机注入的 → **重启一次平板**；输入法侧只需重启输入法进程
 

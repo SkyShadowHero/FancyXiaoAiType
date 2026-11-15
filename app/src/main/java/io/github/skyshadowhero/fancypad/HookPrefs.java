@@ -81,6 +81,14 @@ public final class HookPrefs {
     private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
     /** 笔迹线宽（px）。 */
     private static volatile float stylusInkWidthPx = PrefKeys.STYLUS_INK_WIDTH_DEFAULT;
+    /**
+     * 一镜到底（HyperViewScale）总开关。默认**开**。
+     *
+     * <p>默认开不是"激进"，是因为这台平板本来就有完整实现（配置、jar、framework
+     * 里的 {@code View.performClick} 钩子都在），只是被 {@code !Build.IS_TABLET}
+     * 挡掉 —— 关着等于把 OS4 的原生能力藏起来。
+     */
+    private static volatile boolean hyperViewScaleEnabled = true;
     /** 上次刷新的时刻（uptimeMillis），供 {@link #refreshIfStale} 判断快照新旧。 */
     private static volatile long lastRefreshAt = 0L;
 
@@ -250,6 +258,22 @@ public final class HookPrefs {
             stylusInkWidthPx = p.getFloat(PrefKeys.STYLUS_INK_WIDTH_PX, PrefKeys.STYLUS_INK_WIDTH_DEFAULT);
         } catch (Throwable ignored) {
         }
+        try {
+            hyperViewScaleEnabled = p.getBoolean(PrefKeys.HYPER_VIEW_SCALE_ENABLED, true);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 一镜到底总开关。
+     *
+     * <p>带低频自愈刷新：注入进程不一定收得到偏好变更通知，见 {@link #STYLUS_REFRESH_MS}。
+     * 调用点在 {@code HyperViewScaleRemoteManager.performClick()}（主线程、每次点击一次），
+     * 所以刷新同样是"只触发、不阻塞"。
+     */
+    public static boolean hyperViewScaleEnabled(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return hyperViewScaleEnabled;
     }
 
     public static boolean cursorEnabled() {

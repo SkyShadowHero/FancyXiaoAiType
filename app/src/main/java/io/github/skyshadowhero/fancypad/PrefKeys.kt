@@ -531,6 +531,32 @@ object PrefKeys {
     const val APPMENU_PADDING_V_DEFAULT = 12f
 
     // ==================================================================
+    // FancyPad：一镜到底（HyperViewScale）
+    //
+    // 作用域：system（system_server）+ **逐个目标 App**（小红书 / B 站 / 以后自加的）。
+    //
+    // OS4 里「列表点开→详情页封面展开、返回收回」是小米的 HyperViewScale：
+    // App 抓点击处的卡片截图 → ActivityOptions.makeRemoteTransition →
+    // system_server 的 WM 用 SurfaceControl 做形变。逐 App 的卡片类名表在
+    // `/system_ext/etc/view_scale/view_scale_config.json`（小红书和 B 站都已收录）。
+    //
+    // 三个关键类的闸都是 `... && !Build.IS_TABLET`，所以平板永远拿不到 —— 这个开关
+    // 就是把这三种闸的返回值改成 true，动画本体仍由 ROM 执行。
+    // ==================================================================
+
+    /** 一镜到底总开关（默认开：这是 OS4 已有能力，只是平板被机型判断挡掉了） */
+    const val HYPER_VIEW_SCALE_ENABLED = "hyper_view_scale_enabled"
+
+    /**
+     * 已适配一镜到底、且**已知在小米配置表里**的应用（逗号分隔）。
+     *
+     * 只用于设置页展示与「没加进 LSPosed 作用域」的提示，Hook 侧不按它过滤 ——
+     * 真正的白名单在系统那份 `view_scale_config.json` 里，系统不下发 `viewScaleInfo`
+     * 时 App 侧自己就会早退。
+     */
+    const val HYPER_VIEW_SCALE_APPS = "hyper_view_scale_apps"
+
+    // ==================================================================
     // FancyPad：随手写（触控笔手写）
     //
     // 作用域 com.xiaomi.type，Hook 侧 StylusImeHooks 读取。

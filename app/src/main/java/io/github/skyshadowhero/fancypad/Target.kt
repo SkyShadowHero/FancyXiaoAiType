@@ -19,7 +19,7 @@ object Target {
     /** system_server（scope 里写作 `system`）——光标主题域在这里生效。 */
     const val SYSTEM_PACKAGE = "android"
 
-    /** SystemUI ——平行窗口（Activity Embedding）动画域在这里生效。 */
+    /** SystemUI —— 平行窗口（Activity Embedding）动画域在这里生效。 */
     const val SYSTEM_UI_PACKAGE = "com.android.systemui"
 
     /**
