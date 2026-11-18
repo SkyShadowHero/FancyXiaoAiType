@@ -7,9 +7,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,10 +20,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import io.github.skyshadowhero.fancypad.MaterialPackages
 import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.RemoteConfig
 import io.github.skyshadowhero.fancypad.ViewScaleTargets
 import io.github.skyshadowhero.fancypad.ui.ds.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 「平板动画修复」页：两件事，都是"平板被砍掉的动画"。
@@ -28,11 +34,17 @@ import io.github.skyshadowhero.fancypad.ui.ds.*
  * ## 一、平行窗口动画（原 os4平行窗口动画fix模块）：作用域 `com.android.systemui`。
  *
  * 问题：HyperOS 的平行窗口（Activity Embedding）左右切换 / 进二级页时卡顿、丢动画。
- * 根因是平行窗口的转场走了小米的 Folme 动画引擎，而且转场允许「合并」与「跳切」——
- * 合并失败会把正在播的动画取消，跳切等于这次转场不播。
+ * 真机实测只有「跳切」这一层有效：`createAnimationAdapters()` 返回空 →
+ * `shouldUseJumpCut*` 为 true → 这次转场根本不播。把判定钉成 false 即恢复动画。
+ * （早先还 hook 过 Folme 引擎与转场合并，真机对比无可见效果，已删除。）
  *
- * 四个开关默认全开（= 旧模块的行为）；总开关关掉即完全还原成系统原行为。
- * 实测真正影响观感的是「禁止转场合并」+「禁止跳切」，另外两项保留为对照开关。
+ * 总开关关掉即完全还原成系统原行为。
+ *
+ * ## 一·五、分栏无级调节：作用域 = **各目标 App 自身**（与右键菜单一致）
+ *
+ * 拖中间分隔线时比例本来是连续的，但松手会被吸附、且两侧比例被限死在 0.35~0.65。
+ * 打开后松手停在拖到的位置，两侧最窄可到 1/8、最宽到 7/8。
+ * 生效应用要**先在 LSPosed 作用域里加上它，再强停一次**（和右键菜单同一套注入路径）。
  *
  * 小窗控制点的按钮条（× → − / 红色强制关闭）已拆到独立的「小窗控制器」页 ——
  * 虽然同属 `com.android.systemui`，但和这里没有技术关联。
@@ -61,6 +73,16 @@ fun ParallelPage(
     var requesting by remember { mutableStateOf(false) }
     var scopeSummary by remember { mutableStateOf("把系统支持一镜到底的应用加进作用域") }
 
+    // 平行窗口无级调节：生效应用选择器（只列作用域内应用，和右键菜单一致）
+    var showRatioPicker by remember { mutableStateOf(false) }
+    var ratioApps by remember { mutableStateOf<List<InstalledApp>>(emptyList()) }
+    LaunchedEffect(showRatioPicker) {
+        if (!showRatioPicker || ratioApps.isNotEmpty()) return@LaunchedEffect
+        val scopedPkgs = runCatching { RemoteConfig.service()?.scope }.getOrNull()
+        ratioApps = withContext(Dispatchers.IO) { AppCatalog.load(context) }
+            .filter { scopedPkgs.isNullOrEmpty() || scopedPkgs.contains(it.packageName) }
+    }
+
     LazyColumn(
         modifier = Modifier.padding(padding),
         contentPadding = PaddingValues(
@@ -86,33 +108,42 @@ fun ParallelPage(
                 AnimatedVisibility(visible = uiState.embeddingEnabled) {
                     Column {
                         SwitchPreference(
-                            checked = uiState.embeddingFolmeDisable,
-                            onCheckedChange = { checked ->
-                                uiState.embeddingFolmeDisable = checked
-                                uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, checked) }
-                            },
-                            title = "禁用 Folme 引擎",
-                            summary = "改用 AOSP 的 DefaultAnimationProvider（517/80/30ms）",
-                        )
-                        SwitchPreference(
-                            checked = uiState.embeddingMergeDisable,
-                            onCheckedChange = { checked ->
-                                uiState.embeddingMergeDisable = checked
-                                uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, checked) }
-                            },
-                            title = "禁止转场合并",
-                            summary = "合并失败会把正在播放的动画取消掉（实测最有效项）",
-                        )
-                        SwitchPreference(
                             checked = uiState.embeddingJumpCutDisable,
                             onCheckedChange = { checked ->
                                 uiState.embeddingJumpCutDisable = checked
                                 uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, checked) }
                             },
                             title = "禁止跳切",
-                            summary = "跳切等于这次转场不播动画（实测最有效项）",
+                            summary = "跳切等于这次转场不播动画",
                         )
                     }
+                }
+            }
+        }
+
+        item { SmallTitle("平行窗口分栏无级调节") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = uiState.embeddingRatioEnabled,
+                    onCheckedChange = { checked ->
+                        uiState.embeddingRatioEnabled = checked
+                        uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, checked) }
+                    },
+                    title = "分栏无级调节",
+                    summary = "系统默认只能在 0.35 ~ 0.65 之间，且松手会吸附到固定档位。" +
+                        "打开后拖到哪儿停哪儿，两侧最窄 1/8、最宽 7/8。" +
+                        "需把目标应用加进 LSPosed 作用域并强停一次（由应用自己画分隔线）",
+                )
+                AnimatedVisibility(visible = uiState.embeddingRatioEnabled) {
+                    ArrowPreference(
+                        title = "生效的应用",
+                        summary = runCatching {
+                            val n = MaterialPackages.decode(uiState.embeddingRatioApps).size
+                            if (n == 0) "未选择（不生效）" else "已选择 $n 个"
+                        }.getOrDefault("未选择（不生效）"),
+                        onClick = { showRatioPicker = true },
+                    )
                 }
             }
         }
@@ -144,6 +175,50 @@ fun ParallelPage(
                             }
                         }
                     },
+                )
+            }
+        }
+    }
+
+    RatioAppPickerDialog(
+        show = showRatioPicker,
+        apps = ratioApps,
+        selected = runCatching { MaterialPackages.decode(uiState.embeddingRatioApps) }
+            .getOrDefault(emptySet()),
+        onToggle = { pkg ->
+            val next = runCatching { MaterialPackages.decode(uiState.embeddingRatioApps) }
+                .getOrDefault(emptySet())
+                .toMutableSet()
+                .apply { if (!add(pkg)) remove(pkg) }
+            uiState.embeddingRatioApps = MaterialPackages.encode(next)
+            uiState.save { e -> e.putString(PrefKeys.EMBEDDING_RATIO_APPS, uiState.embeddingRatioApps) }
+        },
+        onDismiss = { showRatioPicker = false },
+    )
+}
+
+/** 生效应用多选列表（复刻右键菜单：复用 AppCatalog + MaterialPackages 编解码）。 */
+@Composable
+private fun RatioAppPickerDialog(
+    show: Boolean,
+    apps: List<InstalledApp>,
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    WindowDialog(
+        show = show,
+        title = "选择生效的应用",
+        summary = "只列作用域内的应用；已选择 ${selected.size} 个（不选 = 不生效）",
+        onDismissRequest = onDismiss,
+    ) {
+        LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+            items(apps) { app ->
+                SwitchPreference(
+                    checked = selected.contains(app.packageName),
+                    onCheckedChange = { onToggle(app.packageName) },
+                    title = app.label,
+                    summary = app.packageName,
                 )
             }
         }

@@ -90,9 +90,11 @@ class AppUiState {
 
     // ---- 平行窗口动画（原 os4平行窗口动画fix模块，作用域 com.android.systemui）----
     var embeddingEnabled by mutableStateOf(false)
-    var embeddingFolmeDisable by mutableStateOf(true)
-    var embeddingMergeDisable by mutableStateOf(true)
     var embeddingJumpCutDisable by mutableStateOf(true)
+
+    // ---- 平行视界分栏无级（作用域各目标 App，与右键菜单一致）----
+    var embeddingRatioEnabled by mutableStateOf(false)
+    var embeddingRatioApps by mutableStateOf("")
 
     // ---- 一镜到底（HyperViewScale，作用域 system + 各目标 App）----
     /** 默认开：平板本来就有完整实现，只是被 `!Build.IS_TABLET` 挡掉。 */
@@ -404,15 +406,15 @@ private fun loadConfigInto(uiState: AppUiState) {
     // ---- 平行窗口动画（总开关默认关闭；子项保持开启，打开总开关即生效）----
     uiState.embeddingEnabled = p.runCatching { getBoolean(PrefKeys.EMBEDDING_ENABLED, false) }
         .getOrDefault(false)
-    uiState.embeddingFolmeDisable = p.runCatching {
-        getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, true)
-    }.getOrDefault(true)
-    uiState.embeddingMergeDisable = p.runCatching {
-        getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, true)
-    }.getOrDefault(true)
     uiState.embeddingJumpCutDisable = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true)
     }.getOrDefault(true)
+    uiState.embeddingRatioEnabled = p.runCatching {
+        getBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, false)
+    }.getOrDefault(false)
+    uiState.embeddingRatioApps = p.runCatching {
+        getString(PrefKeys.EMBEDDING_RATIO_APPS, "")
+    }.getOrNull().orEmpty()
 
     // ---- 一镜到底（默认开）----
     uiState.hyperViewScaleEnabled = p.runCatching {

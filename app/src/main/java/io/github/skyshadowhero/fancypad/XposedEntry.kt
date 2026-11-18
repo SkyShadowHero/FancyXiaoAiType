@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * | `com.android.systemui` | 平行窗口动画 / 小窗控制菜单 / 文本选择工具栏 |
  * | 目标 App（小红书 / B站 …） | 一镜到底 HyperViewScale（App 侧那道闸） |
  * | `com.miui.securitycore` | 随手写白名单（让它别把默认输入法改写掉） |
- * | 其它（用户自加） | 右键菜单：目标应用进程内的 `PopupWindow` |
+ * | 其它（用户自加） | 右键菜单 / 平行视界分栏无级：目标应用进程内 |
  *
  * 所有域的开关都放在同一个 RemotePreferences 组（[PrefKeys.GROUP]）里，
  * 由 App 侧界面写入、Hook 侧通过 [HookPrefs] / [ConfigLoader] 读取。
@@ -97,6 +97,15 @@ class XposedEntry : XposedModule() {
      * 右键菜单是应用自己 `PopupWindow.showAsDropDown()` 弹的，只能逐应用注入。
      */
     private val appMenuHooks by lazy { AppMenuHooks(this) }
+
+    /**
+     * 平行视界分栏无级域（**目标应用自身**的进程，与右键菜单同作用域）。
+     *
+     * 分隔线松手吸附的钩子在 `MiuiDividerPresenter`，这个类只在声明了
+     * `uses-library=androidx.window.extensions` 的目标 app 进程里加载，
+     * 因此和右键菜单一样只能逐个应用注入。
+     */
+    private val embeddingRatioHooks by lazy { EmbeddingRatioHooks(this) }
 
     /** 随手写 · system_server 侧两道闸（与光标域同进程，作用域 system）。 */
     private val stylusSystemHooks by lazy { StylusSystemHooks(this) }
@@ -260,6 +269,9 @@ class XposedEntry : XposedModule() {
                 L.i("event=package_ready package=$pkg process=$processName")
                 HookPrefs.bind(this)
                 installWithRetry("app_menu") { appMenuHooks.install(cl) }
+                // 平行视界分栏无级：仅在声明了 androidx.window.extensions 的 app 里
+                // 才装得上，其它 app 加载不到目标类会快速失败，无害。
+                installWithRetry("app_embedding_ratio") { embeddingRatioHooks.install(cl, pkg) }
                 // 一镜到底：目标 App 侧那道闸。装在**所有**普通应用上也不亏 ——
                 // 系统没在 view_scale_config.json 里收录的包拿不到 viewScaleInfo，
                 // HyperViewScaleRemoteManager 自己会在 handleBindApplication 里早退，
@@ -323,6 +335,7 @@ class XposedEntry : XposedModule() {
         stylusImeHooks.resetInstalled()
         stylusSystemHooks.resetInstalled()
         appMenuHooks.resetInstalled()
+        embeddingRatioHooks.resetInstalled()
         hyperViewScaleHooks.resetInstalled()
         retryCounts.clear()
         // ★ 按**包名**分派，不能拿进程名当包名：

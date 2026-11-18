@@ -35,9 +35,11 @@ public final class HookPrefs {
     // ---- 快照（Hook 侧只读这些字段） ----
     private static volatile boolean cursorEnabled = false;
     private static volatile boolean embeddingEnabled = false;
-    private static volatile boolean folmeDisabled = true;
-    private static volatile boolean mergeDisabled = true;
     private static volatile boolean jumpCutDisabled = true;
+    /** 平行视界分栏无级调节；关掉后松手吸附回系统原样。 */
+    private static volatile boolean embeddingRatioEnabled = false;
+    /** 平行视界无级调节的生效白名单（空串 = 谁都不生效）。 */
+    private static volatile String embeddingRatioApps = "";
     /** 小窗控制器总开关；关掉后这一域所有 Hook 直接放行。 */
     private static volatile boolean captionEnabled = true;
     /** 小窗控制菜单里「关闭」按钮的图标 × → −。 */
@@ -150,15 +152,15 @@ public final class HookPrefs {
         } catch (Throwable ignored) {
         }
         try {
-            folmeDisabled = p.getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, true);
-        } catch (Throwable ignored) {
-        }
-        try {
-            mergeDisabled = p.getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, true);
-        } catch (Throwable ignored) {
-        }
-        try {
             jumpCutDisabled = p.getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioEnabled = p.getBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioApps = p.getString(PrefKeys.EMBEDDING_RATIO_APPS, "");
         } catch (Throwable ignored) {
         }
         try {
@@ -284,12 +286,22 @@ public final class HookPrefs {
         return embeddingEnabled;
     }
 
-    public static boolean folmeDisabled() {
-        return folmeDisabled;
+    public static boolean embeddingRatioEnabled() {
+        return embeddingRatioEnabled;
     }
 
-    public static boolean mergeDisabled() {
-        return mergeDisabled;
+    /** 白名单为空 = 谁都不生效；否则要求当前进程包名在列表里。 */
+    public static boolean embeddingRatioAppAllowed(String pkg) {
+        String list = embeddingRatioApps;
+        if (list == null || list.trim().isEmpty() || pkg == null) {
+            return false;
+        }
+        for (String part : list.split("[,\\n]")) {
+            if (part.trim().equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean jumpCutDisabled() {

@@ -1,6 +1,6 @@
 # FancyPad
 
-多个 LSPosed 功能域合并成的**单模块**：小米平板（HyperOS 4 / Android 17）上的输入法外观增强、触控笔随手写、系统光标主题、平行窗口动画修复、小窗控制菜单与右键菜单改造。
+多个 LSPosed 功能域合并成的**单模块**：小米平板（HyperOS 4 / Android 17）上的输入法外观增强、触控笔随手写、系统光标主题、平行窗口动画修复、平行视界分栏无级调节、小窗控制菜单与右键菜单改造。
 
 > 本分支（`fancypad`）是合并版；`master` 仍是原 **FancyType**（只有输入法外观）。
 
@@ -12,7 +12,8 @@
 |---|---|---|
 | 小爱输入法 | `com.xiaomi.type` | 分离键盘宽度/中心间隙、按键圆角与间距、悬浮键盘工具栏与候选窗口尺寸 |
 | 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
-| 平板动画修复 · 平行窗口 | `com.android.systemui` | 把平行窗口（Activity Embedding）的转场从小米 Folme 引擎换回 AOSP 原生实现，并禁止转场合并与跳切 |
+| 平板动画修复 · 平行窗口 | `com.android.systemui` | 禁止平行窗口（Activity Embedding）转场的「跳切」（跳切等于这次转场不播动画） |
+| 平板动画修复 · 分栏无级 | 各目标 App 自身 | 平行视界分隔线松手不吸附、两侧比例上限从 0.35/0.65 放宽到 1/8 与 7/8 |
 | 平板动画修复 · 一镜到底 | `system` + 各目标 App | 放开 HyperViewScale 的 `!Build.IS_TABLET` 限制：列表点开→详情页封面展开、返回收回（小红书 / B站） |
 | 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
@@ -32,7 +33,7 @@
 2. LSPosed 管理器 → 模块 → 启用 **FancyPad**
 3. 作用域勾上：`com.xiaomi.type`、`system`、`com.android.systemui`、`com.miui.securitycore`
    「一镜到底」另需把目标 App 自身（`com.xingin.xhs`、`tv.danmaku.bili`）加进作用域
-   只在用「右键菜单」功能时才需要再加目标应用（例如 `mark.via`）
+   「右键菜单」「分栏无级」另需把目标应用加进作用域，并**强停该应用**让它重新被注入（例如 `mark.via`）
 4. `system` / `com.android.systemui` / 安全中心是开机注入的 → **重启一次平板**；输入法侧只需重启输入法进程
 
 ## 构建
@@ -77,6 +78,7 @@ app/src/main/
 │   ├── PencilEngine.kt       # 系统笔引擎（xiaomi-pencilengine-pad）访问层
 │   ├── IflytekHcrEngine.kt   # 小爱自带讯飞 HCR（逐点流式）
 │   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
+│   ├── EmbeddingRatioHooks.java # [目标应用] 平行视界分栏无级（不吸附 + 1/8~7/8）
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
 │   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
 │   ├── MaterialPackages.kt   # 需要「Miuix 材质」处理的目标包名（右键菜单复用）

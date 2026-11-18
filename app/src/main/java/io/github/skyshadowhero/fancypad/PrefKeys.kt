@@ -360,21 +360,39 @@ object PrefKeys {
     // FancyPad：平行窗口动画（原 os4平行窗口动画fix模块）
     //
     // 作用域 com.android.systemui，Hook 侧 EmbeddingHooks 读取。
-    // 实测结论（device-mod-backup/HANDOVER.md 第 3 章）：真正有效的是
-    // 「禁止转场合并」与「禁止跳切」两项，另外两项保留为独立开关便于对照。
+    // 实测结论：真正有效的只有「禁止跳切」；「禁用 Folme 引擎」「禁止转场合并」
+    // 实测无可见效果，已连同逻辑一起删除。
     // ==================================================================
 
     /** 平行窗口动画修复总开关 */
     const val EMBEDDING_ENABLED = "embedding_enabled"
 
-    /** 禁用小米 Folme 动画引擎（改用 AOSP DefaultAnimationProvider） */
-    const val EMBEDDING_FOLME_DISABLE = "embedding_folme_disable"
-
-    /** 禁止转场合并（合并失败会把正在播的动画取消掉） */
-    const val EMBEDDING_MERGE_DISABLE = "embedding_merge_disable"
-
     /** 禁止跳切（跳切等于这次转场不播动画） */
     const val EMBEDDING_JUMPCUT_DISABLE = "embedding_jumpcut_disable"
+
+    // ==================================================================
+    // FancyPad：平行视界分栏比例无级调节
+    //
+    // 作用域 = 目标应用自身（与右键菜单一致，需逐 app 勾选），
+    // Hook 侧 EmbeddingRatioHooks 读取。默认关。
+    // ==================================================================
+
+    /**
+     * 平行视界分栏「无级调节」总开关（默认关）。
+     *
+     * 两件事：
+     * 1) 拖动中间的分割线松手时不再吸附回 1/2（居中）或 min/max（甩动），拖到哪停哪；
+     * 2) 两侧比例上下限从系统默认的 0.35 / 0.65 放宽到 1/8 (0.125) / 7/8 (0.875)。
+     *
+     * 比例本身仍由系统按连续浮点计算并保存（miui_split_ratio_prefs）。
+     */
+    const val EMBEDDING_RATIO_ENABLED = "embedding_ratio_enabled"
+
+    /**
+     * 平行视界无级调节的生效应用白名单（换行分隔的包名，编解码见 MaterialPackages）。
+     * 空 = 谁都不生效；hook 侧按当前进程包名判断，与右键菜单 APPMENU_APPS 同款。
+     */
+    const val EMBEDDING_RATIO_APPS = "embedding_ratio_apps"
 
     // ==================================================================
     // FancyPad：小窗控制菜单（窗口控制点弹出的那个按钮条）
