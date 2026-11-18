@@ -18,12 +18,12 @@ import io.github.libxposed.api.XposedInterface;
  *       {@code onFinishDragging} 里唯一的位置决策入口，arg0 就是松手瞬间的连续像素位置。
  *       直接返回它（自己 clamp 到系统 min/max）即「无级」，但必须保留 clamp，
  *       否则越界位置会把一侧压成 0 宽。</li>
- *   <li><b>拖动上下限 0.35/0.65 → 1/8、7/8</b>：系统的上下限来自
+ *   <li><b>拖动上下限 0.35/0.65 → 1/4、3/4</b>：系统的上下限来自
  *       {@code DividerAttributes.getPrimaryMinRatio()/getPrimaryMaxRatio()}。
  *       声明 {@code uses-library} 的 app 一般传 {@code RATIO_SYSTEM_DEFAULT(-1f)}，
  *       由 {@code DividerPresenter.sanitizeDividerAttributes()} 换成
  *       {@code DEFAULT_MIN_RATIO=0.35f / DEFAULT_MAX_RATIO=0.65f}。
- *       在这两个 getter 上把「系统默认」换成 0.125 / 0.875，
+ *       在这两个 getter 上把「系统默认」换成 0.25 / 0.75，
  *       sanitize 之后写回 {@code mProperties.mDividerAttributes} 的字段就是新范围，
  *       拖动 clamp、{@code calculateNewSplitRatio} 保存的比例、渲染层的手柄范围全都跟着变。</li>
  * </ol>
@@ -49,10 +49,10 @@ public final class EmbeddingRatioHooks {
     private static final float RATIO_SYSTEM_DEFAULT = -1.0f;
     /** {@code DividerAttributes.DIVIDER_TYPE_DRAGGABLE}：只有可拖动分栏才允许自定义上下限。 */
     private static final int DIVIDER_TYPE_DRAGGABLE = 2;
-    /** 一侧最窄 1/8。 */
-    private static final float MIN_RATIO = 0.125f;
-    /** 一侧最宽 7/8。 */
-    private static final float MAX_RATIO = 0.875f;
+    /** 一侧最窄 1/4。 */
+    private static final float MIN_RATIO = 0.25f;
+    /** 一侧最宽 3/4。 */
+    private static final float MAX_RATIO = 0.75f;
 
     /**
      * 偏好快照的自愈节流：已注入的应用进程不一定收得到框架的变更通知（与右键菜单同款问题），
@@ -147,7 +147,7 @@ public final class EmbeddingRatioHooks {
                 ok++;
             }
 
-            // 2) 拖动上下限：-1（系统默认）→ 1/8、7/8
+            // 2) 拖动上下限：-1（系统默认）→ 1/4、3/4
             total++;
             if (hookAttrRatio(attrs, "getPrimaryMinRatio", MIN_RATIO)) {
                 ok++;
