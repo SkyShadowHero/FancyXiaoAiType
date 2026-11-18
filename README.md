@@ -13,7 +13,7 @@
 | 小爱输入法 | `com.xiaomi.type` | 分离键盘宽度/中心间隙、按键圆角与间距、悬浮键盘工具栏与候选窗口尺寸 |
 | 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
 | 平板动画修复 · 平行窗口 | `com.android.systemui` | 禁止平行窗口（Activity Embedding）转场的「跳切」（跳切等于这次转场不播动画） |
-| 平板动画修复 · 分栏无级 | 各目标 App 自身 | 平行视界分隔线松手不吸附、两侧比例上限从 0.35/0.65 放宽到 1/4 与 3/4 |
+| 平板动画修复 · 分栏无级 | 各目标 App 自身 | 平行视界分隔线松手不吸附、可拖范围用双滑块调（默认系统 0.35 / 0.65） |
 | 平板动画修复 · 一镜到底 | `system` + 各目标 App | 放开 HyperViewScale 的 `!Build.IS_TABLET` 限制：列表点开→详情页封面展开、返回收回（小红书 / B站） |
 | 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |
 | 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
@@ -78,7 +78,7 @@ app/src/main/
 │   ├── PencilEngine.kt       # 系统笔引擎（xiaomi-pencilengine-pad）访问层
 │   ├── IflytekHcrEngine.kt   # 小爱自带讯飞 HCR（逐点流式）
 │   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
-│   ├── EmbeddingRatioHooks.java # [目标应用] 平行视界分栏无级（不吸附 + 1/4~3/4）
+│   ├── EmbeddingRatioHooks.java # [目标应用] 平行视界分栏无级（不吸附 + 可调范围）
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
 │   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
 │   ├── MaterialPackages.kt   # 需要「Miuix 材质」处理的目标包名（右键菜单复用）

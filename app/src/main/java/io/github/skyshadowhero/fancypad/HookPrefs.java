@@ -40,6 +40,9 @@ public final class HookPrefs {
     private static volatile boolean embeddingRatioEnabled = false;
     /** 平行视界无级调节的生效白名单（空串 = 谁都不生效）。 */
     private static volatile String embeddingRatioApps = "";
+    /** 分栏可拖范围（默认 = 系统原值 0.35 / 0.65）。 */
+    private static volatile float embeddingRatioMin = 0.35f;
+    private static volatile float embeddingRatioMax = 0.65f;
     /** 小窗控制器总开关；关掉后这一域所有 Hook 直接放行。 */
     private static volatile boolean captionEnabled = true;
     /** 小窗控制菜单里「关闭」按钮的图标 × → −。 */
@@ -161,6 +164,14 @@ public final class HookPrefs {
         }
         try {
             embeddingRatioApps = p.getString(PrefKeys.EMBEDDING_RATIO_APPS, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioMin = p.getFloat(PrefKeys.EMBEDDING_RATIO_MIN, 0.35f);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioMax = p.getFloat(PrefKeys.EMBEDDING_RATIO_MAX, 0.65f);
         } catch (Throwable ignored) {
         }
         try {
@@ -288,6 +299,18 @@ public final class HookPrefs {
 
     public static boolean embeddingRatioEnabled() {
         return embeddingRatioEnabled;
+    }
+
+    /** 下限；与上限对齐（配置写反时以较小值为准），并夹在 (0, 0.5] 内。 */
+    public static float embeddingRatioMin() {
+        float lo = Math.min(embeddingRatioMin, embeddingRatioMax);
+        return Math.max(0.05f, Math.min(0.49f, lo));
+    }
+
+    /** 上限；同上，夹在 [0.5, 0.95) 内。 */
+    public static float embeddingRatioMax() {
+        float hi = Math.max(embeddingRatioMin, embeddingRatioMax);
+        return Math.min(0.95f, Math.max(0.51f, hi));
     }
 
     /** 白名单为空 = 谁都不生效；否则要求当前进程包名在列表里。 */

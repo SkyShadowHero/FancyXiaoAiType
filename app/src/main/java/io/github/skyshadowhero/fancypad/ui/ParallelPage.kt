@@ -7,6 +7,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +28,8 @@ import io.github.skyshadowhero.fancypad.RemoteConfig
 import io.github.skyshadowhero.fancypad.ViewScaleTargets
 import io.github.skyshadowhero.fancypad.ui.ds.*
 import kotlinx.coroutines.Dispatchers
+import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.RangeSlider
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,7 +47,7 @@ import kotlinx.coroutines.withContext
  * ## 一·五、分栏无级调节：作用域 = **各目标 App 自身**（与右键菜单一致）
  *
  * 拖中间分隔线时比例本来是连续的，但松手会被吸附、且两侧比例被限死在 0.35~0.65。
- * 打开后松手停在拖到的位置，两侧最窄可到 1/4、最宽到 3/4。
+ * 打开后松手停在拖到的位置，两侧的可拖范围用双滑块调（默认系统值 0.35 / 0.65）。
  * 生效应用要**先在 LSPosed 作用域里加上它，再强停一次**（和右键菜单同一套注入路径）。
  *
  * 小窗控制点的按钮条（× → − / 红色强制关闭）已拆到独立的「小窗控制器」页 ——
@@ -131,19 +135,32 @@ fun ParallelPage(
                         uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, checked) }
                     },
                     title = "分栏无级调节",
-                    summary = "系统默认只能在 0.35 ~ 0.65 之间，且松手会吸附到固定档位。" +
-                        "打开后拖到哪儿停哪儿，两侧最窄 1/4、最宽 3/4。" +
-                        "需把目标应用加进 LSPosed 作用域并强停一次（由应用自己画分隔线）",
                 )
                 AnimatedVisibility(visible = uiState.embeddingRatioEnabled) {
-                    ArrowPreference(
-                        title = "生效的应用",
-                        summary = runCatching {
-                            val n = MaterialPackages.decode(uiState.embeddingRatioApps).size
-                            if (n == 0) "未选择（不生效）" else "已选择 $n 个"
-                        }.getOrDefault("未选择（不生效）"),
-                        onClick = { showRatioPicker = true },
-                    )
+                    Column {
+                        RatioRangeSlider(
+                            lower = uiState.embeddingRatioMin,
+                            upper = uiState.embeddingRatioMax,
+                            onValueChange = { lower, upper ->
+                                uiState.embeddingRatioMin = lower
+                                uiState.embeddingRatioMax = upper
+                            },
+                            onCommit = {
+                                uiState.save { e ->
+                                    e.putFloat(PrefKeys.EMBEDDING_RATIO_MIN, uiState.embeddingRatioMin)
+                                    e.putFloat(PrefKeys.EMBEDDING_RATIO_MAX, uiState.embeddingRatioMax)
+                                }
+                            },
+                        )
+                        ArrowPreference(
+                            title = "生效的应用",
+                            summary = runCatching {
+                                val n = MaterialPackages.decode(uiState.embeddingRatioApps).size
+                                if (n == 0) "未选择（不生效）" else "已选择 $n 个"
+                            }.getOrDefault("未选择（不生效）"),
+                            onClick = { showRatioPicker = true },
+                        )
+                    }
                 }
             }
         }
@@ -224,3 +241,60 @@ private fun RatioAppPickerDialog(
         }
     }
 }
+
+/**
+ * 分栏范围双滑块（Miuix [RangeSlider]）：左边是下限、右边是上限。
+ *
+ * 拖动中只改内存（标题行实时显示百分比），松手才落盘；步进 1%。
+ * 两端都允许落在系统默认值 0.35 / 0.65 上，所以「不改」就完全是系统原行为。
+ */
+@Composable
+private fun RatioRangeSlider(
+    lower: Float,
+    upper: Float,
+    onValueChange: (Float, Float) -> Unit,
+    onCommit: () -> Unit,
+) {
+    val span = PrefKeys.EMBEDDING_RATIO_SLIDER_MAX - PrefKeys.EMBEDDING_RATIO_SLIDER_MIN
+    val steps = (span / PrefKeys.EMBEDDING_RATIO_STEP).toInt() - 1
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("分栏范围", style = DsTheme.textStyles.body1)
+            Text(
+                "${ratioText(lower)} ~ ${ratioText(upper)}",
+                style = DsTheme.textStyles.body2,
+                color = DsTheme.colorScheme.onBackgroundVariant,
+            )
+        }
+        RangeSlider(
+            value = lower..upper,
+            onValueChange = { range ->
+                onValueChange(quantizeRatio(range.start), quantizeRatio(range.endInclusive))
+            },
+            valueRange = PrefKeys.EMBEDDING_RATIO_SLIDER_MIN..PrefKeys.EMBEDDING_RATIO_SLIDER_MAX,
+            steps = steps,
+            onValueChangeFinished = onCommit,
+            showKeyPoints = true,
+            keyPoints = listOf(
+                PrefKeys.EMBEDDING_RATIO_DEFAULT_MIN,
+                PrefKeys.EMBEDDING_RATIO_DEFAULT_MAX,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** 吸附到 1% 步进并夹回量程。 */
+private fun quantizeRatio(value: Float): Float {
+    val snapped = (value / PrefKeys.EMBEDDING_RATIO_STEP).roundToInt() * PrefKeys.EMBEDDING_RATIO_STEP
+    return snapped.coerceIn(PrefKeys.EMBEDDING_RATIO_SLIDER_MIN, PrefKeys.EMBEDDING_RATIO_SLIDER_MAX)
+}
+
+private fun ratioText(value: Float): String = "${(value * 100).roundToInt()}%"

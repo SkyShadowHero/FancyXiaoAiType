@@ -95,6 +95,8 @@ class AppUiState {
     // ---- 平行视界分栏无级（作用域各目标 App，与右键菜单一致）----
     var embeddingRatioEnabled by mutableStateOf(false)
     var embeddingRatioApps by mutableStateOf("")
+    var embeddingRatioMin by mutableStateOf(0.35f)
+    var embeddingRatioMax by mutableStateOf(0.65f)
 
     // ---- 一镜到底（HyperViewScale，作用域 system + 各目标 App）----
     /** 默认开：平板本来就有完整实现，只是被 `!Build.IS_TABLET` 挡掉。 */
@@ -415,6 +417,12 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.embeddingRatioApps = p.runCatching {
         getString(PrefKeys.EMBEDDING_RATIO_APPS, "")
     }.getOrNull().orEmpty()
+    uiState.embeddingRatioMin = p.runCatching {
+        getFloat(PrefKeys.EMBEDDING_RATIO_MIN, 0.35f)
+    }.getOrDefault(0.35f)
+    uiState.embeddingRatioMax = p.runCatching {
+        getFloat(PrefKeys.EMBEDDING_RATIO_MAX, 0.65f)
+    }.getOrDefault(0.65f)
 
     // ---- 一镜到底（默认开）----
     uiState.hyperViewScaleEnabled = p.runCatching {

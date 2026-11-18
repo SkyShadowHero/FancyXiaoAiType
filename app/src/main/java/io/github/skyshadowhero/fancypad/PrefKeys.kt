@@ -382,11 +382,26 @@ object PrefKeys {
      *
      * 两件事：
      * 1) 拖动中间的分割线松手时不再吸附回 1/2（居中）或 min/max（甩动），拖到哪停哪；
-     * 2) 两侧比例上下限从系统默认的 0.35 / 0.65 放宽到 1/4 (0.25) / 3/4 (0.75)。
+     * 2) 两侧比例上下限改成用户配置的值（[EMBEDDING_RATIO_MIN] / [EMBEDDING_RATIO_MAX]），
+     *    默认就是系统原值 0.35 / 0.65。
      *
      * 比例本身仍由系统按连续浮点计算并保存（miui_split_ratio_prefs）。
      */
     const val EMBEDDING_RATIO_ENABLED = "embedding_ratio_enabled"
+
+    /** 分栏下限（左/上侧最窄比例），默认 0.35 = 系统原值。 */
+    const val EMBEDDING_RATIO_MIN = "embedding_ratio_min"
+
+    /** 分栏上限（右/下侧最窄比例），默认 0.65 = 系统原值。 */
+    const val EMBEDDING_RATIO_MAX = "embedding_ratio_max"
+
+    /** 范围滑块的量程与默认值。 */
+    const val EMBEDDING_RATIO_SLIDER_MIN = 0.10f
+    const val EMBEDDING_RATIO_SLIDER_MAX = 0.90f
+    const val EMBEDDING_RATIO_DEFAULT_MIN = 0.35f
+    const val EMBEDDING_RATIO_DEFAULT_MAX = 0.65f
+    /** 滑块步进（0.01 = 1%）。 */
+    const val EMBEDDING_RATIO_STEP = 0.01f
 
     /**
      * 平行视界无级调节的生效应用白名单（换行分隔的包名，编解码见 MaterialPackages）。
