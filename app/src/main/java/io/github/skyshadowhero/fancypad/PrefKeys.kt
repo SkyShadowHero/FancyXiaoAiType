@@ -360,12 +360,18 @@ object PrefKeys {
     // FancyPad：平行窗口动画（原 os4平行窗口动画fix模块）
     //
     // 作用域 com.android.systemui，Hook 侧 EmbeddingHooks 读取。
-    // 实测结论：真正有效的只有「禁止跳切」；「禁用 Folme 引擎」「禁止转场合并」
-    // 实测无可见效果，已连同逻辑一起删除。
+    // 四项各自独立：禁用 Folme 引擎 / 禁止转场合并 / 禁止跳切；
+    // 只关跳切时转场会露背景边，Folme 与合并一起打开才正常，故都保留。
     // ==================================================================
 
     /** 平行窗口动画修复总开关 */
     const val EMBEDDING_ENABLED = "embedding_enabled"
+
+    /** 禁用小米 Folme 动画引擎（改用 AOSP DefaultAnimationProvider） */
+    const val EMBEDDING_FOLME_DISABLE = "embedding_folme_disable"
+
+    /** 禁止转场合并（合并失败会把正在播的动画取消掉） */
+    const val EMBEDDING_MERGE_DISABLE = "embedding_merge_disable"
 
     /** 禁止跳切（跳切等于这次转场不播动画） */
     const val EMBEDDING_JUMPCUT_DISABLE = "embedding_jumpcut_disable"

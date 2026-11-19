@@ -35,6 +35,8 @@ public final class HookPrefs {
     // ---- 快照（Hook 侧只读这些字段） ----
     private static volatile boolean cursorEnabled = false;
     private static volatile boolean embeddingEnabled = false;
+    private static volatile boolean folmeDisabled = true;
+    private static volatile boolean mergeDisabled = true;
     private static volatile boolean jumpCutDisabled = true;
     /** 平行视界分栏无级调节；关掉后松手吸附回系统原样。 */
     private static volatile boolean embeddingRatioEnabled = false;
@@ -152,6 +154,14 @@ public final class HookPrefs {
         }
         try {
             embeddingEnabled = p.getBoolean(PrefKeys.EMBEDDING_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            folmeDisabled = p.getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            mergeDisabled = p.getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, true);
         } catch (Throwable ignored) {
         }
         try {
@@ -325,6 +335,14 @@ public final class HookPrefs {
             }
         }
         return false;
+    }
+
+    public static boolean folmeDisabled() {
+        return folmeDisabled;
+    }
+
+    public static boolean mergeDisabled() {
+        return mergeDisabled;
     }
 
     public static boolean jumpCutDisabled() {

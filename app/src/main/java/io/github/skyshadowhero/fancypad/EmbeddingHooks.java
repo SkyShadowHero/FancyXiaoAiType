@@ -18,6 +18,8 @@ import io.github.libxposed.api.XposedInterface;
  */
 public final class EmbeddingHooks {
 
+    private static final String CLS_UTIL =
+            "com.android.wm.shell.activityembedding.MiuiEmbeddingTransitionUtil";
     private static final String CLS_RUNNER =
             "com.android.wm.shell.activityembedding.MiuiEmbeddingAnimationRunner";
 
@@ -41,9 +43,38 @@ public final class EmbeddingHooks {
         }
         int ok = 0;
         try {
+            Class<?> util = classLoader.loadClass(CLS_UTIL);
             Class<?> runner = classLoader.loadClass(CLS_RUNNER);
 
-            // 不跳切：跳切等于这次转场不播动画（唯一实测有效的一项）
+            // 1) provider 选择：AOSP 原生实现
+            module.hook(util.getDeclaredMethod("useFolmeEngine"))
+                    .setId("use_folme_engine")
+                    .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                    .intercept(chain -> folmeDisabled() ? Boolean.FALSE : chain.proceed());
+            ok++;
+
+            // 2) MIUI 运行时可切换 provider 的那个布尔参数，钉死为 false
+            if (hookIfPresent(util, "createTransitionAnimationProvider", 3, chain -> {
+                if (!folmeDisabled()) {
+                    return chain.proceed();
+                }
+                return chain.proceed(new Object[]{chain.getArg(0), chain.getArg(1), Boolean.FALSE});
+            })) {
+                ok++;
+            }
+
+            // 3) 不合并转场：合并失败会把正在播的动画取消掉
+            if (hookIfPresent(runner, "mergeAnimation", 5, chain -> {
+                if (mergeDisabled()) {
+                    chain.proceed();
+                    return Boolean.FALSE;
+                }
+                return chain.proceed();
+            })) {
+                ok++;
+            }
+
+            // 4) 不跳切：跳切等于这次转场不播动画
             if (hookIfPresent(runner, "shouldUseJumpCutForChangeTransition", 1,
                     chain -> jumpCutDisabled() ? Boolean.FALSE : chain.proceed())) {
                 ok++;
@@ -61,6 +92,14 @@ public final class EmbeddingHooks {
             L.INSTANCE.w("event=embedding_install_failed reason=target_not_found");
         }
         return ok > 0;
+    }
+
+    private static boolean folmeDisabled() {
+        return HookPrefs.embeddingEnabled() && HookPrefs.folmeDisabled();
+    }
+
+    private static boolean mergeDisabled() {
+        return HookPrefs.embeddingEnabled() && HookPrefs.mergeDisabled();
     }
 
     private static boolean jumpCutDisabled() {

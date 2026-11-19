@@ -12,7 +12,7 @@
 |---|---|---|
 | 小爱输入法 | `com.xiaomi.type` | 分离键盘宽度/中心间隙、按键圆角与间距、悬浮键盘工具栏与候选窗口尺寸 |
 | 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
-| 平板动画修复 · 平行窗口 | `com.android.systemui` | 禁止平行窗口（Activity Embedding）转场的「跳切」（跳切等于这次转场不播动画） |
+| 平板动画修复 · 平行窗口 | `com.android.systemui` | 平行窗口（Activity Embedding）转场四开关：禁用 Folme 引擎 / 禁止转场合并 / 禁止跳切（禁用 Folme 与合并一起开时动画才不露背景边） |
 | 平板动画修复 · 分栏无级 | 各目标 App 自身 | 平行视界分隔线松手不吸附、可拖范围用双滑块调（默认系统 0.35 / 0.65） |
 | 平板动画修复 · 一镜到底 | `system` + 各目标 App | 放开 HyperViewScale 的 `!Build.IS_TABLET` 限制：列表点开→详情页封面展开、返回收回（小红书 / B站） |
 | 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |

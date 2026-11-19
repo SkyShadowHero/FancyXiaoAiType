@@ -112,6 +112,24 @@ fun ParallelPage(
                 AnimatedVisibility(visible = uiState.embeddingEnabled) {
                     Column {
                         SwitchPreference(
+                            checked = uiState.embeddingFolmeDisable,
+                            onCheckedChange = { checked ->
+                                uiState.embeddingFolmeDisable = checked
+                                uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, checked) }
+                            },
+                            title = "禁用 Folme 引擎",
+                            summary = "改用 AOSP 的 DefaultAnimationProvider",
+                        )
+                        SwitchPreference(
+                            checked = uiState.embeddingMergeDisable,
+                            onCheckedChange = { checked ->
+                                uiState.embeddingMergeDisable = checked
+                                uiState.save { e -> e.putBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, checked) }
+                            },
+                            title = "禁止转场合并",
+                            summary = "合并失败会把正在播放的动画取消掉",
+                        )
+                        SwitchPreference(
                             checked = uiState.embeddingJumpCutDisable,
                             onCheckedChange = { checked ->
                                 uiState.embeddingJumpCutDisable = checked
