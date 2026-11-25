@@ -61,8 +61,8 @@ import kotlin.math.roundToInt
  * 早先挂进 InkWindow 那版会出现「字迹没了 UI 也没了」和幽灵窗口。
  *
  * 浮层自己**不动窗口尺寸**：键盘的 View 只被置成 `INVISIBLE`（不是 GONE），
- * 窗口大小与 IMS 上报的 insets 都不变 —— 应用不会重排，也就没有"底下空出一条灰带"的跳变。
- * 窗口本身是 TRANSPARENT 的，键盘不画了露出来的是应用自己的背景。
+ * IME 窗口继续作为稳定宿主；随手写状态由 `StylusImeHooks.onComputeInsets` 上报零占用高度，
+ * 应用可以延伸到底部。窗口本身是 TRANSPARENT 的，键盘不画了露出来的是应用自己的背景。
  *
  * ## 触摸区域：只有面板那一块吃事件
  *
@@ -687,8 +687,8 @@ class StylusToolbar {
     /**
      * 把输入法窗口里除浮层以外的子 View 置成 `INVISIBLE`。
      *
-     * 用 `INVISIBLE` 不用 `GONE`：窗口尺寸不变 → IMS 上报的 insets 不变 →
-     * 应用不会因为"键盘高度变了"重排（`GONE` 会，真机会看到底部跳一下）。
+     * 用 `INVISIBLE` 不用 `GONE`：保持 IME 宿主与工具栏坐标稳定；应用是否避让由
+     * `StylusImeHooks.onComputeInsets` 明确控制，不依赖键盘 View 的布局结果。
      */
     private fun hideKeyboardContent(decor: ViewGroup, overlay: View) {
         for (i in 0 until decor.childCount) {

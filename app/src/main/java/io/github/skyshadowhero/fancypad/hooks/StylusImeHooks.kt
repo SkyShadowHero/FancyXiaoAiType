@@ -211,6 +211,7 @@ class StylusImeHooks(private val module: XposedModule) {
         hookFinish()
         hookEditorToolType()
         hookInputView()
+        hookComputeInsets()
         hookFinishInput()
         hookWindowHidden()
         hookConfigurationChanged()
@@ -517,6 +518,42 @@ class StylusImeHooks(private val module: XposedModule) {
                 }
         } catch (t: Throwable) {
             L.e("event=stylus_hook_input_view_failed", t)
+        }
+    }
+
+    /**
+     * 随手写工具栏是悬浮层，不应像普通软键盘一样占用应用底部空间。
+     *
+     * 保留 IME 窗口本身作为工具栏宿主，但把 content/visible 的顶部都上报到窗口底边，
+     * 等价于 IME 占用高度为 0；工具栏的可点击矩形仍由 [StylusToolbar] 单独上报。
+     */
+    private fun hookComputeInsets() {
+        try {
+            val m = (imeClass ?: InputMethodService::class.java).getMethod(
+                "onComputeInsets",
+                InputMethodService.Insets::class.java,
+            )
+            module.hook(m)
+                .setId("stylus_ime_compute_insets")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val result = chain.proceed()
+                    val self = chain.thisObject
+                    if (isTarget(self) && (stylusMode || toolbar.isShowing)) {
+                        val ime = self as InputMethodService
+                        val out = chain.getArg(0) as? InputMethodService.Insets
+                        val decorHeight = runCatching { ime.window?.window?.decorView?.height }
+                            .getOrNull()
+                            ?: 0
+                        if (out != null && decorHeight > 0) {
+                            out.contentTopInsets = decorHeight
+                            out.visibleTopInsets = decorHeight
+                        }
+                    }
+                    result
+                }
+        } catch (t: Throwable) {
+            L.e("event=stylus_hook_compute_insets_failed", t)
         }
     }
 
@@ -1110,7 +1147,7 @@ class StylusImeHooks(private val module: XposedModule) {
 
         // ★ 这里**不** requestHideSelf：那会让 IME 窗口的 token 当场作废，
         //   挂在上面的面板变成画得出来但点不动的僵尸。键盘由面板盖住（INVISIBLE），
-        //   窗口尺寸与 insets 都不变，应用不会重排。
+        //   IME 窗口继续作为宿主；随手写状态下由 onComputeInsets 上报零占用高度。
         if (HookPrefs.stylusInkEnabled()) {
             runCatching { ink.attach(ime) }
                 .onFailure { L.e("event=stylus_ink_attach_exception", it) }
