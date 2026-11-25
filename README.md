@@ -1,6 +1,6 @@
 # FancyPad
 
-多个 LSPosed 功能域合并成的**单模块**：小米平板（HyperOS 4 / Android 17）上的输入法外观增强、触控笔随手写、系统光标主题、平行窗口动画修复、平行视界分栏无级调节、小窗控制菜单与右键菜单改造。
+面向小米平板（HyperOS 4 / Android 17）的 LSPosed 综合模块，包含输入法与随手写、系统光标、平板动画、分栏、小窗及菜单增强。
 
 > 本分支（`fancypad`）是合并版；`master` 仍是原 **FancyType**（只有输入法外观）。
 
@@ -10,13 +10,14 @@
 
 | 域 | 作用域 | 做什么 |
 |---|---|---|
-| 小爱输入法 | `com.xiaomi.type` | 分离键盘宽度/中心间隙、按键圆角与间距、悬浮键盘工具栏与候选窗口尺寸 |
-| 光标主题 | `system` | 接管系统光标渲染（25 种类型），内置 AOSP / Material / MacOS / GoogleDot / BreezeX 预设，AOSP 与 GoogleDot 可任意改色；支持逐项导入 PNG/SVG 自定义光标；恢复被阉割的光标大小/颜色链路 |
-| 平板动画修复 · 平行窗口 | `com.android.systemui` | 平行窗口（Activity Embedding）转场四开关：禁用 Folme 引擎 / 禁止转场合并 / 禁止跳切（禁用 Folme 与合并一起开时动画才不露背景边） |
-| 平板动画修复 · 分栏无级 | 各目标 App 自身 | 平行视界分隔线松手不吸附、可拖范围用双滑块调（默认系统 0.35 / 0.65） |
-| 平板动画修复 · 一镜到底 | `system` + 各目标 App | 放开 HyperViewScale 的 `!Build.IS_TABLET` 限制：列表点开→详情页封面展开、返回收回（小红书 / B站） |
-| 小窗控制器 | `com.android.systemui` | 小窗控制点的按钮条（含 OS4 多分屏顶栏菜单）：按钮显隐/排序、× → −、红色强制关闭 |
-| 右键菜单 | 目标应用（默认 `mark.via`，可自加） | 把目标应用的列表长按/右键菜单改用 Miuix 外观 |
+| 输入法与随手写 | `com.xiaomi.type` | 键盘尺寸与样式、悬浮工具栏、候选窗口；触控笔识别、笔迹和手势，支持屏幕键盘/实体键盘/随手写切换 |
+| 光标主题 | `system` | 接管 25 种系统光标，提供多套预设、改色及 PNG/SVG 导入 |
+| 平行窗口动画 | `com.android.systemui` | 调整 Folme、转场合并和跳切行为 |
+| 平行视界分栏 | 各目标 App | 分隔线松手不吸附，可调拖动范围 |
+| 一镜到底 | `system` + 各目标 App | 为小红书、B站等恢复平板端共享元素动画 |
+| 小窗控制器 | `com.android.systemui` | 自定义小窗/多分屏按钮及强制关闭动作 |
+| 右键菜单 | 目标 App | 将列表长按或右键菜单替换为 Miuix 外观 |
+| 应用工具 | 模块 App（Root） | 多选批量强制关闭已配置的目标应用 |
 
 ## 适用环境
 
@@ -38,57 +39,35 @@
 
 ## 构建
 
-需要 JDK 21+ 与 Android SDK `compileSdk 37` / `compileSdkMinor 0`。
+需要 JDK 21+ 与 Android SDK `compileSdk 37` / `compileSdkMinor 2`。
 
 | 组件 | 版本 |
 |---|---|
 | Gradle | 9.4.1 |
 | AGP | 9.2.1 |
 | Kotlin Compose 插件 | 2.4.20 |
-| Miuix | 0.9.4 |
+| Miuix | 0.9.5-beta04 |
 
 ```bash
 echo "sdk.dir=/path/to/Android/SDK" > local.properties
 ./gradlew :app:assembleDebug         # 或 assembleRelease
-./gradlew :app:testDebugUnitTest     # 纯 JVM 单测：进程名归一 / 清单编解码 / 阈值 / 常量契约
+./gradlew :app:testDebugUnitTest     # 纯 JVM 单测
 ```
 
-> 单测只覆盖**不依赖 Android 框架**的纯逻辑（`ProcessNames`、`PackageListCodec`、
-> `SpaceWarning`、`Target`/`PrefKeys` 的常量契约）。Hook 与 UI 仍靠真机验收，
-> 截图与 uiautomator dump 存在同级目录 `_shots/`。
+> Hook 与 UI 依赖系统环境，仍需真机验收。
 
 ## 工程结构
 
 ```
 app/src/main/
 ├── java/io/github/skyshadowhero/fancypad/
-│   ├── XposedEntry.kt        # 唯一入口：按包名分发各功能域 + 失败重试 + 热重载
-│   ├── ProcessNames.kt       # 进程名 → 包名归一（system / system_server / android）
-│   ├── HookPrefs.java        # Hook 侧开关缓存（各进程共用）
-│   ├── ConfigLoader.kt       # 输入法侧配置快照（1000ms 缓存 + 变更立即失效）
-│   ├── Target.kt / AppTargets.kt  # 资源名表 / 按版本分档的混淆名
-│   ├── CursorHooks.java      # [system] 光标接管
-│   ├── CursorIcons.java      # 【生成】25 种类型 × 各主题资源表
-│   ├── XCursor.kt            # Linux/XCursor 二进制解析（整包导入用，当前未挂入口）
-│   ├── StylusSystemHooks.kt  # [system / 安全中心] 把「支持随手写」声明成 true
-│   ├── StylusImeHooks.kt     # [输入法] 补 AOSP 四个 stylus 回调 + 识别 + 笔迹 + 手势
-│   ├── StylusInkOverlay.kt   # 笔迹画布：挂进框架手写窗口，尺寸整屏
-│   ├── StylusInkView.kt      # 笔迹绘制（按线段包围盒重绘，不整屏刷）
-│   ├── StylusGestureEngine.kt# 圈选/删除/插入/换行/连接拆分（系统笔引擎的 GestureFacade）
-│   ├── PencilEngine.kt       # 系统笔引擎（xiaomi-pencilengine-pad）访问层
-│   ├── IflytekHcrEngine.kt   # 小爱自带讯飞 HCR（逐点流式）
-│   ├── EmbeddingHooks.java   # [SystemUI] 平行窗口动画
-│   ├── EmbeddingRatioHooks.java # [目标应用] 平行视界分栏无级（不吸附 + 可调范围）
-│   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
-│   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
-│   ├── PackageListCodec.kt   # 多个应用白名单共用的包名编解码
-│   ├── Diag.kt / L.kt        # 落盘诊断 + 结构化日志（本机 logd 不可用）
-│   ├── TunerApp.kt / SettingsActivity.kt  # 模块 App 入口
-│   └── ui/                   # Miuix 界面（ds/ 为共享组件层）
-├── res/drawable-nodpi/       # 光标素材（各主题原图 + 预览 + wait 24 帧）
-└── resources/META-INF/xposed/{module.prop,java_init.list,scope.list}
-app/src/test/                 # 纯 JVM 单测
-tools/cursor/                 # 光标素材生成器（gen_themes.py / gen_icons.py）
+│   ├── hooks/       # LSPosed Hook 与随手写引擎
+│   ├── ui/          # Miuix 设置界面
+│   └── data/        # 配置与持久化
+├── res/             # Android 资源与光标素材
+└── resources/META-INF/xposed/ # 模块入口和默认作用域
+app/src/test/        # 纯 JVM 单测
+tools/cursor/        # 光标素材生成工具
 ```
 
 ## 许可
