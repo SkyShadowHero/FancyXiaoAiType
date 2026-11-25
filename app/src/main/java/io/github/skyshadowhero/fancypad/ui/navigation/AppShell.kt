@@ -458,6 +458,13 @@ private fun NavPages(
         )
         CompositionLocalProvider(
             LocalPageOnBack provides onBack,
+            // 重启/强制关闭入口属于应用级动作，一级标签与所有子页面都应显示。
+            LocalPageActions provides {
+                ForceStopAppsDialogAction(
+                    packages = forceStopPackages,
+                    onForceStop = onForceStopApps,
+                )
+            },
         ) {
         NavDisplay(
             backStack = backStack,
@@ -493,13 +500,6 @@ private fun NavPages(
                         title = title.takeIf { railState != null }.orEmpty(),
                         titleAlpha = { railState?.progress ?: 0f },
                         scaffoldPadding = pagePadding,
-                        // RouteHome 内的首页、功能、信息均为一级页面，共用同一个顶栏入口。
-                        actions = {
-                            ForceStopAppsDialogAction(
-                                packages = forceStopPackages,
-                                onForceStop = onForceStopApps,
-                            )
-                        },
                     ) {
                         RootPager(
                             uiState = uiState,

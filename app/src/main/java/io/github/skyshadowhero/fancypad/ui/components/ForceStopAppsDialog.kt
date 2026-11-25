@@ -30,7 +30,7 @@ import top.yukonga.miuix.kmp.glass.GlassDialogButton
 import top.yukonga.miuix.kmp.glass.GlassDialogButtonRole
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 一级页面右上角的批量强制关闭入口。 */
+/** 所有页面右上角的批量强制关闭（重启目标进程）入口。 */
 @Composable
 fun ForceStopAppsDialogAction(
     packages: Set<String>,

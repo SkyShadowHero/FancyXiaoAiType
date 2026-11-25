@@ -1,5 +1,6 @@
 package io.github.skyshadowhero.fancypad
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -148,6 +149,11 @@ class PrefKeysContractTest {
                 r.default in r.min..r.max,
             )
         }
+    }
+
+    @Test
+    fun stylusInkWidthDefaultsToFourPixels() {
+        assertEquals(4f, PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
     }
 
     @Test

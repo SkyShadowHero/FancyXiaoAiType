@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
 /** 页面返回动作由 [AppShell] 在 `NavDisplay` 外统一提供。 */
 val LocalPageOnBack = compositionLocalOf<() -> Unit> { {} }
 
+/** 所有导航层级共用的顶栏动作；单页显式传入 [PageSurface.actions] 时可覆盖。 */
+val LocalPageActions = compositionLocalOf<(@Composable RowScope.() -> Unit)?> { null }
+
 /** The active page's real scaffold insets, consumed by its scrollable content. */
 val LocalPageScaffoldPadding = compositionLocalOf { PaddingValues(0.dp) }
 
@@ -45,6 +48,7 @@ fun PageSurface(
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit,
 ) {
+    val resolvedActions = actions ?: LocalPageActions.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -55,7 +59,7 @@ fun PageSurface(
             titleAlpha = titleAlpha,
             canGoBack = route != RouteHome,
             onBack = LocalPageOnBack.current,
-            actions = actions,
+            actions = resolvedActions,
             header = header,
             bottomBar = bottomBar,
             scaffoldPadding = scaffoldPadding,

@@ -109,4 +109,80 @@ class StylusModeMachineTest {
         assertEquals(Mode.SOFT_KEYBOARD, m.mode)
         assertTrue(m.isStale(ticket))
     }
+
+    @Test
+    fun lifecycleCallbackDuringFirstStrokePreservesStylus() {
+        val mode = StylusModeMachine()
+        val lifecycle = StylusLifecycleGuard(entryGraceMs = 1_000L)
+        mode.enterStylus()
+        lifecycle.recordStylusActivity(nowMs = 100L)
+        val ticket = mode.ticket()
+
+        assertEquals(
+            StylusLifecycleAction.PRESERVE_STYLUS,
+            lifecycle.onLifecycleCallback(
+                nowMs = 5_000L,
+                handwritingSessionActive = true,
+            ),
+        )
+        assertEquals(Mode.STYLUS, mode.mode)
+        assertFalse(mode.isStale(ticket))
+    }
+
+    @Test
+    fun finishInputDuringStylusEntryGraceIsTransient() {
+        val lifecycle = StylusLifecycleGuard(entryGraceMs = 1_000L)
+        lifecycle.recordStylusActivity(nowMs = 10_000L)
+
+        assertEquals(
+            StylusLifecycleAction.PRESERVE_STYLUS,
+            lifecycle.onLifecycleCallback(
+                nowMs = 10_500L,
+                handwritingSessionActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun staleLifecycleCallbackReallyExitsStylus() {
+        val lifecycle = StylusLifecycleGuard(entryGraceMs = 1_000L)
+        lifecycle.recordStylusActivity(nowMs = 10_000L)
+
+        assertEquals(
+            StylusLifecycleAction.EXIT_STYLUS,
+            lifecycle.onLifecycleCallback(
+                nowMs = 11_001L,
+                handwritingSessionActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun lifecycleResetRemovesStylusEntryGrace() {
+        val lifecycle = StylusLifecycleGuard(entryGraceMs = 1_000L)
+        lifecycle.recordStylusActivity(nowMs = 10_000L)
+        lifecycle.reset()
+
+        assertEquals(
+            StylusLifecycleAction.EXIT_STYLUS,
+            lifecycle.onLifecycleCallback(
+                nowMs = 10_001L,
+                handwritingSessionActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun deferredLifecycleConfirmationDistinguishesRestartFromRealExit() {
+        val lifecycle = StylusLifecycleGuard()
+
+        assertEquals(
+            StylusLifecycleAction.PRESERVE_STYLUS,
+            lifecycle.onDeferredConfirmation(currentInputStarted = true),
+        )
+        assertEquals(
+            StylusLifecycleAction.EXIT_STYLUS,
+            lifecycle.onDeferredConfirmation(currentInputStarted = false),
+        )
+    }
 }

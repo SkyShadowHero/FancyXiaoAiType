@@ -2,6 +2,7 @@ package io.github.skyshadowhero.fancypad.hooks
 
 import io.github.skyshadowhero.fancypad.*
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -489,6 +490,7 @@ internal object UnifiedFloatingShadow {
         )
     }
 
+    @SuppressLint("SoonBlockedPrivateApi") // Xposed 宿主已解除隐藏 API 限制。
     private fun shadowParams(
         base: WindowManager.LayoutParams,
         geometry: Geometry,

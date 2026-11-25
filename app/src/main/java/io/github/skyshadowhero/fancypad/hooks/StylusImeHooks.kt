@@ -56,9 +56,10 @@ import java.util.function.IntConsumer
  * 这正是搜狗的分工：`MiuiHandWritingIMEStylus` 管会话，`ImeMenuViewHolder` 管面板。
  *
  * 进出随手写模式：
- * - **进**：只认 `onStartStylusHandwriting`（那必然有笔在写）。
- *   `onUpdateEditorToolType` **不能**当开关 —— `TOOL_TYPE_STYLUS` 会在没笔的时候乱报，
- *   `TOOL_TYPE_FINGER` 会在手指点面板按钮时也报（点一下面板自己就收了）。
+ * - **进**：`onUpdateEditorToolType(STYLUS)` 只负责首笔预挂 UI，真正的识别会话仍由
+ *   `onStartStylusHandwriting` 确认。实体键盘下也不能跳过这次预挂，否则第一笔只会让
+ *   IME 宿主变为可用，必须再点一次才能看到工具栏。
+ *   `TOOL_TYPE_FINGER` 不作为退出信号（手指点面板按钮时也会报）。
  * - **出**：点「键盘」键 / 输入法窗口隐藏 / 输入连接结束。
  *
  * ## 识别只有一条路：系统笔引擎
@@ -94,6 +95,7 @@ class StylusImeHooks(private val module: XposedModule) {
         strokeActive = false
         sessionActive = false
         runCatching { machine.reset() }
+        lifecycleGuard.reset()
         sessionIme = null
         sessionIc = null
         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
@@ -113,6 +115,9 @@ class StylusImeHooks(private val module: XposedModule) {
 
     /** 三态（屏幕键盘 / 已连接键盘 / 随手写）的唯一真源，见 [StylusModeMachine]。 */
     private val machine = StylusModeMachine()
+
+    /** 过滤系统进入随手写时必经的瞬时 `onWindowHidden` / `onFinishInput`。 */
+    private val lifecycleGuard = StylusLifecycleGuard()
 
     /** 当前是否处在随手写状态（面板在、键盘被面板盖住）。 */
     private val stylusMode: Boolean
@@ -575,16 +580,18 @@ class StylusImeHooks(private val module: XposedModule) {
                         val physicalKeyboard = hasPhysicalKeyboard(ime)
                         reconcileMode(ime, "editor_tool_type")
                         if (physicalKeyboard) {
-                            // 部分 ROM 在外接键盘模式下，手指点输入框仍会误报上一次的 STYLUS。
-                            // 因而这里只禁止“预显示”；真实手写会话仍可切换到随手写 UI。
+                            // 不把值缓存给未来的 onStartInputView，避免它沿用一次旧 STYLUS；
+                            // 但当前回调本身是首笔的新鲜信号，仍需立即预挂 UI。否则实体键盘下
+                            // 第一笔只负责唤醒 IME 宿主，用户必须再点一次才会出现工具栏。
                             lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
                         } else {
                             lastEditorToolType = toolType
                         }
-                        if (toolType == MotionEvent.TOOL_TYPE_STYLUS && !physicalKeyboard) {
+                        if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
                             imeInstance = ime
                             val info = runCatching { ime.currentInputEditorInfo }.getOrNull()
                             if (allowsStylusUi(ime, info)) {
+                                lifecycleGuard.recordStylusActivity(SystemClock.uptimeMillis())
                                 val ticket = machine.ticket()
                                 mainHandler.post {
                                     if (machine.isStale(ticket)) {
@@ -594,7 +601,10 @@ class StylusImeHooks(private val module: XposedModule) {
                                     runCatching { enterStylusMode(ime) }
                                         .onFailure { L.e("event=stylus_tool_type_enter_failed", it) }
                                 }
-                                L.i("event=stylus_tool_type tool=stylus enter=true")
+                                L.i(
+                                    "event=stylus_tool_type tool=stylus enter=true " +
+                                        "physicalKeyboard=$physicalKeyboard",
+                                )
                             }
                         }
                     }
@@ -718,9 +728,12 @@ class StylusImeHooks(private val module: XposedModule) {
                 .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                 .intercept { chain ->
                     chain.proceed()
-                    lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
-                    if (isTarget(chain.thisObject) && (stylusMode || toolbar.isShowing)) {
-                        mainHandler.post { runCatching { exitStylusMode("finish_input") } }
+                    val self = chain.thisObject
+                    if (isTarget(self) && (stylusMode || toolbar.isShowing)) {
+                        handleImeLifecycleCallback(
+                            ime = self as InputMethodService,
+                            reason = "finish_input",
+                        )
                     }
                 }
         } catch (t: Throwable) {
@@ -736,13 +749,88 @@ class StylusImeHooks(private val module: XposedModule) {
                 .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                 .intercept { chain ->
                     chain.proceed()
-                    if (isTarget(chain.thisObject) && (stylusMode || toolbar.isShowing)) {
-                        mainHandler.post { runCatching { exitStylusMode("window_hidden") } }
+                    val self = chain.thisObject
+                    if (isTarget(self) && (stylusMode || toolbar.isShowing)) {
+                        handleImeLifecycleCallback(
+                            ime = self as InputMethodService,
+                            reason = "window_hidden",
+                        )
                     }
                 }
         } catch (t: Throwable) {
             L.e("event=stylus_hook_window_hidden_failed", t)
         }
+    }
+
+    /**
+     * Android 切入系统手写时可能短暂结束输入或隐藏普通 IME 窗口。先依据最近的
+     * 手写活动保护状态，再延时确认：若输入确实没有恢复才退出；否则只恢复工具栏宿主，
+     * 绝不清首笔。机器 generation 同时保证旧回调不会误伤后来开启的新会话。
+     */
+    private fun handleImeLifecycleCallback(
+        ime: InputMethodService,
+        reason: String,
+    ) {
+        val action = if (stylusMode) {
+            lifecycleGuard.onLifecycleCallback(
+                nowMs = SystemClock.uptimeMillis(),
+                handwritingSessionActive = sessionActive,
+            )
+        } else {
+            StylusLifecycleAction.EXIT_STYLUS
+        }
+        val ticket = machine.ticket()
+        if (action == StylusLifecycleAction.EXIT_STYLUS) {
+            mainHandler.post {
+                if (!machine.isStale(ticket)) {
+                    runCatching { exitStylusMode(reason) }
+                }
+            }
+            return
+        }
+
+        L.i(
+            "event=stylus_lifecycle_preserved reason=$reason " +
+                "session=$sessionActive generation=$ticket",
+        )
+        mainHandler.post {
+            if (machine.isStale(ticket) || machine.mode != StylusModeMachine.Mode.STYLUS) {
+                return@post
+            }
+            runCatching { ime.requestShowSelf(0) }
+                .onSuccess { L.i("event=stylus_window_host_restore_requested reason=$reason") }
+                .onFailure {
+                    L.w("event=stylus_window_host_restore_failed reason=$reason msg=${it.message}")
+                }
+        }
+
+        // onFinishInput 返回后 framework 才会把 currentInputStarted 置 false；必须延时确认，
+        // 不能在回调栈内读取。瞬时重启会在此之前重新变 true，真正离开输入框则保持 false。
+        mainHandler.postDelayed(
+            {
+                if (machine.isStale(ticket) ||
+                    machine.mode != StylusModeMachine.Mode.STYLUS
+                ) {
+                    return@postDelayed
+                }
+                if (lifecycleGuard.onDeferredConfirmation(ime.currentInputStarted) ==
+                    StylusLifecycleAction.EXIT_STYLUS
+                ) {
+                    L.i("event=stylus_lifecycle_exit_confirmed reason=$reason")
+                    exitStylusMode(reason)
+                    return@postDelayed
+                }
+                if (!toolbar.isShowing) attachPanel(ime)
+                if (toolbar.isShowing) {
+                    toolbar.refreshKeyboardContent()
+                    setFloatingKeyboardHidden(ime, true)
+                    L.i("event=stylus_lifecycle_recovered reason=$reason")
+                } else {
+                    rollbackStylusMode(ime, "lifecycle_host_not_attached")
+                }
+            },
+            LIFECYCLE_CONFIRM_DELAY_MS,
+        )
     }
 
     // ------------------------------------------------------------------ 笔迹
@@ -767,6 +855,7 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     private fun onStylusMotion(ime: InputMethodService, ev: MotionEvent) {
+        lifecycleGuard.recordStylusActivity(SystemClock.uptimeMillis())
         val action = ev.actionMasked
         val rawX = ev.rawX
         val rawY = ev.rawY
@@ -1267,6 +1356,7 @@ class StylusImeHooks(private val module: XposedModule) {
         //   `AFTER_STYLUS_UP_ALLOW_PERIOD_MS` 只有 200ms，返回晚了会话建不起来，
         //   还会留下一层吃笔的 surface。所以这里只做轻活，建面板一律 post。
         val t0 = System.nanoTime()
+        lifecycleGuard.recordStylusActivity(SystemClock.uptimeMillis())
         val freshSession = !sessionActive
         sessionActive = true
         sessionIme = ime
@@ -1457,6 +1547,7 @@ class StylusImeHooks(private val module: XposedModule) {
         runCatching { toolbar.hide(forceImeTouchable = true) }
         ink.clear()
         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+        lifecycleGuard.reset()
         restoreFloatingKeyboard()
     }
 
@@ -1470,6 +1561,7 @@ class StylusImeHooks(private val module: XposedModule) {
         val hadSession = sessionActive
         // 只要是离开随手写，悬浮小键盘就必须还回去（面板没挂上的半挂状态也一样）。
         restoreFloatingKeyboard()
+        lifecycleGuard.reset()
         // 会话状态必须在退出时一起归零：框架不保证每个退出路径都会回调
         // onFinishStylusHandwriting，残留的 sessionActive 会让下一次 beginSession
         // 误判成"重复 start"而保留上一轮的笔迹。
@@ -1772,6 +1864,9 @@ class StylusImeHooks(private val module: XposedModule) {
 
         /** 面板延迟多久出现（搜狗 `showToolboxAsync` 也是 200ms）。 */
         const val TOOLBAR_SHOW_DELAY_MS = 200L
+
+        /** 给瞬时 `onFinishInput` 对应的 `onStartInput` 留出恢复时间。 */
+        const val LIFECYCLE_CONFIRM_DELAY_MS = 300L
 
         /**
          * 实体键盘探测结果的缓存时长。

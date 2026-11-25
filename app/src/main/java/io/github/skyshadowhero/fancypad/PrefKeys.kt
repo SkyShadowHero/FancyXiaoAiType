@@ -708,7 +708,7 @@ object PrefKeys {
      */
     const val STYLUS_INK_WIDTH_PX = "stylus_ink_width_px"
 
-    const val STYLUS_INK_WIDTH_DEFAULT = 2f
+    const val STYLUS_INK_WIDTH_DEFAULT = 4f
     const val STYLUS_INK_WIDTH_MIN = 1f
     const val STYLUS_INK_WIDTH_MAX = 12f
 

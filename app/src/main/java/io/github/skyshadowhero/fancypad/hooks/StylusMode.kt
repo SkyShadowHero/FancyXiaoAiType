@@ -23,8 +23,8 @@ package io.github.skyshadowhero.fancypad.hooks
  * ## generation 是干什么的
  *
  * 面板的显示是 `post` 出去的（框架的 `AFTER_STYLUS_UP_ALLOW_PERIOD_MS` 只有 200ms，
- * 不能在回调里 inflate）。但 `post` 和 `onFinishInput` / `onWindowHidden` 里的
- * `post` 会交错，可能"先 hide 后 show"，把面板贴到一个已经退出的会话上。
+ * 不能在回调里 inflate）。但 `post` 和真正退出输入的回调会交错，可能
+ * "先 hide 后 show"，把面板贴到一个已经退出的会话上。
  * 每次迁移自增 [generation]，延时任务拿 [isStale] 判一下就知道自己该不该继续。
  *
  * 这个类是 [StylusImeHooks] 内部状态的唯一真源：所有 hook 只读 [mode]，
@@ -98,5 +98,70 @@ internal class StylusModeMachine {
         mode = next
         generation++
         return true
+    }
+}
+
+/** IME 生命周期回调到来时该保留随手写，还是确实退出。 */
+internal enum class StylusLifecycleAction {
+    PRESERVE_STYLUS,
+    EXIT_STYLUS,
+}
+
+/**
+ * 区分两种完全不同的 IME 生命周期回调：
+ *
+ * 1. Android 开始系统随手写时，会短暂派发 `onWindowHidden()`，部分 ROM 还会成对派发
+ *    `onFinishInput()` / `onStartInput()`；这不是退出，首笔、会话和工具栏都必须保留。
+ * 2. 输入目标确实消失、且附近没有手写活动时，才是真的退出。
+ *
+ * 瞬时回调通常落在手写信号后约 200–900ms；真实手写会话已经开始时也先保护，
+ * 再由调用方延时检查 `currentInputStarted`。时间由调用方传入，保持纯逻辑并便于单测。
+ */
+internal class StylusLifecycleGuard(
+    private val entryGraceMs: Long = DEFAULT_ENTRY_GRACE_MS,
+) {
+    init {
+        require(entryGraceMs >= 0L)
+    }
+
+    @Volatile
+    private var lastStylusSignalAtMs = NO_STYLUS_SIGNAL
+
+    fun recordStylusActivity(nowMs: Long) {
+        lastStylusSignalAtMs = nowMs
+    }
+
+    fun onLifecycleCallback(
+        nowMs: Long,
+        handwritingSessionActive: Boolean,
+    ): StylusLifecycleAction {
+        if (handwritingSessionActive) return StylusLifecycleAction.PRESERVE_STYLUS
+        val signalAt = lastStylusSignalAtMs
+        if (signalAt == NO_STYLUS_SIGNAL) return StylusLifecycleAction.EXIT_STYLUS
+        val elapsed = nowMs - signalAt
+        return if (elapsed in 0L..entryGraceMs) {
+            StylusLifecycleAction.PRESERVE_STYLUS
+        } else {
+            StylusLifecycleAction.EXIT_STYLUS
+        }
+    }
+
+    /** 延时窗口结束后，只有 framework 已恢复输入目标时才继续保留随手写。 */
+    fun onDeferredConfirmation(currentInputStarted: Boolean): StylusLifecycleAction =
+        if (currentInputStarted) {
+            StylusLifecycleAction.PRESERVE_STYLUS
+        } else {
+            StylusLifecycleAction.EXIT_STYLUS
+        }
+
+    fun reset() {
+        lastStylusSignalAtMs = NO_STYLUS_SIGNAL
+    }
+
+    private companion object {
+        const val NO_STYLUS_SIGNAL = Long.MIN_VALUE
+
+        /** 真机瞬时回调约 200–900ms，留少量余量但不吞掉之后的用户主动隐藏。 */
+        const val DEFAULT_ENTRY_GRACE_MS = 1_000L
     }
 }

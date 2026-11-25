@@ -2,6 +2,7 @@ package io.github.skyshadowhero.fancypad.hooks;
 
 import io.github.skyshadowhero.fancypad.*;
 
+import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -1408,6 +1409,7 @@ public final class CaptionHooks {
      * <p>{@code IActivityTaskManager} / {@code IActivityManager} 都是 @hide
      * （compileSdk 里没有），只能反射；{@code getService()} 本身 WMShell 就在直接调用。
      */
+    @SuppressLint("MissingPermission") // Hook 运行在已持有权限的 SystemUI 进程中。
     private static void killApp(Context ctx, String pkg, int userId, int taskId) {
         // 1) 摘任务 —— 卡片从最近任务里消失
         try {
