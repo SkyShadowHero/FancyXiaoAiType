@@ -3,7 +3,9 @@ package io.github.skyshadowhero.fancypad.hooks
 import io.github.skyshadowhero.fancypad.*
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.PointF
+import android.hardware.input.InputManager
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.HandlerThread
@@ -211,6 +213,7 @@ class StylusImeHooks(private val module: XposedModule) {
         hookInputView()
         hookFinishInput()
         hookWindowHidden()
+        hookConfigurationChanged()
         hookPhysicalKeyboardExit()
         hookKeyboardPopupWindow(cl)
         return true
@@ -230,8 +233,16 @@ class StylusImeHooks(private val module: XposedModule) {
                 .intercept { chain ->
                     val self = chain.thisObject
                     val event = chain.getArg(1) as? KeyEvent
-                    if (isTarget(self) && stylusMode && event?.isPhysicalKeyboardEvent() == true) {
-                        // 先恢复原工具栏，再把同一个按键原样交还小爱处理。
+                    if (isTarget(self) && event?.isPhysicalKeyboardEvent() == true &&
+                        (stylusMode || toolbar.isShowing || sessionActive)
+                    ) {
+                        // 先结束手写会话并恢复原工具栏，再把同一个按键原样交还小爱处理。
+                        val ime = self as InputMethodService
+                        lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+                        if (sessionActive) {
+                            runCatching { ime.finishStylusHandwriting() }
+                                .onFailure { L.w("event=stylus_physical_key_finish_failed msg=${it.message}") }
+                        }
                         exitStylusMode("physical_keyboard")
                     }
                     chain.proceed()
@@ -247,6 +258,53 @@ class StylusImeHooks(private val module: XposedModule) {
             deviceId != android.view.KeyCharacterMap.VIRTUAL_KEYBOARD &&
             flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
             isFromSource(InputDevice.SOURCE_KEYBOARD)
+
+    /**
+     * 外接键盘连接时系统通常把 IME 主窗口设为不可触摸。继续挂随手写面板会出现
+     * “手指点输入框后面板弹出，但面板完全点不动”。配置变化时立即退出，后续入口也会再次守卫。
+     */
+    private fun hookConfigurationChanged() {
+        try {
+            val m = (imeClass ?: InputMethodService::class.java).getMethod(
+                "onConfigurationChanged",
+                Configuration::class.java,
+            )
+            module.hook(m)
+                .setId("stylus_ime_hardware_keyboard_change")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val result = chain.proceed()
+                    val self = chain.thisObject
+                    if (isTarget(self)) {
+                        val ime = self as InputMethodService
+                        if (hasPhysicalKeyboard(ime)) {
+                            lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+                            if (stylusMode || toolbar.isShowing) {
+                                mainHandler.post { exitStylusMode("physical_keyboard_connected") }
+                            }
+                        }
+                    }
+                    result
+                }
+        } catch (t: Throwable) {
+            L.e("event=stylus_hook_configuration_failed", t)
+        }
+    }
+
+    /** 只认真实、已启用的字母键盘；软键盘与手写笔设备不会命中。 */
+    private fun hasPhysicalKeyboard(ime: InputMethodService): Boolean {
+        val fromDevices = runCatching {
+            val manager = ime.getSystemService(InputManager::class.java)
+            manager.inputDeviceIds.any { id ->
+                val device = manager.getInputDevice(id) ?: return@any false
+                device.isEnabled &&
+                    !device.isVirtual &&
+                    device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC &&
+                    (device.sources and InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
+            }
+        }.getOrDefault(false)
+        return fromDevices || ime.resources.configuration.keyboard == Configuration.KEYBOARD_QWERTY
+    }
 
     /**
      * 悬浮键盘右下角工具栏是独立的 Compose Popup（不属于 IME decorView）。
@@ -387,10 +445,20 @@ class StylusImeHooks(private val module: XposedModule) {
                     val result = chain.proceed()
                     val self = chain.thisObject
                     if (isTarget(self) && HookPrefs.stylusEnabled(module)) {
+                        val ime = self as InputMethodService
                         val toolType = chain.getArg(0) as? Int ?: MotionEvent.TOOL_TYPE_UNKNOWN
-                        lastEditorToolType = toolType
-                        if (toolType == MotionEvent.TOOL_TYPE_STYLUS) {
-                            val ime = self as InputMethodService
+                        val physicalKeyboard = hasPhysicalKeyboard(ime)
+                        if (physicalKeyboard) {
+                            // 部分 ROM 在外接键盘模式下，手指点输入框仍会误报上一次的 STYLUS。
+                            // 不缓存这个值，也不预先创建一个注定不可触摸的面板。
+                            lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+                            if (stylusMode || toolbar.isShowing) {
+                                mainHandler.post { exitStylusMode("physical_keyboard_touch") }
+                            }
+                        } else {
+                            lastEditorToolType = toolType
+                        }
+                        if (toolType == MotionEvent.TOOL_TYPE_STYLUS && !physicalKeyboard) {
                             imeInstance = ime
                             val info = runCatching { ime.currentInputEditorInfo }.getOrNull()
                             if (allowsStylusUi(ime, info)) {
@@ -424,7 +492,14 @@ class StylusImeHooks(private val module: XposedModule) {
                         val ime = self as InputMethodService
                         imeInstance = ime
                         val info = chain.getArg(0) as? EditorInfo
-                        if (lastEditorToolType == MotionEvent.TOOL_TYPE_STYLUS && allowsStylusUi(ime, info)) {
+                        if (hasPhysicalKeyboard(ime)) {
+                            lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+                            if (stylusMode || toolbar.isShowing) {
+                                mainHandler.post { exitStylusMode("physical_keyboard_input_view") }
+                            }
+                        } else if (
+                            lastEditorToolType == MotionEvent.TOOL_TYPE_STYLUS && allowsStylusUi(ime, info)
+                        ) {
                             mainHandler.post {
                                 runCatching { enterStylusMode(ime) }
                                     .onFailure { L.e("event=stylus_input_view_enter_failed", it) }
@@ -1066,6 +1141,14 @@ class StylusImeHooks(private val module: XposedModule) {
      */
     private fun enterStylusMode(ime: InputMethodService) {
         if (!HookPrefs.stylusEnabled(module)) return
+        if (hasPhysicalKeyboard(ime)) {
+            // 外接键盘模式下 IME 窗口由系统控制为不可触摸；保留笔迹识别会话，
+            // 但不展示自定义工具栏，避免手指误触发一个无法操作的悬浮菜单。
+            lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+            if (stylusMode || toolbar.isShowing) exitStylusMode("physical_keyboard_connected")
+            L.i("event=stylus_mode_skipped reason=physical_keyboard")
+            return
+        }
         if (!HookPrefs.stylusToolbarEnabled()) {
             if (stylusMode || toolbar.isShowing) exitStylusMode("toolbar_disabled")
             return
@@ -1279,6 +1362,7 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     private fun allowsStylusUi(ime: InputMethodService, info: EditorInfo?): Boolean {
+        if (hasPhysicalKeyboard(ime)) return false
         if (info == null || runCatching { ime.currentInputConnection }.getOrNull() == null) return false
         val classAndVariation = info.inputType and
             (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION)
