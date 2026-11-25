@@ -26,6 +26,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import java.util.IdentityHashMap
 import java.util.WeakHashMap
@@ -115,6 +116,24 @@ class StylusToolbar {
     private val observedKeyboardPopupWindows = java.util.Collections.newSetFromMap(WeakHashMap<View, Boolean>())
     private val hiddenKeyboardPopupWindows = IdentityHashMap<View, KeyboardPopupState>()
     private var suppressKeyboardPopups = false
+
+    /**
+     * 输入法进程里所有传统 `PopupWindow`（悬浮键盘本体 `z9.q.b`、悬浮候选条 `mb.c.e`）。
+     *
+     * 它们同样不是 IME decor 的子 View：藏 decor 藏不掉，[keyboardPopupWindows] 也只
+     * 认得 Compose Popup。这里按实例登记，随手写期间把内容设成 INVISIBLE、
+     * 弹窗设成不可触摸（`setTouchable(false)` + `update()` 才会真正写回窗口），
+     * 退出时按登记的原状态还原。
+     */
+    private val knownPopupWindows = java.util.Collections.newSetFromMap(WeakHashMap<PopupWindow, Boolean>())
+    private val observedPopupContents = java.util.Collections.newSetFromMap(WeakHashMap<View, Boolean>())
+    private val suppressedPopupWindows = IdentityHashMap<PopupWindow, PopupWindowState>()
+
+    private data class PopupWindowState(
+        val root: View,
+        val wasTouchable: Boolean,
+        val rootVisibility: Int,
+    )
 
     /** 外接键盘时系统会给 IME 主窗口加 NOT_TOUCHABLE；随手写面板显示期间要暂时清掉。 */
     private var stylusImeWindow: Window? = null
@@ -232,6 +251,8 @@ class StylusToolbar {
         updateForEditorInfo(editorInfo)
         suppressKeyboardPopups = true
         hideKeyboardPopupWindows()
+        // 悬浮键盘本体 / 悬浮候选条是独立 PopupWindow，decor 遍历不到，单独藏。
+        suppressKnownPopupWindows()
         if (r.parent !== decor) {
             uninstallInsetsListener(r)
             runCatching { (r.parent as? ViewGroup)?.removeView(r) }
@@ -245,6 +266,7 @@ class StylusToolbar {
                 restoreKeyboardContent()
                 suppressKeyboardPopups = false
                 restoreKeyboardPopupWindows()
+                restorePopupWindows()
                 return
             }
             r.post {
@@ -283,6 +305,7 @@ class StylusToolbar {
         restoreKeyboardContent()
         suppressKeyboardPopups = false
         restoreKeyboardPopupWindows()
+        restorePopupWindows()
         // 切回软键盘时必须明确清掉 NOT_TOUCHABLE；普通退出（例如连接实体键盘）则仍按
         // 进入前状态恢复，避免改变系统原本的窗口策略。
         restoreImeWindowTouchability(forceTouchable = forceImeTouchable)
@@ -297,6 +320,7 @@ class StylusToolbar {
         if (r.parent === decor) {
             hideKeyboardContent(decor, r)
             hideKeyboardPopupWindows()
+            suppressKnownPopupWindows()
             ime?.let { makeImeWindowTouchable(it, r) }
         }
     }
@@ -314,6 +338,81 @@ class StylusToolbar {
             })
         }
         if (suppressKeyboardPopups) hideKeyboardPopupWindow(view)
+    }
+
+    /** 由 `StylusImeHooks` 的 `PopupWindow` 构造 Hook 调用。 */
+    fun trackPopupWindow(popup: PopupWindow) {
+        knownPopupWindows.add(popup)
+        val content = popup.contentView
+        if (content != null && observedPopupContents.add(content)) {
+            content.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    if (!suppressKeyboardPopups) return
+                    // 构造时内容还没挂到窗口上，rootView 就是内容自己；真正挂载后
+                    // rootView 才是 PopupDecorView（MIUI 的 blur/material 背景是它的子 View）。
+                    // 等显示事务跑完再补一次，才能把整层背景一起藏掉。
+                    v.post { if (suppressKeyboardPopups) suppressPopupWindow(popup) }
+                }
+
+                override fun onViewDetachedFromWindow(v: View) = Unit
+            })
+        }
+        if (suppressKeyboardPopups) suppressPopupWindow(popup)
+    }
+
+    /**
+     * 藏一个 `PopupWindow`。
+     *
+     * ★ 必须藏**窗口根 View**（`PopupDecorView`），不能只藏 `contentView`：
+     * 悬浮键盘的 blur/material 背景是由 `HyperMaterialHelper` 加到 decor 里、
+     * 与内容**并列**的子 View。只藏内容会留下一块灰色圆角底板（真机实测）。
+     */
+    private fun suppressPopupWindow(popup: PopupWindow) {
+        val content = popup.contentView ?: return
+        val root = content.rootView ?: content
+        val previous = suppressedPopupWindows[popup]
+        if (previous == null) {
+            suppressedPopupWindows[popup] = PopupWindowState(
+                root = root,
+                wasTouchable = popup.isTouchable,
+                rootVisibility = root.visibility,
+            )
+        } else if (previous.root !== root) {
+            // 先记住的是内容本身，现在拿到了真正的窗口根：先把旧记录还原，
+            // 再按新根重新记一份，退出时就不会把内容留在 INVISIBLE。
+            runCatching { previous.root.visibility = previous.rootVisibility }
+            suppressedPopupWindows[popup] = PopupWindowState(
+                root = root,
+                wasTouchable = previous.wasTouchable,
+                rootVisibility = root.visibility,
+            )
+        }
+        if (root.visibility != View.INVISIBLE) root.visibility = View.INVISIBLE
+        if (popup.isTouchable) {
+            popup.isTouchable = false
+            // setTouchable 只改字段；必须 update() 才会把 NOT_TOUCHABLE 写回窗口。
+            runCatching { if (popup.isShowing) popup.update() }
+        }
+        L.i("event=stylus_popup_window_hidden class=${root.javaClass.name}")
+    }
+
+    /** 已经存在（不是随手写期间才创建）的弹窗也要藏，例如悬浮键盘本体。 */
+    private fun suppressKnownPopupWindows() {
+        for (popup in knownPopupWindows.toList()) {
+            if (runCatching { popup.isShowing }.getOrDefault(false)) suppressPopupWindow(popup)
+        }
+    }
+
+    private fun restorePopupWindows() {
+        if (suppressedPopupWindows.isEmpty()) return
+        for ((popup, state) in suppressedPopupWindows) {
+            runCatching {
+                state.root.visibility = state.rootVisibility
+                if (popup.isTouchable != state.wasTouchable) popup.isTouchable = state.wasTouchable
+                if (popup.isShowing) popup.update()
+            }
+        }
+        suppressedPopupWindows.clear()
     }
 
     /** 笔是否落在面板上（屏幕坐标）。 */

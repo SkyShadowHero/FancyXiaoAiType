@@ -86,13 +86,14 @@ class StylusImeHooks(private val module: XposedModule) {
         runCatching { workerHandler?.removeCallbacksAndMessages(null) }
         runCatching { mainHandler.removeCallbacksAndMessages(null) }
         runCatching { toolbar.hide() }
+        runCatching { restoreFloatingKeyboard() }
         synchronized(stateLock) {
             strokes.clear()
             current = null
         }
         strokeActive = false
         sessionActive = false
-        stylusMode = false
+        runCatching { machine.reset() }
         sessionIme = null
         sessionIc = null
         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
@@ -110,9 +111,12 @@ class StylusImeHooks(private val module: XposedModule) {
     @Volatile
     private var imeInstance: InputMethodService? = null
 
-    /** 是否处在随手写模式（面板在、键盘被面板盖住）。 */
-    @Volatile
-    private var stylusMode = false
+    /** 三态（屏幕键盘 / 已连接键盘 / 随手写）的唯一真源，见 [StylusModeMachine]。 */
+    private val machine = StylusModeMachine()
+
+    /** 当前是否处在随手写状态（面板在、键盘被面板盖住）。 */
+    private val stylusMode: Boolean
+        get() = machine.mode == StylusModeMachine.Mode.STYLUS
 
     /** 最近一次由系统上报的落笔工具类型；搜狗也用这条回调在首笔轻点时切换手写 UI。 */
     @Volatile
@@ -217,10 +221,50 @@ class StylusImeHooks(private val module: XposedModule) {
         hookConfigurationChanged()
         hookPhysicalKeyboardExit()
         hookKeyboardPopupWindow(cl)
+        hookPopupWindows()
         return true
     }
 
-    /** 实体键盘真正开始输入时，从随手写切回“已连接键盘”状态；只观察，不消费按键。 */
+    /**
+     * 登记输入法进程里所有传统 `PopupWindow`（悬浮键盘本体、悬浮候选条、剪贴板预览 …）。
+     *
+     * 它们都是**独立窗口**：`hideKeyboardContent(decor)` 遍历不到，`w2.p` 那套 Compose
+     * Popup 也只覆盖悬浮工具栏。随手写期间由 [StylusToolbar.trackPopupWindow] 统一把内容
+     * 藏起来并取消可触摸，退出时按登记的原状态还原。
+     */
+    private fun hookPopupWindows() {
+        try {
+            val ctor = android.widget.PopupWindow::class.java.getDeclaredConstructor(
+                android.view.View::class.java,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
+            )
+            ctor.isAccessible = true
+            module.hook(ctor)
+                .setId("stylus_ime_popup_window")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val result = chain.proceed()
+                    (chain.thisObject as? android.widget.PopupWindow)
+                        ?.let { toolbar.trackPopupWindow(it) }
+                    result
+                }
+            L.i("event=stylus_popup_window_hooked")
+        } catch (t: Throwable) {
+            L.w("event=stylus_popup_window_hook_failed msg=${t.message}")
+        }
+    }
+
+    /**
+     * 实体键盘真正开始输入时，从随手写切回「已连接键盘」状态；只观察，不消费按键。
+     *
+     * ⚠ `InputMethodService.onKeyDown` 只在**输入法自己的窗口拿到焦点**时才会回调
+     * （全屏提取、悬浮键盘之类）；普通应用窗口里的实体键盘按键直达应用，不经过这里。
+     * 所以它是退出的**加速信号**，不是唯一依据：连接 / 断开由 `InputDeviceListener`
+     * 校正，换输入框时由 [hookInputView] 校正。真机验证看
+     * `event=stylus_physical_key_exit` 这条日志有没有出现。
+     */
     private fun hookPhysicalKeyboardExit() {
         try {
             val m = (imeClass ?: InputMethodService::class.java).getMethod(
@@ -237,14 +281,12 @@ class StylusImeHooks(private val module: XposedModule) {
                     if (isTarget(self) && event?.isPhysicalKeyboardEvent() == true &&
                         (stylusMode || toolbar.isShowing || sessionActive)
                     ) {
-                        // 先结束手写会话并恢复原工具栏，再把同一个按键原样交还小爱处理。
-                        val ime = self as InputMethodService
                         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
-                        if (sessionActive) {
-                            runCatching { ime.finishStylusHandwriting() }
-                                .onFailure { L.w("event=stylus_physical_key_finish_failed msg=${it.message}") }
-                        }
-                        exitStylusMode("physical_keyboard")
+                        // 状态与面板必须在当前按键回调里先收回去，否则同一个按键会落进
+                        // 一个不可触摸的面板；真正的 finishStylusHandwriting 由
+                        // exitStylusMode 内部 post 到主线程队列。
+                        exitStylusMode("physical_keyboard", finishSession = true)
+                        L.i("event=stylus_physical_key_exit")
                     }
                     chain.proceed()
                 }
@@ -261,7 +303,7 @@ class StylusImeHooks(private val module: XposedModule) {
             isFromSource(InputDevice.SOURCE_KEYBOARD)
 
     /**
-     * 连接实体键盘只清掉可能残留的 STYLUS 工具类型，不退出已经确认的随手写会话。
+     * 连接 / 断开实体键盘只做状态校正，**不退出**已经确认的随手写会话。
      * 三种状态彼此独立：屏幕键盘、已连接键盘、随手写；真实落笔可以从前两种进入随手写。
      */
     private fun hookConfigurationChanged() {
@@ -278,8 +320,12 @@ class StylusImeHooks(private val module: XposedModule) {
                     val self = chain.thisObject
                     if (isTarget(self)) {
                         val ime = self as InputMethodService
+                        // 配置变化是「键盘真的换了一种」的权威信号：缓存必须作废，
+                        // 三态也要跟着重新校正（随手写期间不动）。
+                        invalidatePhysicalKeyboard()
+                        reconcileMode(ime, "configuration_changed")
                         if (hasPhysicalKeyboard(ime)) {
-                            // 此回调本身不能证明是手指还是笔，只清理用于“预显示”的缓存。
+                            // 此回调本身不能证明是手指还是笔，只清理用于"预显示"的缓存。
                             // 真正的笔会随后进入 onStartStylusHandwriting，由会话切到随手写状态。
                             lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
                         }
@@ -291,8 +337,43 @@ class StylusImeHooks(private val module: XposedModule) {
         }
     }
 
+    // ---- 实体键盘探测（带缓存） ----
+
+    /**
+     * 上次探测到的实体键盘状态。
+     *
+     * 枚举 `InputManager.inputDeviceIds` 并逐 id 调 `getInputDevice()` 全是 binder 调用，
+     * 而 [hookEditorToolType] 在**每次落笔**都会问一次，所以结果按
+     * [PHYSICAL_KEYBOARD_TTL_MS] 缓存；设备增删、配置变化会立即作废。
+     */
+    @Volatile
+    private var physicalKeyboardCached = false
+
+    @Volatile
+    private var physicalKeyboardAtMs = 0L
+
+    @Volatile
+    private var inputDeviceListener: InputManager.InputDeviceListener? = null
+
     /** 只认真实、已启用的字母键盘；软键盘与手写笔设备不会命中。 */
     private fun hasPhysicalKeyboard(ime: InputMethodService): Boolean {
+        ensureInputDeviceListener(ime)
+        val now = SystemClock.uptimeMillis()
+        val age = now - physicalKeyboardAtMs
+        if (physicalKeyboardAtMs != 0L && age in 0..PHYSICAL_KEYBOARD_TTL_MS) {
+            return physicalKeyboardCached
+        }
+        val value = probePhysicalKeyboard(ime)
+        physicalKeyboardCached = value
+        physicalKeyboardAtMs = now
+        return value
+    }
+
+    private fun invalidatePhysicalKeyboard() {
+        physicalKeyboardAtMs = 0L
+    }
+
+    private fun probePhysicalKeyboard(ime: InputMethodService): Boolean {
         val fromDevices = runCatching {
             val manager = ime.getSystemService(InputManager::class.java)
             manager.inputDeviceIds.any { id ->
@@ -303,7 +384,51 @@ class StylusImeHooks(private val module: XposedModule) {
                     (device.sources and InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
             }
         }.getOrDefault(false)
+        // 设备列表是主判据；Configuration 只作兜底（部分 ROM 在设备已禁用时仍报 QWERTY）。
         return fromDevices || ime.resources.configuration.keyboard == Configuration.KEYBOARD_QWERTY
+    }
+
+    /**
+     * 设备增删是**事件**信号，不依赖任何按键回调，所以三态的「已连接键盘」在
+     * 连接/拔出的一瞬间就能校正，不必等下一次 `onStartInputView`。
+     */
+    private fun ensureInputDeviceListener(ime: InputMethodService) {
+        if (inputDeviceListener != null) return
+        val manager = runCatching { ime.getSystemService(InputManager::class.java) }.getOrNull()
+            ?: return
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) = onInputDevicesChanged("device_added")
+
+            override fun onInputDeviceRemoved(deviceId: Int) =
+                onInputDevicesChanged("device_removed")
+
+            override fun onInputDeviceChanged(deviceId: Int) =
+                onInputDevicesChanged("device_changed")
+        }
+        runCatching { manager.registerInputDeviceListener(listener, mainHandler) }
+            .onSuccess {
+                inputDeviceListener = listener
+                L.i("event=stylus_input_device_listener_installed")
+            }
+            .onFailure { L.w("event=stylus_input_device_listener_failed msg=${it.message}") }
+    }
+
+    private fun onInputDevicesChanged(reason: String) {
+        invalidatePhysicalKeyboard()
+        val ime = imeInstance ?: sessionIme ?: return
+        reconcileMode(ime, reason)
+    }
+
+    /**
+     * 把「此刻有没有实体键盘」同步进 [machine]（随手写期间不动，三态独立）。
+     *
+     * @return 是否发生了迁移
+     */
+    private fun reconcileMode(ime: InputMethodService, reason: String): Boolean {
+        if (machine.mode == StylusModeMachine.Mode.STYLUS) return false
+        if (!machine.onKeyboardAvailability(hasPhysicalKeyboard(ime))) return false
+        L.i("event=stylus_mode_change mode=${machine.mode} reason=$reason")
+        return true
     }
 
     /**
@@ -448,6 +573,7 @@ class StylusImeHooks(private val module: XposedModule) {
                         val ime = self as InputMethodService
                         val toolType = chain.getArg(0) as? Int ?: MotionEvent.TOOL_TYPE_UNKNOWN
                         val physicalKeyboard = hasPhysicalKeyboard(ime)
+                        reconcileMode(ime, "editor_tool_type")
                         if (physicalKeyboard) {
                             // 部分 ROM 在外接键盘模式下，手指点输入框仍会误报上一次的 STYLUS。
                             // 因而这里只禁止“预显示”；真实手写会话仍可切换到随手写 UI。
@@ -459,7 +585,12 @@ class StylusImeHooks(private val module: XposedModule) {
                             imeInstance = ime
                             val info = runCatching { ime.currentInputEditorInfo }.getOrNull()
                             if (allowsStylusUi(ime, info)) {
+                                val ticket = machine.ticket()
                                 mainHandler.post {
+                                    if (machine.isStale(ticket)) {
+                                        L.i("event=stylus_tool_type_enter_skipped reason=stale")
+                                        return@post
+                                    }
                                     runCatching { enterStylusMode(ime) }
                                         .onFailure { L.e("event=stylus_tool_type_enter_failed", it) }
                                 }
@@ -490,22 +621,42 @@ class StylusImeHooks(private val module: XposedModule) {
                         imeInstance = ime
                         val info = chain.getArg(0) as? EditorInfo
                         val physicalKeyboard = hasPhysicalKeyboard(ime)
+                        reconcileMode(ime, "start_input_view")
                         if (physicalKeyboard) {
                             lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
                         }
-                        if (stylusMode || toolbar.isShowing) {
+                        if (machine.mode == StylusModeMachine.Mode.STYLUS) {
                             // 随手写优先于“已连接键盘”：requestShowSelf 可能重建输入视图，
                             // 重建后只需把工具栏重新贴回去，不能因此退回实体键盘状态。
+                            //
+                            // 这里的 post 和 onFinishInput / onWindowHidden 里的 exit 会交错：
+                            // 只有"排队这一刻仍是随手写"才允许把面板贴回去，否则会出现
+                            // "状态已退出、面板却贴在下一个输入框上"的僵尸（键盘不可见）。
+                            val ticket = machine.ticket()
                             mainHandler.post {
+                                if (machine.isStale(ticket) ||
+                                    machine.mode != StylusModeMachine.Mode.STYLUS
+                                ) {
+                                    L.i("event=stylus_input_view_show_skipped reason=stale_or_exited")
+                                    return@post
+                                }
                                 runCatching {
                                     if (HookPrefs.stylusToolbarEnabled()) {
                                         toolbar.show(ime, info ?: ime.currentInputEditorInfo)
                                         toolbar.refreshKeyboardContent()
+                                        // 键盘重建后输入法可能把悬浮小键盘重新显示出来，
+                                        // 这里补一次隐藏，否则随手写期间它会重新冒出来。
+                                        setFloatingKeyboardHidden(ime, true)
                                     } else {
                                         exitStylusMode("toolbar_disabled")
                                     }
                                 }
                             }
+                        } else if (toolbar.isShowing) {
+                            // 非法组合：状态不是随手写、面板却还挂着。只可能是上一次
+                            // 会话的遗留，收掉，免得键盘被一块零高度面板挡住。
+                            L.w("event=stylus_panel_orphan reason=start_input_view")
+                            mainHandler.post { runCatching { exitStylusMode("panel_orphan") } }
                         } else if (!physicalKeyboard &&
                             lastEditorToolType == MotionEvent.TOOL_TYPE_STYLUS && allowsStylusUi(ime, info)
                         ) {
@@ -539,7 +690,9 @@ class StylusImeHooks(private val module: XposedModule) {
                 .intercept { chain ->
                     val result = chain.proceed()
                     val self = chain.thisObject
-                    if (isTarget(self) && (stylusMode || toolbar.isShowing)) {
+                    if (isTarget(self) &&
+                        (machine.mode == StylusModeMachine.Mode.STYLUS || toolbar.isShowing)
+                    ) {
                         val ime = self as InputMethodService
                         val out = chain.getArg(0) as? InputMethodService.Insets
                         val decorHeight = runCatching { ime.window?.window?.decorView?.height }
@@ -566,7 +719,7 @@ class StylusImeHooks(private val module: XposedModule) {
                 .intercept { chain ->
                     chain.proceed()
                     lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
-                    if (isTarget(chain.thisObject) && stylusMode) {
+                    if (isTarget(chain.thisObject) && (stylusMode || toolbar.isShowing)) {
                         mainHandler.post { runCatching { exitStylusMode("finish_input") } }
                     }
                 }
@@ -583,7 +736,7 @@ class StylusImeHooks(private val module: XposedModule) {
                 .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                 .intercept { chain ->
                     chain.proceed()
-                    if (isTarget(chain.thisObject) && stylusMode) {
+                    if (isTarget(chain.thisObject) && (stylusMode || toolbar.isShowing)) {
                         mainHandler.post { runCatching { exitStylusMode("window_hidden") } }
                     }
                 }
@@ -1167,10 +1320,73 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     /**
+     * 悬浮小键盘的宿主。
+     *
+     * 悬浮键盘不是 IME decor 的子 View —— 它是 `FloatingKeyboardManager` 里的独立
+     * `PopupWindow`（窗口类型 `TYPE_INPUT_METHOD`，token 复用输入法窗口），
+     * 所以 [StylusToolbar.hideKeyboardContent] 遍历 decor 根本碰不到它。
+     * 输入法自己提供了一个 `applyFloatingPanelContentHidden(boolean)`：
+     * 内容 INVISIBLE + 弹窗窗口 `FLAG_NOT_TOUCHABLE` + 重新 layout，
+     * 而且**不改**它内部的悬浮状态，退出随手写后按原样恢复。
+     *
+     * 这里记下"被我们藏过"的实例，保证每条退出路径都还回去。
+     */
+    @Volatile
+    private var floatingKeyboardHiddenFor: InputMethodService? = null
+
+    private val floatingContentHiddenMethod: java.lang.reflect.Method? by lazy {
+        val cls = imeClass ?: return@lazy null
+        cls.methods.firstOrNull {
+            it.name.startsWith("applyFloatingPanelContentHidden") &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0] == Boolean::class.javaPrimitiveType
+        }.also {
+            if (it == null) {
+                // 输入法版本改名时只降级：悬浮小键盘在随手写期间会留着，其它状态不受影响。
+                L.w("event=stylus_floating_hidden_missing class=${cls.name}")
+            }
+        }
+    }
+
+    private fun setFloatingKeyboardHidden(ime: InputMethodService, hidden: Boolean) {
+        if (hidden) {
+            if (floatingKeyboardHiddenFor === ime) return
+            val previous = floatingKeyboardHiddenFor
+            floatingKeyboardHiddenFor = ime
+            if (previous != null && previous !== ime) invokeFloatingHidden(previous, false)
+        } else {
+            val target = floatingKeyboardHiddenFor ?: return
+            floatingKeyboardHiddenFor = null
+            if (target !== ime) invokeFloatingHidden(target, false)
+        }
+        invokeFloatingHidden(ime, hidden)
+    }
+
+    private fun invokeFloatingHidden(ime: InputMethodService, hidden: Boolean) {
+        val m = floatingContentHiddenMethod ?: return
+        runCatching { m.invoke(ime, hidden) }
+            .onSuccess { L.i("event=stylus_floating_keyboard_hidden hidden=$hidden") }
+            .onFailure {
+                L.w("event=stylus_floating_keyboard_hidden_failed hidden=$hidden msg=${it.message}")
+            }
+    }
+
+    /** 退出随手写时把悬浮小键盘还回可见 / 可触摸（每条退出路径都要走）。 */
+    private fun restoreFloatingKeyboard() {
+        val ime = floatingKeyboardHiddenFor ?: return
+        setFloatingKeyboardHidden(ime, false)
+    }
+
+    /**
      * 进随手写模式：把面板贴到输入法窗口上，并藏起键盘内容。
      *
-     * 输出法窗口如果在笔落笔前**根本没显示**（笔直接点了一个没聚焦的输入框），
-     * 面板就没有宿主，这时按搜狗的做法请一次 `requestShowSelf`。
+     * 输入法窗口如果在笔落笔前**根本没显示**（笔直接点了一个没聚焦的输入框），
+     * 面板就没有宿主；这时按搜狗的做法请一次 `requestShowSelf`。
+     *
+     * ⚠ 面板是"零高度键盘 + 悬浮面板"的唯一可见物：一旦 `stylusMode` 置位而面板
+     * 没挂上（没有 decor / 不在窗口上 / addView 失败 / 悬浮键盘模式下宿主不可用），
+     * 用户就会既看不到面板也看不到键盘。所以这里**必须**在 `show()` 之后复核，
+     * 失败就回滚状态，绝不允许 `stylusMode == true && !toolbar.isShowing` 长期存在。
      */
     private fun enterStylusMode(ime: InputMethodService) {
         if (!HookPrefs.stylusEnabled(module)) return
@@ -1178,30 +1394,122 @@ class StylusImeHooks(private val module: XposedModule) {
             if (stylusMode || toolbar.isShowing) exitStylusMode("toolbar_disabled")
             return
         }
-        stylusMode = true
+        // 先置状态再挂面板：show() 里触发的 insets / 布局回调应当已经看到随手写态。
+        // 后面任何一步失败都走 rollback。
+        machine.enterStylus()
+        attachPanel(ime)
+        if (toolbar.isShowing) {
+            finishEnterStylusMode(ime)
+            return
+        }
+        // 输入法窗口还没显示（笔直接点了未聚焦输入框）：按搜狗的做法请一次 showSelf，
+        // 再给一帧时间重试；重试仍挂不上才回滚，避免"零高度键盘 + 无面板"的死状态。
+        if (!ime.isInputViewShown) {
+            runCatching { ime.requestShowSelf(0) }
+                .onFailure { L.w("event=stylus_show_self_failed msg=${it.message}") }
+            val ticket = machine.ticket()
+            mainHandler.postDelayed(
+                {
+                    if (machine.isStale(ticket) ||
+                        machine.mode != StylusModeMachine.Mode.STYLUS
+                    ) {
+                        return@postDelayed
+                    }
+                    attachPanel(ime)
+                    if (toolbar.isShowing) {
+                        finishEnterStylusMode(ime)
+                    } else {
+                        rollbackStylusMode(ime, "panel_not_attached_after_show_self")
+                    }
+                },
+                TOOLBAR_SHOW_DELAY_MS,
+            )
+            return
+        }
+        L.w("event=stylus_show_self_skipped reason=input_view_shown_but_no_decor")
+        rollbackStylusMode(ime, "panel_not_attached")
+    }
+
+    private fun attachPanel(ime: InputMethodService) {
         val info = runCatching { ime.currentInputEditorInfo }.getOrNull()
-        toolbar.show(ime, info)
+        runCatching { toolbar.show(ime, info) }
+            .onFailure { L.e("event=stylus_toolbar_show_failed", it) }
+    }
+
+    private fun finishEnterStylusMode(ime: InputMethodService) {
         toolbar.setCanUndo(undoStack.isNotEmpty())
         toolbar.setCanRedo(redoStack.isNotEmpty())
+        // 悬浮小键盘是独立窗口，只能请输入法自己把它藏掉（见 setFloatingKeyboardHidden）。
+        setFloatingKeyboardHidden(ime, true)
         if (!ime.isInputViewShown) {
             runCatching { ime.requestShowSelf(0) }
                 .onFailure { L.w("event=stylus_show_self_failed msg=${it.message}") }
         }
-        L.i("event=stylus_mode_enter toolbar=${toolbar.isShowing}")
+        L.i("event=stylus_mode_enter toolbar=${toolbar.isShowing} mode=${machine.mode}")
+    }
+
+    /**
+     * 面板没挂上时的回滚：状态退回「已连接键盘 / 屏幕键盘」，半挂的面板与窗口标记一并清掉。
+     */
+    private fun rollbackStylusMode(ime: InputMethodService?, reason: String) {
+        L.w("event=stylus_mode_rollback reason=$reason")
+        machine.exitStylus(ime != null && hasPhysicalKeyboard(ime))
+        runCatching { toolbar.hide(forceImeTouchable = true) }
+        ink.clear()
+        lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+        restoreFloatingKeyboard()
     }
 
     private fun exitStylusMode(
         reason: String,
         forceImeTouchable: Boolean = false,
+        finishSession: Boolean = false,
     ) {
-        if (!stylusMode && !toolbar.isShowing) return
-        stylusMode = false
+        val wasStylus = stylusMode
+        val hadPanel = toolbar.isShowing
+        val hadSession = sessionActive
+        // 只要是离开随手写，悬浮小键盘就必须还回去（面板没挂上的半挂状态也一样）。
+        restoreFloatingKeyboard()
+        // 会话状态必须在退出时一起归零：框架不保证每个退出路径都会回调
+        // onFinishStylusHandwriting，残留的 sessionActive 会让下一次 beginSession
+        // 误判成"重复 start"而保留上一轮的笔迹。
+        sessionActive = false
+        if (!wasStylus && !hadPanel) {
+            lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+            if (finishSession && hadSession) scheduleSessionFinish(reason)
+            return
+        }
+        machine.exitStylus(restingHardwareKeyboard())
         // 物理键盘输入 / 工具栏键切回后，后续 onStartInputView 不能沿用上一次 STYLUS
         // 再把手写面板贴回来；下一次真实落笔会重新上报 STYLUS。
         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
         runCatching { toolbar.hide(forceImeTouchable = forceImeTouchable) }
         ink.clear()
-        L.i("event=stylus_mode_exit reason=$reason")
+        if (finishSession && hadSession) scheduleSessionFinish(reason)
+        L.i("event=stylus_mode_exit reason=$reason mode=${machine.mode}")
+    }
+
+    /** 退出随手写后落在哪一态：看此刻有没有实体键盘，而不是进入前的状态。 */
+    private fun restingHardwareKeyboard(): Boolean {
+        val ime = sessionIme ?: imeInstance ?: return false
+        return hasPhysicalKeyboard(ime)
+    }
+
+    /**
+     * 结束框架的随手写会话。
+     *
+     * ★ 一律 `post`：调用点可能正处在框架的 `deliverStylusHandwritingMotionEvent` 栈里
+     *（工具栏「键盘」键就是），同步收会话会让框架那一步"把笔还给界面"的收尾空转，
+     * 留下一层吃笔的 surface —— 见 `onStylusMotion` 里轻点判定的同一条结论。
+     */
+    private fun scheduleSessionFinish(reason: String) {
+        val ime = sessionIme ?: imeInstance ?: return
+        mainHandler.post {
+            runCatching { ime.finishStylusHandwriting() }
+                .onFailure {
+                    L.w("event=stylus_finish_session_failed reason=$reason msg=${it.message}")
+                }
+        }
     }
 
     private fun endSession(ime: InputMethodService) {
@@ -1246,11 +1554,16 @@ class StylusImeHooks(private val module: XposedModule) {
             // 这是从系统手写会话显式切回软键盘，不只是把自定义面板藏起来：
             // 1. 结束 framework 会话，归还被 pilfer 的笔事件；
             // 2. 不恢复进入手写时记录到的 NOT_TOUCHABLE，否则键盘虽然显示却无法点击。
-            if (sessionActive) {
-                runCatching { ime.finishStylusHandwriting() }
-                    .onFailure { L.w("event=stylus_keyboard_finish_failed msg=${it.message}") }
-            }
-            exitStylusMode("keyboard_button", forceImeTouchable = true)
+            //
+            // ★ 收会话**不能同步**：本回调来自 onStylusHandwritingMotionEvent →
+            //   dispatchPen → onPointer，同步 finishStylusHandwriting 会让框架的
+            //   "把笔还给界面"那一步空转，留下一层吃笔的 surface（同 onStylusMotion 里
+            //   轻点判定的注释）。exitStylusMode 内部负责把 finish 排到主线程队列。
+            exitStylusMode(
+                "keyboard_button",
+                forceImeTouchable = true,
+                finishSession = true,
+            )
             return
         }
         if (action == StylusToolbar.Action.SETTINGS) {
@@ -1459,6 +1772,14 @@ class StylusImeHooks(private val module: XposedModule) {
 
         /** 面板延迟多久出现（搜狗 `showToolboxAsync` 也是 200ms）。 */
         const val TOOLBAR_SHOW_DELAY_MS = 200L
+
+        /**
+         * 实体键盘探测结果的缓存时长。
+         *
+         * 枚举输入设备是 binder 调用，而落笔路径每次都要问一次；设备增删与配置变化
+         * 会立即作废缓存，所以这里的 TTL 只影响"没有事件提醒"的极端情况。
+         */
+        const val PHYSICAL_KEYBOARD_TTL_MS = 500L
 
         /** 搜狗在初始化随手写服务时设置的固定会话空闲超时。 */
         const val STYLUS_SESSION_TIMEOUT_MS = 500L
