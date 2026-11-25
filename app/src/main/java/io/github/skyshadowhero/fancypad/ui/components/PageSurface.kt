@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ fun PageSurface(
     title: String = "",
     titleAlpha: () -> Float = { 0f },
     bottomBar: (@Composable () -> Unit)? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit,
@@ -53,6 +55,7 @@ fun PageSurface(
             titleAlpha = titleAlpha,
             canGoBack = route != RouteHome,
             onBack = LocalPageOnBack.current,
+            actions = actions,
             header = header,
             bottomBar = bottomBar,
             scaffoldPadding = scaffoldPadding,

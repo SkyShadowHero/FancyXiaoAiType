@@ -2,6 +2,7 @@ package io.github.skyshadowhero.fancypad.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ fun PageScaffold(
     titleAlpha: () -> Float = { 0f },
     canGoBack: Boolean = false,
     onBack: () -> Unit = {},
+    actions: (@Composable RowScope.() -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
     bottomBar: (@Composable () -> Unit)? = null,
     scaffoldPadding: PaddingValues = PaddingValues(0.dp),
@@ -48,7 +50,7 @@ fun PageScaffold(
     val backdrop = rememberTopBlurBackdrop()
     val scrollBehavior = MiuixScrollBehavior()
     val layoutDirection = LocalLayoutDirection.current
-    val showTopBar = canGoBack || header != null || title.isNotEmpty()
+    val showTopBar = canGoBack || actions != null || header != null || title.isNotEmpty()
     CompositionLocalProvider(LocalPageBackdrop provides backdrop) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -74,6 +76,7 @@ fun PageScaffold(
                         }
                     }
                 },
+                actions = { actions?.invoke(this) },
                 bottomContent = { header?.invoke() },
             )
         },

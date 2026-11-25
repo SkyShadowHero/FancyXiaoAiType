@@ -52,12 +52,13 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 fun HomePage(
     uiState: AppUiState,
     scopePackages: Set<String>,
+    runningTargets: List<io.github.libxposed.service.HookedTarget>,
     onOpenScope: (AppScope) -> Unit,
     onOpenFeatures: () -> Unit,
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
-    val running = RemoteConfig.runningTargets()
+    val running = runningTargets
     val api = RemoteConfig.apiVersion()
     val framework = RemoteConfig.frameworkName()
 

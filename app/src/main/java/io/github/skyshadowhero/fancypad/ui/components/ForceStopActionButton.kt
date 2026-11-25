@@ -7,18 +7,16 @@ import top.yukonga.miuix.kmp.glass.GlassIconButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 
-/**
- * 右上角「操作」按钮：裸图标、无卡片底色与直角边框。
- */
+/** 一级页面右上角的“强制关闭应用”按钮。 */
 @Composable
-fun DropdownActionMenu(
+fun ForceStopActionButton(
     onClick: () -> Unit,
     backdrop: Backdrop? = null,
 ) {
     GlassIconButton(onClick = onClick, backdrop = backdrop) {
         Icon(
             imageVector = MiuixIcons.Refresh,
-            contentDescription = "操作",
+            contentDescription = "强制关闭应用",
         )
     }
 }

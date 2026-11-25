@@ -12,9 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -24,13 +22,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import io.github.skyshadowhero.fancypad.ui.utils.ImeRestarter
+import io.github.skyshadowhero.fancypad.BuildConfig
 import io.github.skyshadowhero.fancypad.ui.state.CursorConnectionEffect
 import io.github.skyshadowhero.fancypad.L
 import io.github.skyshadowhero.fancypad.PrefKeys
@@ -109,9 +106,11 @@ fun AppShell(
     // ---------------------------------------------------------------- 作用域状态
     // 3 秒轮询一次 getScope()（轻量 binder），首页卡片与「功能」页置灰都读它。
     var scopePackages by remember { mutableStateOf(RemoteConfig.scope()) }
+    var runningTargets by remember { mutableStateOf(RemoteConfig.runningTargets()) }
     LaunchedEffect(Unit) {
         while (true) {
             scopePackages = RemoteConfig.scope()
+            runningTargets = RemoteConfig.runningTargets()
             delay(3000)
         }
     }
@@ -207,68 +206,93 @@ fun AppShell(
     // 光标域的框架连接跟随：拆成三个页面后只在外壳里跑一份轮询
     CursorConnectionEffect()
 
-    // ---------------------------------------------------------- 重启输入法 + Snackbar
+    // ---------------------------------------------------------- 批量强制关闭应用 + Snackbar
 
-    // 重启提示与触发点只有一份，统一交给 Miuix 的 Snackbar 宿主。
+    // 结果提示与触发点只有一份，统一交给 Miuix 的 Snackbar 宿主。
     val miuixSnackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var showRestartDialog by remember { mutableStateOf(false) }
-    // 重启确认框从重启按钮的位置长出来：记录按钮在窗口里的矩形。
-    var restartAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val forceStopPackages = remember(scopePackages, runningTargets) {
+        buildSet {
+            // 两个主要目标始终提供，LSPosed 暂时未连接时仍可手动强制关闭。
+            add("com.xiaomi.type")
+            add("com.android.systemui")
+            addAll(scopePackages)
+            runningTargets.forEach { add(it.processName.substringBefore(':')) }
+        }.filterTo(linkedSetOf()) {
+            it != BuildConfig.APPLICATION_ID && AppForceStopper.isForceStoppablePackage(it)
+        }
+    }
 
-    fun startRestart() {
-        L.i("event=restart_clicked")
+    fun startForceStop(packages: Set<String>) {
+        if (packages.isEmpty()) return
+        L.i("event=force_stop_clicked targets=${packages.joinToString(",")}")
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { ImeRestarter.forceStop() }
-                    .getOrElse { ImeRestarter.Result.Failed(it.message ?: "未知错误") }
+                runCatching { AppForceStopper.forceStop(packages) }
+                    .getOrElse { AppForceStopper.Result.Failed(it.message ?: "未知错误") }
             }
-            L.i("event=restart_result result=$result")
+            L.i("event=force_stop_result result=$result")
             when (result) {
-                is ImeRestarter.Result.Killed -> {
-                    val message = "已关闭输入法，下次弹出键盘时自动重启"
-                    miuixSnackbar.showSnackbar(message, "重启成功")
+                is AppForceStopper.Result.Stopped -> {
+                    miuixSnackbar.showSnackbar(
+                        "已强制关闭 ${result.packages.size} 个应用",
+                    )
                 }
 
-                is ImeRestarter.Result.Failed -> {
-                    val message = "重启失败：需要 root 授权（KernelSU）"
-                    miuixSnackbar.showSnackbar(message, "失败")
+                is AppForceStopper.Result.Partial -> {
+                    miuixSnackbar.showSnackbar(
+                        "已关闭 ${result.stopped.size} 个，失败：${result.failed.keys.joinToString()}",
+                    )
+                }
+
+                is AppForceStopper.Result.Failed -> {
+                    miuixSnackbar.showSnackbar("强制关闭失败：${result.reason}")
                 }
             }
         }
     }
 
-    // 重启确认弹窗
-    WindowDialog(
-        show = showRestartDialog,
-        title = "重启超级小爱输入法？",
-        onDismissRequest = { showRestartDialog = false },
-        content = {
-            Row(horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(
-                    text = "取消",
-                    onClick = { showRestartDialog = false },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = "重启",
-                    onClick = {
-                        showRestartDialog = false
-                        startRestart()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = DsButtonDefaults.textButtonColorsPrimary(),
-                )
+    // 最外层 Scaffold 同时包含页面和悬浮底栏：Snackbar 会自动让开底栏，Dialog 则由
+    // overlay host 最后绘制在所有内容之上。
+    val barBackdrop = rememberTopBlurBackdrop()
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(miuixSnackbar) },
+        bottomBar = {
+            // 只在一级标签页出现；内容仍忽略外层 padding，因此可以从玻璃底栏下方滚过。
+            androidx.compose.animation.AnimatedVisibility(
+                visible = current == RouteHome && !useTabletNavigation,
+                enter = androidx.compose.animation.slideInVertically(
+                    animationSpec = androidx.compose.animation.core.tween(300),
+                    initialOffsetY = { it / 2 },
+                ) + androidx.compose.animation.fadeIn(
+                    animationSpec = androidx.compose.animation.core.tween(220),
+                ),
+                exit = androidx.compose.animation.slideOutVertically(
+                    animationSpec = androidx.compose.animation.core.tween(260),
+                    targetOffsetY = { it },
+                ) + androidx.compose.animation.fadeOut(
+                    animationSpec = androidx.compose.animation.core.tween(200),
+                ),
+            ) {
+                // 用 targetPage：点击瞬间就指向目标页，胶囊立刻开始动；settledPage 会慢半拍。
+                when (BottomBarStyle.entries.getOrElse(uiState.bottomBarStyle) { BottomBarStyle.Glass }) {
+                    BottomBarStyle.Glass -> GlassRootBottomBar(
+                        selectedIndex = pagerState.targetPage,
+                        onSelect = ::selectRootTab,
+                        backdrop = barBackdrop,
+                    )
+                    BottomBarStyle.Classic -> AppBottomBar(
+                        selectedIndex = pagerState.targetPage,
+                        onSelect = ::selectRootTab,
+                        modifier = Modifier,
+                        backdrop = barBackdrop,
+                    )
+                }
             }
         },
-    )
-
-    // 悬浮底栏要采样背后的内容 → 内容层单独注册进 backdrop，底栏作为**兄弟节点**叠在上面
-    // （不能放进被注册的那一层，否则会采样到自己）。
-    val barBackdrop = rememberTopBlurBackdrop()
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 只有内容层进 backdrop；底栏是它的兄弟节点，采样内容、不会采样到自己
+    ) {
+        // 只有内容层进 backdrop；底栏采样内容而不会采样到自己。
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -286,49 +310,17 @@ fun AppShell(
                 pagerState = pagerState,
                 domainPagerStates = domainPagerStates,
                 scopePackages = scopePackages,
+                runningTargets = runningTargets,
+                forceStopPackages = forceStopPackages,
                 showRootBottomBar = !useTabletNavigation,
                 padding = padding,
                 gapMaxLand = gapMaxLand,
                 gapMaxPort = gapMaxPort,
-                miuixSnackbar = miuixSnackbar,
-                showRestartDialog = { showRestartDialog = true },
+                onForceStopApps = ::startForceStop,
                 onBack = { pop() },
                 onPush = { push(it) },
             )
         }
-    // 悬浮底栏：只在一级标签页出现，浮在内容之上一层（内容会从它下面滚过）。
-    // 进出二级页面时跟着页面的转场一起滑出/滑入，而不是直接消失。
-    androidx.compose.animation.AnimatedVisibility(
-        visible = current == RouteHome && !useTabletNavigation,
-        modifier = Modifier.align(Alignment.BottomCenter),
-        enter = androidx.compose.animation.slideInVertically(
-            animationSpec = androidx.compose.animation.core.tween(300),
-            initialOffsetY = { it / 2 },
-        ) + androidx.compose.animation.fadeIn(
-            animationSpec = androidx.compose.animation.core.tween(220),
-        ),
-        exit = androidx.compose.animation.slideOutVertically(
-            animationSpec = androidx.compose.animation.core.tween(260),
-            targetOffsetY = { it },
-        ) + androidx.compose.animation.fadeOut(
-            animationSpec = androidx.compose.animation.core.tween(200),
-        ),
-    ) {
-        // 用 targetPage：点击瞬间就指向目标页，胶囊立刻开始动；settledPage 会慢半拍。
-        when (BottomBarStyle.entries.getOrElse(uiState.bottomBarStyle) { BottomBarStyle.Glass }) {
-            BottomBarStyle.Glass -> GlassRootBottomBar(
-                selectedIndex = pagerState.targetPage,
-                onSelect = ::selectRootTab,
-                backdrop = barBackdrop,
-            )
-            BottomBarStyle.Classic -> AppBottomBar(
-                selectedIndex = pagerState.targetPage,
-                onSelect = ::selectRootTab,
-                modifier = Modifier,
-                backdrop = barBackdrop,
-            )
-        }
-    }
     }
 }
 
@@ -340,12 +332,13 @@ private fun MiuixShell(
     pagerState: PagerState,
     domainPagerStates: Map<AppScope, PagerState>,
     scopePackages: Set<String>,
+    runningTargets: List<io.github.libxposed.service.HookedTarget>,
+    forceStopPackages: Set<String>,
     showRootBottomBar: Boolean,
     padding: PaddingValues,
     gapMaxLand: Float,
     gapMaxPort: Float,
-    miuixSnackbar: SnackbarHostState,
-    showRestartDialog: () -> Unit,
+    onForceStopApps: (Set<String>) -> Unit,
     onBack: () -> Unit,
     onPush: (NavKey) -> Unit,
 ) {
@@ -360,11 +353,12 @@ private fun MiuixShell(
             pagerState = pagerState,
             domainPagerStates = domainPagerStates,
             scopePackages = scopePackages,
+            runningTargets = runningTargets,
+            forceStopPackages = forceStopPackages,
             gapMaxLand = gapMaxLand,
             gapMaxPort = gapMaxPort,
             padding = padding,
-            miuixSnackbar = miuixSnackbar,
-            showRestartDialog = showRestartDialog,
+            onForceStopApps = onForceStopApps,
             onBack = onBack,
             onPush = onPush,
             showRootBottomBar = showRootBottomBar,
@@ -379,11 +373,12 @@ private fun MiuixPageHost(
     pagerState: PagerState,
     domainPagerStates: Map<AppScope, PagerState>,
     scopePackages: Set<String>,
+    runningTargets: List<io.github.libxposed.service.HookedTarget>,
+    forceStopPackages: Set<String>,
     gapMaxLand: Float,
     gapMaxPort: Float,
     padding: PaddingValues,
-    miuixSnackbar: SnackbarHostState,
-    showRestartDialog: () -> Unit,
+    onForceStopApps: (Set<String>) -> Unit,
     onBack: () -> Unit,
     onPush: (NavKey) -> Unit,
     showRootBottomBar: Boolean,
@@ -392,7 +387,6 @@ private fun MiuixPageHost(
         // 顶栏已移进页面自身（PageScaffold）：标题/返回随页面一起转场，
         // 内容也只吃一次 inset（不再出现「顶部一大块空白」）。
         topBar = {},
-        snackbarHost = { SnackbarHost(miuixSnackbar) },
     ) { innerPadding ->
         val contentPadding = PaddingValues(
             top = innerPadding.calculateTopPadding(),
@@ -407,10 +401,13 @@ private fun MiuixPageHost(
                 pagerState = pagerState,
                 domainPagerStates = domainPagerStates,
                 scopePackages = scopePackages,
+                runningTargets = runningTargets,
+                forceStopPackages = forceStopPackages,
                 padding = padding,
                 contentPadding = contentPadding,
                 gapMaxLand = gapMaxLand,
                 gapMaxPort = gapMaxPort,
+                onForceStopApps = onForceStopApps,
                 onBack = onBack,
                 onPush = onPush,
                 showRootBottomBar = showRootBottomBar,
@@ -428,10 +425,13 @@ private fun NavPages(
     pagerState: PagerState,
     domainPagerStates: Map<AppScope, PagerState>,
     scopePackages: Set<String>,
+    runningTargets: List<io.github.libxposed.service.HookedTarget>,
+    forceStopPackages: Set<String>,
     padding: PaddingValues,
     contentPadding: PaddingValues,
     gapMaxLand: Float,
     gapMaxPort: Float,
+    onForceStopApps: (Set<String>) -> Unit,
     onBack: () -> Unit,
     onPush: (NavKey) -> Unit,
     showRootBottomBar: Boolean,
@@ -493,11 +493,19 @@ private fun NavPages(
                         title = title.takeIf { railState != null }.orEmpty(),
                         titleAlpha = { railState?.progress ?: 0f },
                         scaffoldPadding = pagePadding,
+                        // RouteHome 内的首页、功能、信息均为一级页面，共用同一个顶栏入口。
+                        actions = {
+                            ForceStopAppsDialogAction(
+                                packages = forceStopPackages,
+                                onForceStop = onForceStopApps,
+                            )
+                        },
                     ) {
                         RootPager(
                             uiState = uiState,
                             pagerState = pagerState,
                             scopePackages = scopePackages,
+                            runningTargets = runningTargets,
                             padding = padding,
                             scaffoldPadding = LocalPageScaffoldPadding.current,
                             onOpenScope = { scope -> onPush(RouteDomain(scope)) },
@@ -684,6 +692,7 @@ private fun RootPager(
     uiState: AppUiState,
     pagerState: PagerState,
     scopePackages: Set<String>,
+    runningTargets: List<io.github.libxposed.service.HookedTarget>,
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
     onOpenScope: (AppScope) -> Unit,
@@ -704,6 +713,7 @@ private fun RootPager(
             RootTab.Home -> HomePage(
                 uiState = uiState,
                 scopePackages = scopePackages,
+                runningTargets = runningTargets,
                 onOpenScope = onOpenScope,
                 onOpenFeatures = openFeatures,
                 padding = padding,
