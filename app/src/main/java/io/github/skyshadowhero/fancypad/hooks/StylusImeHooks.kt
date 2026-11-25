@@ -5,10 +5,13 @@ import io.github.skyshadowhero.fancypad.*
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.PointF
+import android.graphics.RectF
 import android.hardware.input.InputManager
 import android.inputmethodservice.InputMethodService
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.IBinder
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
@@ -17,6 +20,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.InputDevice
 import android.view.inputmethod.DeleteGesture
+import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.HandwritingGesture
 import android.view.inputmethod.InputConnection
@@ -70,8 +74,10 @@ import java.util.function.IntConsumer
  *
  * ## 写输入框前必须校验身份
  *
- * 会话结束后 `currentInputConnection` 随时可能换人。识别结果的写入一律先过
- * [writeAllowed]（比对 [sessionIc] 身份）；面板按钮是用户当场的动作，用当前连接。
+ * 会话结束后 `currentInputConnection` 的包装对象会变化，即使仍是同一个编辑框也不能用
+ * 对象引用判断。识别结果的写入一律先过 [writeConnection]：用 `onStartInput` 世代与
+ * `InputBinding.connectionToken` 确认仍是原编辑目标，再取当前可用连接；面板按钮是用户
+ * 当场的动作，直接用当前连接。
  */
 class StylusImeHooks(private val module: XposedModule) {
 
@@ -84,6 +90,7 @@ class StylusImeHooks(private val module: XposedModule) {
 
     /** 热重载前：停掉定时任务、摘掉面板、清半截会话（旧一代被冻结后线程仍在跑）。 */
     fun dispose() {
+        finishInsertMode("dispose")
         runCatching { workerHandler?.removeCallbacksAndMessages(null) }
         runCatching { mainHandler.removeCallbacksAndMessages(null) }
         runCatching { toolbar.hide() }
@@ -92,15 +99,20 @@ class StylusImeHooks(private val module: XposedModule) {
             strokes.clear()
             current = null
         }
+        gestureCompetition = null
+        gestureAttempt = null
+        clearVisibleTextBounds(null)
         strokeActive = false
         sessionActive = false
         runCatching { machine.reset() }
         lifecycleGuard.reset()
         sessionIme = null
         sessionIc = null
+        sessionTarget = null
+        inputGeneration++
+        inputGenerationInitialized = false
         lastEditorToolType = MotionEvent.TOOL_TYPE_UNKNOWN
         lastComposingText = null
-        finalizeAfterRecognize = false
         undoStack.clear()
         redoStack.clear()
     }
@@ -129,8 +141,14 @@ class StylusImeHooks(private val module: XposedModule) {
 
     // ---- 会话状态 ----
     private val stateLock = Any()
-    private val strokes = ArrayList<List<PencilEngine.Pt>>()
+    private data class TrackedStroke(
+        val id: Long,
+        val points: List<PencilEngine.Pt>,
+    )
+
+    private val strokes = ArrayList<TrackedStroke>()
     private var current: ArrayList<PencilEngine.Pt>? = null
+    private var nextStrokeId = 0L
 
     @Volatile
     private var sessionIme: InputMethodService? = null
@@ -159,21 +177,65 @@ class StylusImeHooks(private val module: XposedModule) {
 
     // ---- 书写手势 ----
     private val gestureEngine = StylusGestureEngine()
-    @Volatile private var prevStroke: List<PencilEngine.Pt>? = null
     @Volatile private var lastStrokeUpTime = 0L
     @Volatile private var idleBeforeStroke = Long.MAX_VALUE
+
+    private class GestureAttempt(
+        val competition: StylusGestureCompetition,
+        val ticket: StylusGestureCompetition.Ticket,
+        val stroke: TrackedStroke,
+        val ime: InputMethodService,
+        val inputConnection: InputConnection?,
+        val inputTarget: InputTarget?,
+    ) {
+        var gesture: HandwritingGesture? = null
+        var finalSnapshot: List<List<PencilEngine.Pt>>? = null
+        var recognitionTimeout: Runnable? = null
+        var readyTimeout: Runnable? = null
+        var performTimeout: Runnable? = null
+        var textFallbackDispatched = false
+    }
+
+    private var nextGestureSessionId = 0L
+    private var gestureCompetition: StylusGestureCompetition? = null
+    private var gestureAttempt: GestureAttempt? = null
+
+    /**
+     * `InsertModeGesture` 成功后编辑器会保持“在指定点插入文字”，直到取消信号触发。
+     * 搜狗在后续书写期间续期，停笔 3 秒后取消；激活期间的新笔画只走 OCR，不再竞争手势。
+     */
+    private var activeInsertModeSignal: CancellationSignal? = null
+    private var activeInsertModeTarget: InputTarget? = null
+    private val finishInsertModeTask = Runnable { finishInsertMode("idle_timeout") }
+
+    /** `null` 与空集合都表示宿主没有提供边界，此时按搜狗行为宽容放行。 */
+    private val visibleTextLock = Any()
+    private var visibleTextTarget: InputTarget? = null
+    private var visibleTextBounds: List<StylusLineBounds>? = null
 
     /** 本次会话用的 `InputConnection`（写入前比对身份）。 */
     @Volatile
     private var sessionIc: InputConnection? = null
 
+    /**
+     * 同一编辑框的 framework 手写会话结束后，`mStartedInputConnection` 会退回
+     * `mInputConnection`，所以 `currentInputConnection` 会换成另一个包装对象。世代只在
+     * `onStartInput(..., restarting=false)`（真正的新编辑目标）时递增；binding token 再防
+     * 跨应用复用。两者共同构成可跨手写会话稳定、又不会把结果写进别处的目标身份。
+     */
+    private class InputTarget(
+        val generation: Long,
+        val bindingToken: IBinder?,
+        val fallbackConnection: InputConnection,
+    )
+
+    @Volatile private var inputGeneration = 0L
+    @Volatile private var inputGenerationInitialized = false
+    @Volatile private var sessionTarget: InputTarget? = null
+
     /** 我们最后一次放进组词区的文字。 */
     @Volatile
     private var lastComposingText: String? = null
-
-    /** 会话结束时要补一次"识别完顺手落定"。 */
-    @Volatile
-    private var finalizeAfterRecognize = false
 
     /**
      * 撤回 / 重做栈：**只记我们自己上屏的整段文字**。
@@ -215,9 +277,11 @@ class StylusImeHooks(private val module: XposedModule) {
         installed = true
         toolbar.onAction = { action -> runCatching { onToolbarAction(action) } }
         hookStart()
+        hookStartInputTarget()
         hookPrepare()
         hookMotion()
         hookFinish()
+        hookCursorAnchorInfo()
         hookEditorToolType()
         hookInputView()
         hookComputeInsets()
@@ -481,6 +545,67 @@ class StylusImeHooks(private val module: XposedModule) {
 
     // ------------------------------------------------------------------ 回调
 
+    /** 跟踪真正的编辑目标切换；`restarting=true` 仍是同一个编辑框，不能打断插入模式。 */
+    private fun hookStartInputTarget() {
+        try {
+            val m = (imeClass ?: InputMethodService::class.java).getMethod(
+                "onStartInput",
+                EditorInfo::class.java,
+                Boolean::class.javaPrimitiveType,
+            )
+            module.hook(m)
+                .setId("stylus_ime_on_start_input_target")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val self = chain.thisObject
+                    if (isTarget(self)) {
+                        val restarting = chain.getArg(1) as? Boolean ?: false
+                        onInputTargetStarted(restarting)
+                    }
+                    chain.proceed()
+                }
+        } catch (t: Throwable) {
+            L.e("event=stylus_hook_start_input_target_failed", t)
+        }
+    }
+
+    private fun onInputTargetStarted(restarting: Boolean) {
+        val newTarget = !restarting
+        if (!inputGenerationInitialized) {
+            inputGenerationInitialized = true
+            if (newTarget) inputGeneration++
+        } else if (newTarget) {
+            inputGeneration++
+        }
+        if (newTarget) {
+            finishInsertMode("input_target_changed")
+            clearVisibleTextBounds(null)
+        }
+        L.i("event=stylus_input_target generation=$inputGeneration restarting=$restarting")
+    }
+
+    private fun captureInputTarget(
+        ime: InputMethodService,
+        connection: InputConnection? = runCatching { ime.currentInputConnection }.getOrNull(),
+    ): InputTarget? {
+        if (!runCatching { ime.currentInputStarted }.getOrDefault(false)) return null
+        val ic = connection ?: return null
+        val token = runCatching { ime.currentInputBinding?.connectionToken }.getOrNull()
+        return InputTarget(inputGeneration, token, ic)
+    }
+
+    private fun sameInputTarget(first: InputTarget?, second: InputTarget?): Boolean {
+        if (first == null || second == null || first.generation != second.generation) return false
+        val firstToken = first.bindingToken
+        val secondToken = second.bindingToken
+        if (firstToken != null && secondToken != null) return firstToken == secondToken
+        // 极少数没有 InputBinding 的 ROM：同一 onStartInput 世代仍比易变化的 IC 包装身份可靠。
+        return true
+    }
+
+    private fun isCurrentInputTarget(ime: InputMethodService, expected: InputTarget?): Boolean =
+        sameInputTarget(expected, captureInputTarget(ime))
+
     private fun hookStart() {
         try {
             val m = InputMethodService::class.java.getDeclaredMethod("onStartStylusHandwriting")
@@ -511,12 +636,82 @@ class StylusImeHooks(private val module: XposedModule) {
                         val ime = chain.thisObject as InputMethodService
                         sessionIme = ime
                         imeInstance = ime
+                        requestVisibleTextBounds(ime)
                     }
                     chain.proceed()
                 }
         } catch (t: Throwable) {
             L.e("event=stylus_hook_prepare_failed", t)
         }
+    }
+
+    /**
+     * 宿主把可见文字行以编辑器局部坐标送来；手势用的是 raw 屏幕坐标，因此必须应用
+     * `CursorAnchorInfo.matrix` 后再保存。回调属于旧连接时直接丢弃。
+     */
+    private fun hookCursorAnchorInfo() {
+        try {
+            val m = (imeClass ?: InputMethodService::class.java).getMethod(
+                "onUpdateCursorAnchorInfo",
+                CursorAnchorInfo::class.java,
+            )
+            module.hook(m)
+                .setId("stylus_ime_cursor_anchor_info")
+                .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
+                .intercept { chain ->
+                    val result = chain.proceed()
+                    val self = chain.thisObject
+                    val info = chain.getArg(0) as? CursorAnchorInfo
+                    if (isTarget(self) && info != null && HookPrefs.stylusEnabled(module)) {
+                        updateVisibleTextBounds(self as InputMethodService, info)
+                    }
+                    result
+                }
+        } catch (t: Throwable) {
+            L.e("event=stylus_hook_cursor_anchor_failed", t)
+        }
+    }
+
+    private fun requestVisibleTextBounds(ime: InputMethodService) {
+        val ic = runCatching { ime.currentInputConnection }.getOrNull()
+        clearVisibleTextBounds(captureInputTarget(ime, ic))
+        if (ic == null) return
+        runCatching {
+            ic.requestCursorUpdates(
+                InputConnection.CURSOR_UPDATE_IMMEDIATE or InputConnection.CURSOR_UPDATE_MONITOR,
+            )
+        }.onFailure {
+            L.w("event=stylus_cursor_updates_failed msg=${it.message}")
+        }
+    }
+
+    private fun clearVisibleTextBounds(target: InputTarget?) {
+        synchronized(visibleTextLock) {
+            visibleTextTarget = target
+            visibleTextBounds = null
+        }
+    }
+
+    private fun updateVisibleTextBounds(ime: InputMethodService, info: CursorAnchorInfo) {
+        val ic = runCatching { ime.currentInputConnection }.getOrNull() ?: return
+        val target = captureInputTarget(ime, ic) ?: return
+        val mapped = runCatching {
+            val matrix = info.matrix
+            info.visibleLineBounds.mapNotNull { source ->
+                RectF(source).also(matrix::mapRect).takeUnless {
+                    it.isEmpty || !it.left.isFinite() || !it.top.isFinite() ||
+                        !it.right.isFinite() || !it.bottom.isFinite()
+                }?.let { StylusLineBounds(it.left, it.top, it.right, it.bottom) }
+            }
+        }.getOrElse {
+            L.w("event=stylus_visible_lines_failed msg=${it.message}")
+            return
+        }
+        synchronized(visibleTextLock) {
+            if (!sameInputTarget(visibleTextTarget, target)) return
+            visibleTextBounds = mapped
+        }
+        L.i("event=stylus_visible_lines count=${mapped.size}")
     }
 
     private fun hookMotion() {
@@ -771,10 +966,25 @@ class StylusImeHooks(private val module: XposedModule) {
         ime: InputMethodService,
         reason: String,
     ) {
+        val sessionWasActive = sessionActive
+        val expectedTarget = captureInputTarget(ime)
+        // `currentInputStarted` 在用户收起键盘后仍可能保持 true（编辑框继续持有焦点）。
+        // 因此无手写会话的 onWindowHidden 必须视为明确退出；若仍按“输入目标有效”恢复，
+        // requestShowSelf 会在面板正常关闭后把它再次拉出来。
+        if (reason == "window_hidden" && !sessionWasActive) {
+            val ticket = machine.ticket()
+            mainHandler.post {
+                if (!machine.isStale(ticket)) {
+                    L.i("event=stylus_lifecycle_exit_confirmed reason=$reason session=false")
+                    exitStylusMode(reason)
+                }
+            }
+            return
+        }
         val action = if (stylusMode) {
             lifecycleGuard.onLifecycleCallback(
                 nowMs = SystemClock.uptimeMillis(),
-                handwritingSessionActive = sessionActive,
+                handwritingSessionActive = sessionWasActive,
             )
         } else {
             StylusLifecycleAction.EXIT_STYLUS
@@ -791,17 +1001,22 @@ class StylusImeHooks(private val module: XposedModule) {
 
         L.i(
             "event=stylus_lifecycle_preserved reason=$reason " +
-                "session=$sessionActive generation=$ticket",
+                "session=$sessionWasActive generation=$ticket",
         )
-        mainHandler.post {
-            if (machine.isStale(ticket) || machine.mode != StylusModeMachine.Mode.STYLUS) {
-                return@post
-            }
-            runCatching { ime.requestShowSelf(0) }
-                .onSuccess { L.i("event=stylus_window_host_restore_requested reason=$reason") }
-                .onFailure {
-                    L.w("event=stylus_window_host_restore_failed reason=$reason msg=${it.message}")
+        // 真正的手写会话仍在进行时，窗口隐藏只是 framework 切换宿主，立即请求恢复。
+        // 没有会话时不能这么做：真实的 onFinishInput 也会落在 1 秒宽限期内，提前
+        // requestShowSelf 会把本该退出的输入法重新拉活，形成“UI 关了又出现”。
+        if (sessionWasActive) {
+            mainHandler.post {
+                if (machine.isStale(ticket) || machine.mode != StylusModeMachine.Mode.STYLUS) {
+                    return@post
                 }
+                runCatching { ime.requestShowSelf(0) }
+                    .onSuccess { L.i("event=stylus_window_host_restore_requested reason=$reason") }
+                    .onFailure {
+                        L.w("event=stylus_window_host_restore_failed reason=$reason msg=${it.message}")
+                    }
+            }
         }
 
         // onFinishInput 返回后 framework 才会把 currentInputStarted 置 false；必须延时确认，
@@ -819,6 +1034,23 @@ class StylusImeHooks(private val module: XposedModule) {
                     L.i("event=stylus_lifecycle_exit_confirmed reason=$reason")
                     exitStylusMode(reason)
                     return@postDelayed
+                }
+                // 旧输入目标的延时回调不得关闭或复活后来获得焦点的新输入框。
+                if (expectedTarget != null && !isCurrentInputTarget(ime, expectedTarget)) {
+                    L.i("event=stylus_lifecycle_ignored reason=target_changed source=$reason")
+                    return@postDelayed
+                }
+                if (!ime.isInputViewShown) {
+                    runCatching { ime.requestShowSelf(0) }
+                        .onSuccess {
+                            L.i("event=stylus_window_host_restore_requested reason=$reason deferred=true")
+                        }
+                        .onFailure {
+                            L.w(
+                                "event=stylus_window_host_restore_failed reason=$reason " +
+                                    "deferred=true msg=${it.message}",
+                            )
+                        }
                 }
                 if (!toolbar.isShowing) attachPanel(ime)
                 if (toolbar.isShowing) {
@@ -884,6 +1116,29 @@ class StylusImeHooks(private val module: XposedModule) {
 
         when (action) {
             MotionEvent.ACTION_DOWN -> {
+                // 与搜狗的 mTextEditTimer 一致：新一笔落下就撤销上一笔的延迟 OCR，
+                // 否则慢写第二笔时会在半途把第一笔先上屏。
+                workerHandler?.removeCallbacks(recognizeTask)
+                if (activeInsertModeSignal != null &&
+                    sameInputTarget(activeInsertModeTarget, sessionTarget)
+                ) {
+                    mainHandler.removeCallbacks(finishInsertModeTask)
+                }
+                val competition = gestureCompetition
+                if (competition?.onStrokeStarted() == true) {
+                    val pending = gestureAttempt
+                    if (pending?.competition === competition) {
+                        pending.recognitionTimeout?.let(mainHandler::removeCallbacks)
+                        pending.readyTimeout?.let(mainHandler::removeCallbacks)
+                        pending.recognitionTimeout = null
+                        pending.readyTimeout = null
+                        if (gestureAttempt === pending) gestureAttempt = null
+                    }
+                    L.i(
+                        "event=stylus_gesture_invalidated reason=additional_stroke " +
+                            "session=${competition.sessionId}",
+                    )
+                }
                 downTime = time
                 downX = rawX
                 downY = rawY
@@ -939,7 +1194,7 @@ class StylusImeHooks(private val module: XposedModule) {
             ink.view?.addPoint(canvasX, canvasY, action)
         }
 
-        var justFinished: List<PencilEngine.Pt>? = null
+        var justFinished: TrackedStroke? = null
 
         synchronized(stateLock) {
             when (action) {
@@ -954,8 +1209,9 @@ class StylusImeHooks(private val module: XposedModule) {
                 MotionEvent.ACTION_UP -> {
                     current?.let {
                         it.add(PencilEngine.Pt(rawX, rawY, ACTION_UP, time))
-                        strokes.add(it)
-                        justFinished = it
+                        val tracked = TrackedStroke(++nextStrokeId, it)
+                        strokes.add(tracked)
+                        justFinished = tracked
                     }
                     current = null
                 }
@@ -967,6 +1223,11 @@ class StylusImeHooks(private val module: XposedModule) {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             strokeActive = false
             lastStrokeUpTime = time
+            if (activeInsertModeSignal != null &&
+                sameInputTarget(activeInsertModeTarget, sessionTarget)
+            ) {
+                scheduleInsertModeFinish()
+            }
         }
 
         if (isTap) {
@@ -987,27 +1248,17 @@ class StylusImeHooks(private val module: XposedModule) {
         if (action == MotionEvent.ACTION_UP) sessionStrokeCount++
 
         // ---- 书写手势 ----
-        if (action == MotionEvent.ACTION_UP && HookPrefs.stylusGestureEnabled()) {
-            val stroke = justFinished
-            if (stroke != null && looksLikeGesture(stroke)) {
-                val g = gestureEngine.recognize(ime, stroke.map { PointF(it.x, it.y) })
-                if (g != null && gestureShapeOk(g, stroke)) {
-                    performGesture(ime, g)
-                    prevStroke = stroke
-                    return
-                }
-                if (g != null) {
-                    L.i(
-                        "event=stylus_gesture_shape_mismatch type=${g.javaClass.simpleName} " +
-                            "pts=${stroke.size}",
-                    )
-                } else {
-                    L.i("event=stylus_gesture_not_recognized points=${stroke.size}")
-                }
-            }
-        }
         if (action == MotionEvent.ACTION_UP && justFinished != null) {
-            prevStroke = justFinished
+            val tracked = justFinished
+            val stroke = tracked.points
+            val candidate = activeInsertModeSignal == null &&
+                HookPrefs.stylusGestureEnabled() &&
+                looksLikeGesture(stroke)
+            val effect = gestureCompetition?.onStrokeFinished(candidate)
+            if (effect is StylusGestureCompetition.Effect.RecognizeGesture) {
+                startGestureRecognition(ime, tracked, effect.ticket)
+                return
+            }
         }
 
         // ---- 系统笔引擎：停笔后延迟识别，连续落笔会把计时重置 ----
@@ -1028,18 +1279,20 @@ class StylusImeHooks(private val module: XposedModule) {
     /**
      * 便宜的几何预筛：这一笔（配合上一笔）像不像手势。
      *
-     * 只看包围盒、首尾距离、方向这些 O(n) 的量，不碰引擎。仅放行两类：
-     * 闭合环（圈选）/ 长横线（划掉删除）。
+     * 只看包围盒、首尾距离、方向这些 O(n) 的量，不碰引擎。放行系统模型支持的五类：
+     * 闭合环（圈选）、长横线（划除）、尖角（插入模式）、短竖线（连接/拆分）和折线（换行）。
      * 预筛偏宽松：假阳性只是白问一次模型，假阴性才是功能失效。
      */
     private fun looksLikeGesture(stroke: List<PencilEngine.Pt>): Boolean {
-        if (stroke.size < 6) return false
+        if (stroke.size < 4) return false
         val g = Geometry(stroke)
         if (g.w < MIN_GESTURE_PX && g.h < MIN_GESTURE_PX) return false
 
-        if (isLoopShape(g)) return true
-        if (isStrikeShape(g)) return true
-        return false
+        return isLoopShape(g) ||
+            isStrikeShape(g) ||
+            isCaretShape(stroke, g) ||
+            isVerticalShape(g) ||
+            isPolylineShape(stroke, g)
     }
 
     /**
@@ -1054,6 +1307,9 @@ class StylusImeHooks(private val module: XposedModule) {
         return when (gesture) {
             is SelectGesture -> isLoopShape(g)
             is DeleteGesture -> isStrikeShape(g)
+            is InsertModeGesture -> isCaretShape(stroke, g)
+            is JoinOrSplitGesture -> isVerticalShape(g)
+            is InsertGesture -> isPolylineShape(stroke, g)
             else -> false
         }
     }
@@ -1145,20 +1401,7 @@ class StylusImeHooks(private val module: XposedModule) {
     private fun isCaretShape(
         stroke: List<PencilEngine.Pt>,
         g: Geometry,
-        prev: List<PencilEngine.Pt>?,
     ): Boolean {
-        if (prev != null && prev.size >= 4) {
-            val pFirst = prev.first()
-            val pLast = prev.last()
-            val join = kotlin.math
-                .hypot((pLast.x - g.first.x).toDouble(), (pLast.y - g.first.y).toDouble())
-                .toFloat()
-            val prevUp = pLast.y < pFirst.y - MIN_CARET_LEG_PX
-            val curDown = g.last.y > g.first.y + MIN_CARET_LEG_PX
-            val wide = (maxOf(g.maxX, pLast.x) - minOf(g.minX, pFirst.x)) > MIN_CARET_PX
-            if (join < CARET_JOIN_RATIO * maxOf(g.w, g.h) && prevUp && curDown && wide) return true
-        }
-
         if (g.w > MIN_CARET_PX && g.h > MIN_CARET_LEG_PX && stroke.size >= 6) {
             var turnIdx = 0
             for (i in stroke.indices) if (stroke[i].y < stroke[turnIdx].y) turnIdx = i
@@ -1178,16 +1421,6 @@ class StylusImeHooks(private val module: XposedModule) {
             }
         }
         return false
-    }
-
-    /** 「单独画的一笔、落在已有文字之间」—— 连接·拆分这种改动型笔势的准入条件。 */
-    private fun isMarkBetweenText(ime: InputMethodService): Boolean {
-        if (idleBeforeStroke < MARK_IDLE_MS) return false
-        return runCatching {
-            val ic = ime.currentInputConnection ?: return@runCatching false
-            ic.getTextBeforeCursor(1, 0)?.isNotEmpty() == true &&
-                ic.getTextAfterCursor(1, 0)?.isNotEmpty() == true
-        }.getOrDefault(false)
     }
 
     private fun cornerIndex(
@@ -1213,50 +1446,325 @@ class StylusImeHooks(private val module: XposedModule) {
         return index
     }
 
-    private fun performGesture(ime: InputMethodService, gesture: HandwritingGesture) {
-        synchronized(stateLock) {
-            if (strokes.isNotEmpty()) strokes.removeAt(strokes.lastIndex)
-            current = null
+    /** 模型调用与 OCR 共用同一条后台队列，避免两个系统笔引擎门面并发争用状态。 */
+    private fun startGestureRecognition(
+        ime: InputMethodService,
+        stroke: TrackedStroke,
+        ticket: StylusGestureCompetition.Ticket,
+    ) {
+        val competition = gestureCompetition ?: return
+        val attempt = GestureAttempt(
+            competition,
+            ticket,
+            stroke,
+            ime,
+            sessionIc,
+            sessionTarget,
+        )
+        gestureAttempt = attempt
+        val timeout = Runnable { onGestureRecognitionTimeout(attempt) }
+        attempt.recognitionTimeout = timeout
+        mainHandler.postDelayed(timeout, GESTURE_RECOGNITION_TIMEOUT_MS)
+        workerHandler().post {
+            val recognized = gestureEngine.recognize(
+                ime.applicationContext,
+                stroke.points.map { PointF(it.x, it.y) },
+            )
+            val accepted = recognized != null && gestureShapeOk(recognized, stroke.points)
+            mainHandler.post {
+                onGestureRecognized(attempt, recognized, accepted)
+            }
         }
-        ink.view?.removeLastStroke()
+        L.i(
+            "event=stylus_gesture_candidate session=${competition.sessionId} " +
+                "stroke=${stroke.id} points=${stroke.points.size}",
+        )
+    }
 
-        val ic = ime.currentInputConnection
-        if (ic == null || !writeAllowed(ime)) {
-            L.w("event=stylus_gesture_no_input_connection")
+    private fun onGestureRecognized(
+        attempt: GestureAttempt,
+        recognized: HandwritingGesture?,
+        accepted: Boolean,
+    ) {
+        attempt.recognitionTimeout?.let(mainHandler::removeCallbacks)
+        attempt.recognitionTimeout = null
+        val wasRecognizing = attempt.competition.state ==
+            StylusGestureCompetition.State.RECOGNIZING
+        val gesture = recognized?.takeIf { accepted }
+        attempt.gesture = gesture
+        val effect = attempt.competition.onRecognitionFinished(
+            attempt.ticket,
+            accepted = accepted,
+        )
+        when {
+            !wasRecognizing -> {
+                L.i("event=stylus_gesture_result_ignored reason=stale stroke=${attempt.stroke.id}")
+            }
+
+            recognized == null -> {
+                L.i("event=stylus_gesture_not_recognized points=${attempt.stroke.points.size}")
+            }
+
+            !accepted -> {
+                L.i(
+                    "event=stylus_gesture_shape_mismatch type=${recognized.javaClass.simpleName} " +
+                        "points=${attempt.stroke.points.size}",
+                )
+            }
+
+            else -> {
+                L.i(
+                    "event=stylus_gesture_recognized type=${recognized.javaClass.simpleName} " +
+                        "stroke=${attempt.stroke.id}",
+                )
+            }
+        }
+        handleGestureEffect(attempt, effect, "model_rejected")
+        if (wasRecognizing && !accepted && !attempt.competition.sessionFinished) {
+            scheduleTextRecognition()
+        } else if (wasRecognizing && accepted && !attempt.competition.sessionFinished) {
+            val timeout = Runnable { onGestureReadyTimeout(attempt) }
+            attempt.readyTimeout = timeout
+            mainHandler.postDelayed(timeout, GESTURE_READY_TIMEOUT_MS)
+        }
+    }
+
+    private fun onGestureRecognitionTimeout(attempt: GestureAttempt) {
+        attempt.recognitionTimeout = null
+        val wasRecognizing = attempt.competition.state ==
+            StylusGestureCompetition.State.RECOGNIZING
+        val effect = attempt.competition.rejectCandidate(attempt.ticket)
+        if (!wasRecognizing) return
+        L.w(
+            "event=stylus_gesture_timeout phase=recognize session=${attempt.competition.sessionId} " +
+                "stroke=${attempt.stroke.id}",
+        )
+        handleGestureEffect(attempt, effect, "recognize_timeout")
+        if (!attempt.competition.sessionFinished) scheduleTextRecognition()
+    }
+
+    /** framework 未按 500ms 约定结束会话时，也不能永远扣住这笔文字。 */
+    private fun onGestureReadyTimeout(attempt: GestureAttempt) {
+        attempt.readyTimeout = null
+        if (attempt.competition.sessionFinished ||
+            attempt.competition.state != StylusGestureCompetition.State.READY
+        ) {
             return
         }
+        attempt.competition.rejectCandidate(attempt.ticket)
+        L.w(
+            "event=stylus_gesture_timeout phase=await_session_finish " +
+                "session=${attempt.competition.sessionId}",
+        )
+        scheduleTextRecognition()
+    }
+
+    private fun handleGestureEffect(
+        attempt: GestureAttempt,
+        effect: StylusGestureCompetition.Effect,
+        fallbackReason: String,
+    ) {
+        when (effect) {
+            is StylusGestureCompetition.Effect.TryPerform -> tryPerformGesture(attempt)
+            StylusGestureCompetition.Effect.RecognizeText ->
+                fallbackGestureToText(attempt, fallbackReason)
+            StylusGestureCompetition.Effect.GestureConsumed -> {
+                attempt.finalSnapshot = null
+                if (gestureAttempt === attempt) gestureAttempt = null
+            }
+            StylusGestureCompetition.Effect.None,
+            is StylusGestureCompetition.Effect.RecognizeGesture,
+            -> Unit
+        }
+    }
+
+    private fun tryPerformGesture(attempt: GestureAttempt) {
+        attempt.readyTimeout?.let(mainHandler::removeCallbacks)
+        attempt.readyTimeout = null
+        val gesture = attempt.gesture
+        if (gesture == null) {
+            handleGestureEffect(
+                attempt,
+                attempt.competition.rejectCandidate(attempt.ticket),
+                "missing_gesture",
+            )
+            return
+        }
+        if (!gestureHitsVisibleText(attempt, gesture)) {
+            L.i(
+                "event=stylus_gesture_rejected reason=outside_visible_text " +
+                    "type=${gesture.javaClass.simpleName}",
+            )
+            handleGestureEffect(
+                attempt,
+                attempt.competition.rejectCandidate(attempt.ticket),
+                "outside_visible_text",
+            )
+            return
+        }
+        val ic = runCatching { attempt.ime.currentInputConnection }.getOrNull()
+        if (ic == null || !isCurrentInputTarget(attempt.ime, attempt.inputTarget)) {
+            L.w("event=stylus_gesture_no_input_connection")
+            handleGestureEffect(
+                attempt,
+                attempt.competition.rejectCandidate(attempt.ticket),
+                "input_connection_changed",
+            )
+            return
+        }
+        if (!attempt.competition.beginPerform(attempt.ticket)) return
+
         val name = gesture.javaClass.simpleName
-        runCatching {
+        try {
             ic.performHandwritingGesture(
                 gesture,
-                Executor { it.run() },
-                IntConsumer { result -> L.i("event=stylus_gesture_result type=$name result=$result") },
+                Executor { command -> mainHandler.post(command) },
+                IntConsumer { result -> onGesturePerformResult(attempt, name, result) },
             )
-        }.onFailure { L.e("event=stylus_gesture_perform_failed type=$name", it) }
-        L.i("event=stylus_gesture_performed type=$name")
+            val timeout = Runnable { onGesturePerformTimeout(attempt, name) }
+            attempt.performTimeout = timeout
+            mainHandler.postDelayed(timeout, GESTURE_PERFORM_WATCHDOG_MS)
+            L.i("event=stylus_gesture_performed type=$name")
+        } catch (t: Throwable) {
+            L.e("event=stylus_gesture_perform_failed type=$name", t)
+            handleGestureEffect(
+                attempt,
+                attempt.competition.onPerformResult(attempt.ticket, success = false),
+                "perform_exception",
+            )
+        }
+    }
+
+    private fun onGesturePerformResult(attempt: GestureAttempt, name: String, result: Int) {
+        attempt.performTimeout?.let(mainHandler::removeCallbacks)
+        attempt.performTimeout = null
+        L.i("event=stylus_gesture_result type=$name result=$result")
+        val success = result == InputConnection.HANDWRITING_GESTURE_RESULT_SUCCESS
+        val effect = attempt.competition.onPerformResult(
+            attempt.ticket,
+            success = success,
+        )
+        if (effect == StylusGestureCompetition.Effect.GestureConsumed &&
+            attempt.gesture is InsertModeGesture
+        ) {
+            activateInsertMode(attempt)
+        }
+        handleGestureEffect(attempt, effect, "perform_result_$result")
+    }
+
+    private fun activateInsertMode(attempt: GestureAttempt) {
+        val gesture = attempt.gesture as? InsertModeGesture ?: return
+        finishInsertMode("replaced")
+        activeInsertModeSignal = gesture.cancellationSignal
+        activeInsertModeTarget = attempt.inputTarget
+        if (!isCurrentInputTarget(attempt.ime, attempt.inputTarget)) {
+            finishInsertMode("input_connection_changed")
+            return
+        }
+        scheduleInsertModeFinish()
+        L.i("event=stylus_insert_mode_started session=${attempt.competition.sessionId}")
+    }
+
+    private fun scheduleInsertModeFinish() {
+        if (activeInsertModeSignal == null) return
+        mainHandler.removeCallbacks(finishInsertModeTask)
+        mainHandler.postDelayed(finishInsertModeTask, INSERT_MODE_IDLE_TIMEOUT_MS)
+    }
+
+    private fun finishInsertMode(reason: String) {
+        mainHandler.removeCallbacks(finishInsertModeTask)
+        val signal = activeInsertModeSignal ?: run {
+            activeInsertModeTarget = null
+            return
+        }
+        activeInsertModeSignal = null
+        activeInsertModeTarget = null
+        runCatching { signal.cancel() }
+            .onFailure { L.w("event=stylus_insert_mode_cancel_failed msg=${it.message}") }
+        L.i("event=stylus_insert_mode_finished reason=$reason")
+    }
+
+    /**
+     * AOSP 对「编辑器完全不回调」仍留有 TODO。副作用是否已经发生不可知，因此看门狗只封口
+     * 和隔离后续会话，不能盲目 OCR（否则可能出现删除成功后又把手写字插回来的双重修改）。
+     */
+    private fun onGesturePerformTimeout(attempt: GestureAttempt, name: String) {
+        attempt.performTimeout = null
+        if (!attempt.competition.abandonUnknownPerform(attempt.ticket)) return
+        attempt.finalSnapshot = null
+        if (gestureAttempt === attempt) gestureAttempt = null
+        L.w("event=stylus_gesture_timeout phase=perform type=$name action=abandon_unknown")
+    }
+
+    private fun fallbackGestureToText(attempt: GestureAttempt, reason: String) {
+        if (attempt.textFallbackDispatched) return
+        attempt.textFallbackDispatched = true
+        val snapshot = attempt.finalSnapshot ?: listOf(ArrayList(attempt.stroke.points))
+        attempt.finalSnapshot = null
+        if (gestureAttempt === attempt) gestureAttempt = null
+        L.i(
+            "event=stylus_gesture_fallback reason=$reason strokes=${snapshot.size} " +
+                "session=${attempt.competition.sessionId}",
+        )
+        dispatchRecognition(
+            ime = attempt.ime,
+            snapshot = snapshot,
+            expectedTarget = attempt.inputTarget,
+            finalize = true,
+        )
+    }
+
+    private fun gestureHitsVisibleText(
+        attempt: GestureAttempt,
+        gesture: HandwritingGesture,
+    ): Boolean {
+        val bounds = synchronized(visibleTextLock) {
+            if (sameInputTarget(visibleTextTarget, attempt.inputTarget)) {
+                visibleTextBounds.orEmpty()
+            } else {
+                emptyList()
+            }
+        }
+        return StylusTextGate.hitsVisibleText(
+            stroke = attempt.stroke.points.map { StylusPoint(it.x, it.y) },
+            visibleLines = bounds,
+            closedSelection = gesture is SelectGesture,
+        )
+    }
+
+    private fun scheduleTextRecognition() {
+        val h = workerHandler()
+        h.removeCallbacks(recognizeTask)
+        h.postDelayed(recognizeTask, recognizeDelayMs())
     }
 
     // ------------------------------------------------------------------ 识别
 
     private fun recognizeAndCommit() {
         val ime = sessionIme ?: return
+        val expectedTarget = sessionTarget
         val snapshot = synchronized(stateLock) {
-            if (strokes.isEmpty()) null else strokes.map { ArrayList(it) }
+            if (strokes.isEmpty()) null else strokes.map { ArrayList(it.points) }
         } ?: return
-        dispatchRecognition(ime, snapshot)
+        dispatchRecognition(ime, snapshot, expectedTarget, finalize = false)
     }
 
-    private fun dispatchRecognition(ime: InputMethodService, snapshot: List<List<PencilEngine.Pt>>) {
+    private fun dispatchRecognition(
+        ime: InputMethodService,
+        snapshot: List<List<PencilEngine.Pt>>,
+        expectedTarget: InputTarget?,
+        finalize: Boolean,
+    ) {
         workerHandler().post {
             val eng = ensureEngine(ime.applicationContext) ?: return@post
             val text = eng.recognize(normalize(snapshot))
             if (text.isNullOrEmpty()) {
                 L.i("event=stylus_recognize_empty strokes=${snapshot.size}")
-                mainHandler.post { finalizeIfNeeded(ime) }
+                if (finalize) mainHandler.post { finishComposing(ime, expectedTarget) }
                 return@post
             }
             L.i("event=stylus_recognize_ok strokes=${snapshot.size} text=$text")
-            showComposing(ime, text)
+            showComposing(ime, text, expectedTarget, finalize)
         }
     }
 
@@ -1266,23 +1774,20 @@ class StylusImeHooks(private val module: XposedModule) {
      * 只 `setComposingText`、**不 commit**：中间结果（刚写完「女」）先显示，后面重认更好时整段替换
      *（「女」→「好」，「宀」+「豕」→「家」）。落定交给 [finishComposing]（会话结束时）。
      */
-    private fun showComposing(ime: InputMethodService, text: String) {
-        val finalize = finalizeAfterRecognize
-        finalizeAfterRecognize = false
+    private fun showComposing(
+        ime: InputMethodService,
+        text: String,
+        expectedTarget: InputTarget?,
+        finalize: Boolean,
+    ) {
         mainHandler.post {
-            if (!writeAllowed(ime)) return@post
-            runCatching { ime.currentInputConnection?.setComposingText(text, 1) }
+            val ic = writeConnection(ime, expectedTarget) ?: return@post
+            runCatching { ic.setComposingText(text, 1) }
                 .onFailure { L.w("event=stylus_composing_failed msg=${it.message}") }
             lastComposingText = text
             if (!strokeActive) ink.clear()
-            if (finalize) finishComposing(ime)
+            if (finalize) finishComposing(ime, expectedTarget)
         }
-    }
-
-    private fun finalizeIfNeeded(ime: InputMethodService) {
-        if (!finalizeAfterRecognize) return
-        finalizeAfterRecognize = false
-        finishComposing(ime)
     }
 
     /**
@@ -1291,11 +1796,10 @@ class StylusImeHooks(private val module: XposedModule) {
      * 落定前确认光标前那段还是我们写的：用户可能已经接着打拼音了，
      * 那时 `finishComposingText` 会把拼到一半的拼音截断。
      */
-    private fun finishComposing(ime: InputMethodService) {
+    private fun finishComposing(ime: InputMethodService, expectedTarget: InputTarget?) {
+        val ic = writeConnection(ime, expectedTarget) ?: return
         val mine = lastComposingText
         lastComposingText = null
-        if (!writeAllowed(ime)) return
-        val ic = ime.currentInputConnection ?: return
         if (mine != null) {
             val before = runCatching { ic.getTextBeforeCursor(mine.length, 0) }
                 .getOrNull()?.toString()
@@ -1317,15 +1821,19 @@ class StylusImeHooks(private val module: XposedModule) {
         toolbar.setCanRedo(false)
     }
 
-    /** 现在还能不能往这个输入框写（识别结果专用：必须是本次会话那个连接）。 */
-    private fun writeAllowed(ime: InputMethodService): Boolean {
-        val ic = ime.currentInputConnection ?: return false
-        val mine = sessionIc
-        if (mine == null || ic !== mine) {
+    /**
+     * 取当前可写连接。只认原编辑目标，不比较易随 framework 会话变化的 IC 包装对象。
+     */
+    private fun writeConnection(
+        ime: InputMethodService,
+        expectedTarget: InputTarget?,
+    ): InputConnection? {
+        val ic = runCatching { ime.currentInputConnection }.getOrNull() ?: return null
+        if (!sameInputTarget(expectedTarget, captureInputTarget(ime, ic))) {
             L.i("event=stylus_write_skipped reason=input_connection_changed")
-            return false
+            return null
         }
-        return true
+        return ic
     }
 
     private fun normalize(strokes: List<List<PencilEngine.Pt>>): List<List<PencilEngine.Pt>> {
@@ -1362,9 +1870,16 @@ class StylusImeHooks(private val module: XposedModule) {
         sessionIme = ime
         imeInstance = ime
         sessionIc = ime.currentInputConnection
+        sessionTarget = captureInputTarget(ime, sessionIc)
+        if (activeInsertModeSignal != null &&
+            !sameInputTarget(activeInsertModeTarget, sessionTarget)
+        ) {
+            finishInsertMode("input_connection_changed")
+        }
         if (freshSession) {
             lastComposingText = null
-            finalizeAfterRecognize = false
+            gestureCompetition = StylusGestureCompetition(++nextGestureSessionId)
+            gestureAttempt = null
             synchronized(stateLock) {
                 strokes.clear()
                 current = null
@@ -1372,6 +1887,14 @@ class StylusImeHooks(private val module: XposedModule) {
             sessionStrokeCount = 0
             strokeActive = false
             ink.clear()
+            val boundsBelongToSession = synchronized(visibleTextLock) {
+                sameInputTarget(visibleTextTarget, sessionTarget)
+            }
+            if (!boundsBelongToSession) {
+                mainHandler.post {
+                    if (sessionActive && sessionIme === ime) requestVisibleTextBounds(ime)
+                }
+            }
         } else {
             L.i("event=stylus_session_begin_duplicate preserve_ink=true")
         }
@@ -1403,8 +1926,21 @@ class StylusImeHooks(private val module: XposedModule) {
 
         // 搜狗也是异步：`showToolboxAsync` 里 `sendMessageDelayed(1, 200)` ——
         // 等会话彻底起来再建视图，别在 200ms 窗口里 inflate。
+        val showTarget = sessionTarget
+        val showModeTicket = machine.ticket()
         mainHandler.postDelayed(
-            { runCatching { enterStylusMode(ime) }.onFailure { L.e("event=stylus_mode_enter_failed", it) } },
+            {
+                if (machine.isStale(showModeTicket)) {
+                    L.i("event=stylus_mode_enter_skipped reason=stale")
+                    return@postDelayed
+                }
+                if (!isCurrentInputTarget(ime, showTarget)) {
+                    L.i("event=stylus_mode_enter_skipped reason=input_target_ended")
+                    return@postDelayed
+                }
+                runCatching { enterStylusMode(ime) }
+                    .onFailure { L.e("event=stylus_mode_enter_failed", it) }
+            },
             TOOLBAR_SHOW_DELAY_MS,
         )
     }
@@ -1480,6 +2016,12 @@ class StylusImeHooks(private val module: XposedModule) {
      */
     private fun enterStylusMode(ime: InputMethodService) {
         if (!HookPrefs.stylusEnabled(module)) return
+        if (!runCatching { ime.currentInputStarted }.getOrDefault(false) ||
+            runCatching { ime.currentInputConnection }.getOrNull() == null
+        ) {
+            L.i("event=stylus_mode_enter_skipped reason=no_active_input")
+            return
+        }
         if (!HookPrefs.stylusToolbarEnabled()) {
             if (stylusMode || toolbar.isShowing) exitStylusMode("toolbar_disabled")
             return
@@ -1543,6 +2085,7 @@ class StylusImeHooks(private val module: XposedModule) {
      */
     private fun rollbackStylusMode(ime: InputMethodService?, reason: String) {
         L.w("event=stylus_mode_rollback reason=$reason")
+        finishInsertMode("stylus_rollback")
         machine.exitStylus(ime != null && hasPhysicalKeyboard(ime))
         runCatching { toolbar.hide(forceImeTouchable = true) }
         ink.clear()
@@ -1561,6 +2104,7 @@ class StylusImeHooks(private val module: XposedModule) {
         val hadSession = sessionActive
         // 只要是离开随手写，悬浮小键盘就必须还回去（面板没挂上的半挂状态也一样）。
         restoreFloatingKeyboard()
+        finishInsertMode("stylus_exit")
         lifecycleGuard.reset()
         // 会话状态必须在退出时一起归零：框架不保证每个退出路径都会回调
         // onFinishStylusHandwriting，残留的 sessionActive 会让下一次 beginSession
@@ -1606,18 +2150,34 @@ class StylusImeHooks(private val module: XposedModule) {
 
     private fun endSession(ime: InputMethodService) {
         sessionActive = false
-        // ★ 会话结束 = 用户写完了。必须**当场清账**：把还攒着、还没到延迟的笔迹立刻识别掉，
-        //   再落定组词态。绝不能把写入推迟到会话之外 —— 那时 currentInputConnection 可能已经换人。
+        val expectedTarget = sessionTarget
         val snapshot = synchronized(stateLock) {
-            if (strokes.isEmpty()) null else strokes.map { ArrayList(it) }
+            if (strokes.isEmpty()) null else strokes.map { ArrayList(it.points) }
         }
         val h = workerHandler()
         h.removeCallbacks(recognizeTask)
         if (snapshot != null) {
-            finalizeAfterRecognize = true
-            h.post { dispatchRecognition(ime, snapshot) }
+            val competition = gestureCompetition
+            val attempt = gestureAttempt?.takeIf { it.competition === competition }
+            if (attempt != null) {
+                attempt.readyTimeout?.let(mainHandler::removeCallbacks)
+                attempt.readyTimeout = null
+                attempt.finalSnapshot = snapshot
+            }
+            val effect = competition?.finishSession(hasInk = true)
+                ?: StylusGestureCompetition.Effect.RecognizeText
+            if (effect is StylusGestureCompetition.Effect.TryPerform && attempt == null) {
+                competition?.rejectCandidate(effect.ticket)
+                L.w("event=stylus_gesture_missing_attempt action=fallback_text")
+                dispatchRecognition(ime, snapshot, expectedTarget, finalize = true)
+            } else if (attempt != null) {
+                handleGestureEffect(attempt, effect, "session_finish")
+            } else if (effect == StylusGestureCompetition.Effect.RecognizeText) {
+                dispatchRecognition(ime, snapshot, expectedTarget, finalize = true)
+            }
         } else {
-            finishComposing(ime)
+            gestureCompetition?.finishSession(hasInk = false)
+            finishComposing(ime, expectedTarget)
         }
         synchronized(stateLock) {
             strokes.clear()
@@ -1625,9 +2185,11 @@ class StylusImeHooks(private val module: XposedModule) {
         }
         strokeActive = false
         sessionStrokeCount = 0
-        prevStroke = null
         ink.clear()
-        L.i("event=stylus_session_end mode=$stylusMode")
+        L.i(
+            "event=stylus_session_end mode=$stylusMode " +
+                "gesture=${gestureCompetition?.state}",
+        )
     }
 
     // ------------------------------------------------------------------ 面板按钮
@@ -1698,7 +2260,6 @@ class StylusImeHooks(private val module: XposedModule) {
                 }
             }
 
-            else -> Unit
         }
     }
 
@@ -1802,7 +2363,11 @@ class StylusImeHooks(private val module: XposedModule) {
     }
 
     private fun allowsStylusUi(ime: InputMethodService, info: EditorInfo?): Boolean {
-        if (info == null || runCatching { ime.currentInputConnection }.getOrNull() == null) return false
+        if (info == null || !runCatching { ime.currentInputStarted }.getOrDefault(false) ||
+            runCatching { ime.currentInputConnection }.getOrNull() == null
+        ) {
+            return false
+        }
         val classAndVariation = info.inputType and
             (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION)
         val password = classAndVariation ==
@@ -1879,6 +2444,18 @@ class StylusImeHooks(private val module: XposedModule) {
         /** 搜狗在初始化随手写服务时设置的固定会话空闲超时。 */
         const val STYLUS_SESSION_TIMEOUT_MS = 500L
 
+        /** 模型尚未产生编辑器副作用，超时后可以安全地把完整笔迹交还 OCR。 */
+        const val GESTURE_RECOGNITION_TIMEOUT_MS = 1_000L
+
+        /** framework 正常 500ms 即结束；额外留余量后仍不结束就放弃手势竞争。 */
+        const val GESTURE_READY_TIMEOUT_MS = 1_500L
+
+        /** 编辑器漏回调时只释放 pending，不冒险进行第二次文字写入。 */
+        const val GESTURE_PERFORM_WATCHDOG_MS = 3_000L
+
+        /** 与搜狗 `mGestureTimer` 一致：插入模式在最后一笔抬起 3 秒后退出。 */
+        const val INSERT_MODE_IDLE_TIMEOUT_MS = 3_000L
+
         /** 撤回历史最多记多少段。 */
         const val UNDO_LIMIT = 32
 
@@ -1891,11 +2468,9 @@ class StylusImeHooks(private val module: XposedModule) {
         const val MIN_SPLIT_PX = 70f
         const val MAX_SPLIT_PX = MIN_SPLIT_PX * 3f
         const val SPLIT_ASPECT = 1.4f
-        const val MARK_IDLE_MS = 600L
         const val MIN_NEWLINE_POINTS = 8
         const val MIN_NEWLINE_LEG_PX = 40f
         const val MIN_CARET_PX = 90f
         const val MIN_CARET_LEG_PX = 36f
-        const val CARET_JOIN_RATIO = 0.6f
     }
 }

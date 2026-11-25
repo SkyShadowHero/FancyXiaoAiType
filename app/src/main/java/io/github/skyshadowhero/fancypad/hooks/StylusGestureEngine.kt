@@ -6,12 +6,15 @@ import android.content.Context
 import android.graphics.PointF
 import android.view.inputmethod.DeleteGesture
 import android.view.inputmethod.HandwritingGesture
+import android.view.inputmethod.InsertGesture
+import android.view.inputmethod.InsertModeGesture
+import android.view.inputmethod.JoinOrSplitGesture
 import android.view.inputmethod.SelectGesture
 import dalvik.system.PathClassLoader
 import java.lang.reflect.Method
 
 /**
- * 书写手势识别（仅圈选 / 划掉删除）。
+ * 书写手势识别（圈选、划除、插入模式、连接/拆分、换行）。
  *
  * ## 形状识别不自己写
  *
@@ -65,7 +68,12 @@ internal class StylusGestureEngine {
         val f = facade ?: return null
         return try {
             when (val gesture = m.invoke(f, points) as? HandwritingGesture) {
-                is SelectGesture, is DeleteGesture -> gesture
+                is SelectGesture,
+                is DeleteGesture,
+                is InsertModeGesture,
+                is JoinOrSplitGesture,
+                is InsertGesture,
+                -> gesture
                 else -> null
             }
         } catch (t: Throwable) {
