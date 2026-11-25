@@ -1,5 +1,7 @@
 package io.github.skyshadowhero.fancypad
 
+import io.github.skyshadowhero.fancypad.hooks.ProcessNames
+import io.github.skyshadowhero.fancypad.hooks.Target
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

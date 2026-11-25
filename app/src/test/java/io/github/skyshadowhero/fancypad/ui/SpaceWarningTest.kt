@@ -1,5 +1,6 @@
 package io.github.skyshadowhero.fancypad.ui
 
+import io.github.skyshadowhero.fancypad.ui.utils.SpaceWarning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

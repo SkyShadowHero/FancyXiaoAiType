@@ -53,7 +53,7 @@ echo "sdk.dir=/path/to/Android/SDK" > local.properties
 ./gradlew :app:testDebugUnitTest     # 纯 JVM 单测：进程名归一 / 清单编解码 / 阈值 / 常量契约
 ```
 
-> 单测只覆盖**不依赖 Android 框架**的纯逻辑（`ProcessNames`、`MaterialPackages`、
+> 单测只覆盖**不依赖 Android 框架**的纯逻辑（`ProcessNames`、`PackageListCodec`、
 > `SpaceWarning`、`Target`/`PrefKeys` 的常量契约）。Hook 与 UI 仍靠真机验收，
 > 截图与 uiautomator dump 存在同级目录 `_shots/`。
 
@@ -81,7 +81,7 @@ app/src/main/
 │   ├── EmbeddingRatioHooks.java # [目标应用] 平行视界分栏无级（不吸附 + 可调范围）
 │   ├── CaptionHooks.java     # [SystemUI] 小窗控制菜单
 │   ├── AppMenuHooks.kt       # [目标应用] 右键菜单
-│   ├── MaterialPackages.kt   # 需要「Miuix 材质」处理的目标包名（右键菜单复用）
+│   ├── PackageListCodec.kt   # 多个应用白名单共用的包名编解码
 │   ├── Diag.kt / L.kt        # 落盘诊断 + 结构化日志（本机 logd 不可用）
 │   ├── TunerApp.kt / SettingsActivity.kt  # 模块 App 入口
 │   └── ui/                   # Miuix 界面（ds/ 为共享组件层）

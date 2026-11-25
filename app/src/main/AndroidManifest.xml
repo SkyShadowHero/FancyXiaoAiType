@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      「超级材质」页需要列出可启动的应用供用户勾选。
+      应用白名单选择器需要列出可启动的应用供用户勾选。
       这里用 <queries> 声明可见性，而不是申请 QUERY_ALL_PACKAGES：
       只需要「有启动入口的应用」，范围刚好够用，也不会拿到一堆无关的系统包。
     -->

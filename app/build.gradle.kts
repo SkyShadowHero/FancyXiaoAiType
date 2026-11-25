@@ -22,18 +22,17 @@ val signKeyPassword = keystoreProps.getProperty("keyPassword")
 
 android {
     namespace = "io.github.skyshadowhero.fancypad"
-    // Miuix 0.9.4 / Compose 1.12 要求 compileSdk 37；
-    // 本机 SDK 为次版本号式平台 android-37.0，故需同时指定 compileSdkMinor。
+    // Miuix 0.9.5-beta04 要求 compileSdk 37.2+。
     compileSdk = 37
-    compileSdkMinor = 0
+    compileSdkMinor = 2
 
     defaultConfig {
         applicationId = "io.github.skyshadowhero.fancypad"
         minSdk = 35
         targetSdk = 37
         // versionCode 用 major*10000 + minor*10 + patch，便于后续按语义递增
-        versionCode = 10015
-        versionName = "1.1.5"
+        versionCode = 10016
+        versionName = "1.1.6"
     }
 
     signingConfigs {
@@ -125,15 +124,18 @@ dependencies {
     // 光标页导入 SVG 素材时在 App 内栅格化（Android 本身不认 SVG）
     implementation("com.caverock:androidsvg-aar:1.4")
 
-    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-nav-android:0.9.4")
+    // 0.9.5-beta04 是当前最新 Beta；全部 Miuix 模块保持同版，避免二进制 API 混用。
+    val miuixVersion = "0.9.5-beta04"
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-glass-android:$miuixVersion")
 
-    // 识别模型功能：**不走 ONNX Runtime**。手写识别用的是小爱自带的讯飞 HCR
-    // （见 IflytekHcrEngine）和系统笔引擎（见 PencilEngine，挂 /system_ext 的
-    // xiaomi-pencilengine-pad.jar + ocr_model.tflite），都不需要额外依赖。
+    // 识别模型功能：**不走 ONNX Runtime**。手写识别只使用系统笔引擎
+    //（见 PencilEngine，挂 /system_ext 的 xiaomi-pencilengine-pad.jar +
+    // ocr_model.tflite），不需要额外依赖。
     // 早先这里引过 onnxruntime-android 1.15.1（配了一堆「系统里有同版本 so」的说明），
     // 但全工程从未引用过它的任何类 —— 已删除，别按旧注释加回来。
 

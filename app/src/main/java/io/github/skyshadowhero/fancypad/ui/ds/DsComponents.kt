@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker as MiuixColorPicker
@@ -26,11 +27,12 @@ import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 import top.yukonga.miuix.kmp.basic.TextField as MiuixTextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference as MiuixArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxPreference as MiuixCheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference as MiuixOverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference as MiuixRadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference as MiuixSliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference as MiuixSwitchPreference
 import top.yukonga.miuix.kmp.window.WindowDialog as MiuixWindowDialog
+import top.yukonga.miuix.kmp.glass.GlassDropdownPreference as MiuixGlassDropdownPreference
+import top.yukonga.miuix.kmp.layout.DialogMotion
 
 // ======================================================================================
 // 设计系统适配层
@@ -133,17 +135,23 @@ fun CheckboxPreference(
 }
 
 @Composable
-fun OverlayDropdownPreference(
+fun GlassDropdownPreference(
     title: String,
     items: List<String>,
     selectedIndex: Int,
     onSelectedIndexChange: (Int) -> Unit,
+    backdrop: Backdrop?,
+    summary: String? = null,
+    enabled: Boolean = true,
 ) {
-    MiuixOverlayDropdownPreference(
+    MiuixGlassDropdownPreference(
         title = title,
         items = items,
         selectedIndex = selectedIndex,
         onSelectedIndexChange = onSelectedIndexChange,
+        backdrop = backdrop,
+        summary = summary,
+        enabled = enabled,
     )
 }
 
@@ -355,6 +363,7 @@ fun WindowDialog(
         title = title,
         summary = summary,
         onDismissRequest = onDismissRequest,
+        motion = DialogMotion.Glass,
         content = content,
     )
 }

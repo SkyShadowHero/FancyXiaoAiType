@@ -1,0 +1,578 @@
+package io.github.skyshadowhero.fancypad.hooks;
+
+import io.github.skyshadowhero.fancypad.*;
+
+import android.content.SharedPreferences;
+
+import io.github.libxposed.api.XposedInterface;
+
+/**
+ * Hook 进程侧的开关缓存。
+ *
+ * <p>三个功能域分布在三个进程里（{@code com.xiaomi.type} / {@code system} /
+ * {@code com.android.systemui}），每边都通过这里拿到同一份 RemotePreferences 的快照。
+ *
+ * <p>为什么不做「每次调用都读一遍偏好」：光标渲染在 {@code PointerIconCache} 的热点路径上，
+ * 平行窗口的跳切判定也在动画路径上；RemotePreferences 取值虽然多数命中本地缓存，
+ * 但第一次取仍要走 binder。这里的做法是——
+ * <ol>
+ *   <li>{@link #bind} 时读一次快照；</li>
+ *   <li>注册一个共享偏好监听器，之后改动即时刷新这几个 volatile 字段；</li>
+ *   <li>Hook 侧只读 volatile，不做取偏好动作。</li>
+ * </ol>
+ *
+ * <p>失败一律回退成「默认关闭」，与开关的默认值一致：
+ * 读不到偏好时模块什么都不做（所有功能默认关闭），而不是静默生效。
+ */
+public final class HookPrefs {
+
+    private static volatile boolean bound;
+
+    @SuppressWarnings("unused")
+    private static volatile SharedPreferences prefs;
+    /** 监听器必须持强引用，否则会被 GC 回收导致回调静默失效。 */
+    @SuppressWarnings("unused")
+    private static volatile SharedPreferences.OnSharedPreferenceChangeListener listener;
+
+    // ---- 快照（Hook 侧只读这些字段） ----
+    private static volatile boolean cursorEnabled = false;
+    private static volatile boolean embeddingEnabled = false;
+    private static volatile boolean folmeDisabled = false;
+    private static volatile boolean mergeDisabled = false;
+    private static volatile boolean jumpCutDisabled = false;
+    /** 平行视界分栏无级调节；关掉后松手吸附回系统原样。 */
+    private static volatile boolean embeddingRatioEnabled = false;
+    /** 平行视界无级调节的生效白名单（空串 = 谁都不生效）。 */
+    private static volatile String embeddingRatioApps = "";
+    /** 分栏可拖范围（默认 = 系统原值 0.35 / 0.65）。 */
+    private static volatile float embeddingRatioMin = 0.35f;
+    private static volatile float embeddingRatioMax = 0.65f;
+    /** 小窗控制器总开关；关掉后这一域所有 Hook 直接放行。 */
+    private static volatile boolean captionEnabled = false;
+    /** 小窗控制菜单里「关闭」按钮的图标 × → −。 */
+    private static volatile boolean captionCloseAsMinus = false;
+    /** 小窗控制菜单里追加红色「彻底关闭」（forceStop）按钮。 */
+    private static volatile boolean captionForceClose = false;
+    /** 控制菜单里隐藏的按钮（逗号分隔的 PrefKeys.CB_*）；空串 = 全显示。 */
+    private static volatile String captionButtonHidden = "";
+    /** 控制菜单的按钮顺序（逗号分隔的 PrefKeys.CB_*）。 */
+    private static volatile String captionButtonOrder = PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER;
+    /** 隐藏「当前状态对应的按钮」（全屏藏全屏 / 小窗藏小窗）。 */
+    private static volatile boolean captionHideCurrentState = false;
+    /** 始终显示「新窗口」按钮（框架只在支持多实例时才加）。 */
+    private static volatile boolean captionAlwaysNewWindow = false;
+    /** 隐藏三个控制点（不画，但点击区域还在）。 */
+    private static volatile boolean captionHideDots = false;
+    private static volatile boolean appMenuEnabled = false;
+    private static volatile boolean appMenuWebviewEnabled = false;
+    /** 生效白名单（空串 = 不限制）。只读字符串，判断时按逗号切分。 */
+    private static volatile String appMenuApps = "";
+    private static volatile float appMenuCornerDp = PrefKeys.APPMENU_CORNER_DEFAULT;
+    private static volatile float appMenuTextSp = PrefKeys.APPMENU_TEXT_DEFAULT;
+    private static volatile float appMenuPaddingHDp = PrefKeys.APPMENU_PADDING_H_DEFAULT;
+    private static volatile float appMenuPaddingVDp = PrefKeys.APPMENU_PADDING_V_DEFAULT;
+    /** 随手写总开关（system_server 与 com.xiaomi.type 两个进程都读）。 */
+    private static volatile boolean stylusEnabled = false;
+    /** 应用侧编辑器兼容兜底白名单；默认只保留原先单独适配的小米便签。 */
+    private static volatile String stylusApps = PrefKeys.STYLUS_APPS_DEFAULT;
+    /** 是否显示随手写操作工具栏；关闭不影响识别。 */
+    private static volatile boolean stylusToolbarEnabled = false;
+    /** 停笔识别延迟（毫秒）：停笔多久之后把攒下的笔迹送去识别。 */
+    private static volatile float stylusDelayMs = PrefKeys.STYLUS_DELAY_DEFAULT;
+    /** 让小爱进入随手写白名单；由用户显式开启。 */
+    private static volatile boolean stylusWhitelist = false;
+    /** 是否显示笔迹（输入法进程的画布用）。 */
+    private static volatile boolean stylusInkEnabled = false;
+    /** 书写手势总开关（圈选选中 / 划掉删除 / 尖尖插入 / 折线换行 / 短竖线连接·拆分）。 */
+    private static volatile boolean stylusGestureEnabled = false;
+    /** 笔迹颜色（ARGB）。 */
+    private static volatile int stylusInkColor = PrefKeys.STYLUS_INK_COLOR_DEFAULT;
+    /** 笔迹线宽（px）。 */
+    private static volatile float stylusInkWidthPx = PrefKeys.STYLUS_INK_WIDTH_DEFAULT;
+    /** 一镜到底（HyperViewScale）总开关。 */
+    private static volatile boolean hyperViewScaleEnabled = false;
+    /** 上次刷新的时刻（uptimeMillis），供 {@link #refreshIfStale} 判断快照新旧。 */
+    private static volatile long lastRefreshAt = 0L;
+
+    /** 随手写偏好的低频自愈刷新间隔（毫秒）。 */
+    private static final long STYLUS_REFRESH_MS = 3000L;
+
+    /** 同一时刻只允许有一次刷新在途，避免 Hook 热点把 binder 调用堆起来。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean refreshInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 刷新专用后台线程（守护线程，只在真的需要刷新时才建）。 */
+    private static volatile java.util.concurrent.Executor refreshExecutor;
+
+    /**
+     * 绑定偏好（首次调用）：读一次快照并注册变更监听。
+     */
+    public static synchronized void bind(XposedInterface module) {
+        bound = true;
+        try {
+            SharedPreferences p = module.getRemotePreferences(PrefKeys.GROUP);
+            prefs = p;
+            refresh(p);
+            SharedPreferences.OnSharedPreferenceChangeListener l = (sp, key) -> refresh(sp);
+            listener = l;
+            p.registerOnSharedPreferenceChangeListener(l);
+        } catch (Throwable ignored) {
+            // 读不到偏好就保持字段的安全默认值（全部关闭）。
+        }
+    }
+
+    /**
+     * 强制从框架重读一遍偏好。
+     *
+     * 为什么不只靠 {@link #bind} 时的快照 + 变更监听：实测**已注入的应用进程**不一定能收到
+     * 框架的偏好变更通知，于是 App 里关掉开关后，Hook 侧仍拿着旧快照（表现为「关了没生效」）。
+     * 菜单弹出是低频事件，这里重新走一次 getRemotePreferences 的代价可接受。
+     */
+    public static synchronized void rebind(XposedInterface module) {
+        try {
+            SharedPreferences p = module.getRemotePreferences(PrefKeys.GROUP);
+            prefs = p;
+            bound = true;
+            refresh(p);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void refresh(SharedPreferences p) {
+        lastRefreshAt = android.os.SystemClock.uptimeMillis();
+        if (p == null) {
+            return;
+        }
+        try {
+            cursorEnabled = p.getBoolean(PrefKeys.CURSOR_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingEnabled = p.getBoolean(PrefKeys.EMBEDDING_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            folmeDisabled = p.getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            mergeDisabled = p.getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            jumpCutDisabled = p.getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioEnabled = p.getBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioApps = p.getString(PrefKeys.EMBEDDING_RATIO_APPS, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioMin = p.getFloat(PrefKeys.EMBEDDING_RATIO_MIN, 0.35f);
+        } catch (Throwable ignored) {
+        }
+        try {
+            embeddingRatioMax = p.getFloat(PrefKeys.EMBEDDING_RATIO_MAX, 0.65f);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionEnabled = p.getBoolean(PrefKeys.CAPTION_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionCloseAsMinus = p.getBoolean(PrefKeys.CAPTION_CLOSE_AS_MINUS, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionForceClose = p.getBoolean(PrefKeys.CAPTION_FORCE_CLOSE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionButtonHidden = p.getString(PrefKeys.CAPTION_BUTTON_HIDDEN, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionButtonOrder = p.getString(
+                    PrefKeys.CAPTION_BUTTON_ORDER, PrefKeys.CAPTION_BUTTON_DEFAULT_ORDER);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionHideCurrentState = p.getBoolean(PrefKeys.CAPTION_HIDE_CURRENT_STATE, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionAlwaysNewWindow = p.getBoolean(PrefKeys.CAPTION_ALWAYS_NEW_WINDOW, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            captionHideDots = p.getBoolean(PrefKeys.CAPTION_HIDE_DOTS, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuEnabled = p.getBoolean(PrefKeys.APPMENU_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuWebviewEnabled = p.getBoolean(PrefKeys.APPMENU_WEBVIEW_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuApps = p.getString(PrefKeys.APPMENU_APPS, "");
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuCornerDp = p.getFloat(PrefKeys.APPMENU_CORNER_DP, PrefKeys.APPMENU_CORNER_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuTextSp = p.getFloat(PrefKeys.APPMENU_TEXT_SP, PrefKeys.APPMENU_TEXT_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuPaddingHDp = p.getFloat(
+                    PrefKeys.APPMENU_PADDING_H_DP, PrefKeys.APPMENU_PADDING_H_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            appMenuPaddingVDp = p.getFloat(
+                    PrefKeys.APPMENU_PADDING_V_DP, PrefKeys.APPMENU_PADDING_V_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusEnabled = p.getBoolean(PrefKeys.STYLUS_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusApps = p.getString(PrefKeys.STYLUS_APPS, PrefKeys.STYLUS_APPS_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusToolbarEnabled = p.getBoolean(PrefKeys.STYLUS_TOOLBAR_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusDelayMs = p.getFloat(PrefKeys.STYLUS_DELAY_MS, PrefKeys.STYLUS_DELAY_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusWhitelist = p.getBoolean(PrefKeys.STYLUS_WHITELIST, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusInkEnabled = p.getBoolean(PrefKeys.STYLUS_INK_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusGestureEnabled = p.getBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusInkColor = p.getInt(PrefKeys.STYLUS_INK_COLOR, PrefKeys.STYLUS_INK_COLOR_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            stylusInkWidthPx = p.getFloat(PrefKeys.STYLUS_INK_WIDTH_PX, PrefKeys.STYLUS_INK_WIDTH_DEFAULT);
+        } catch (Throwable ignored) {
+        }
+        try {
+            hyperViewScaleEnabled = p.getBoolean(PrefKeys.HYPER_VIEW_SCALE_ENABLED, false);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 一镜到底总开关。
+     *
+     * <p>带低频自愈刷新：注入进程不一定收得到偏好变更通知，见 {@link #STYLUS_REFRESH_MS}。
+     * 调用点在 {@code HyperViewScaleRemoteManager.performClick()}（主线程、每次点击一次），
+     * 所以刷新同样是"只触发、不阻塞"。
+     */
+    public static boolean hyperViewScaleEnabled(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return hyperViewScaleEnabled;
+    }
+
+    public static boolean cursorEnabled() {
+        return cursorEnabled;
+    }
+
+    public static boolean embeddingEnabled() {
+        return embeddingEnabled;
+    }
+
+    public static boolean embeddingRatioEnabled() {
+        return embeddingRatioEnabled;
+    }
+
+    /** 下限；与上限对齐（配置写反时以较小值为准），并夹在 (0, 0.5] 内。 */
+    public static float embeddingRatioMin() {
+        float lo = Math.min(embeddingRatioMin, embeddingRatioMax);
+        return Math.max(0.05f, Math.min(0.49f, lo));
+    }
+
+    /** 上限；同上，夹在 [0.5, 0.95) 内。 */
+    public static float embeddingRatioMax() {
+        float hi = Math.max(embeddingRatioMin, embeddingRatioMax);
+        return Math.min(0.95f, Math.max(0.51f, hi));
+    }
+
+    /** 白名单为空 = 谁都不生效；否则要求当前进程包名在列表里。 */
+    public static boolean embeddingRatioAppAllowed(String pkg) {
+        String list = embeddingRatioApps;
+        if (list == null || list.trim().isEmpty() || pkg == null) {
+            return false;
+        }
+        for (String part : list.split("[,\\n]")) {
+            if (part.trim().equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean folmeDisabled() {
+        return folmeDisabled;
+    }
+
+    public static boolean mergeDisabled() {
+        return mergeDisabled;
+    }
+
+    public static boolean jumpCutDisabled() {
+        return jumpCutDisabled;
+    }
+
+    // ---- 小窗控制菜单（SystemUI 侧） ----
+
+    /** 小窗控制器总开关。 */
+    public static boolean captionEnabled() {
+        return captionEnabled;
+    }
+
+    /** 控制菜单里「关闭」按钮的图标 × → −。 */
+    public static boolean captionCloseAsMinus() {
+        return captionCloseAsMinus;
+    }
+
+    /** 控制菜单里追加红色「彻底关闭」按钮。 */
+    public static boolean captionForceClose() {
+        return captionForceClose;
+    }
+
+    /** 控制菜单里隐藏的按钮（逗号分隔的 key）。 */
+    public static String captionButtonHidden() {
+        return captionButtonHidden;
+    }
+
+    /** 控制菜单的按钮顺序（逗号分隔的 key）。 */
+    public static String captionButtonOrder() {
+        return captionButtonOrder;
+    }
+
+    /** 隐藏「当前状态对应的按钮」。 */
+    public static boolean captionHideCurrentState() {
+        return captionHideCurrentState;
+    }
+
+    /** 始终显示「新窗口」按钮。 */
+    public static boolean captionAlwaysNewWindow() {
+        return captionAlwaysNewWindow;
+    }
+
+    /** 隐藏三个控制点。 */
+    public static boolean captionHideDots() {
+        return captionHideDots;
+    }
+
+    // ---- 随手写（system_server + com.xiaomi.type） ----
+
+    /**
+     * 随手写总开关。关掉时两处 hook 都直接放行，等于模块不碰随手写。
+     *
+     * <p>带低频自愈刷新：注入进程不一定收得到偏好变更通知，见 {@link #STYLUS_REFRESH_MS}。
+     */
+    public static boolean stylusEnabled(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return stylusEnabled;
+    }
+
+    /**
+     * 距上次刷新超过 {@code maxAgeMs} 时，安排一次**后台**重读。
+     *
+     * <p>为什么必须放后台：这个方法的调用点在 system_server 的
+     * {@code InputMethodInfo.supportsStylusHandwriting()} 与
+     * {@code InputMethodBindingController.getSupportsStylusHandwriting()} 里面 ——
+     * 前者是 MIUI 设置页与 {@code HandwritingConfigManager} 都会调的方法，可能是主线程。
+     * 而 {@link #rebind} 要 {@code getRemotePreferences()} 走一次 binder 到 lspd；
+     * 在 system_server 主线程上等 binder，一旦 lspd 卡住就是整机卡顿（甚至 watchdog）。
+     *
+     * <p>所以这里只**触发**刷新：立刻打时间戳（避免每次调用都往下走）、
+     * 同一时刻只允许一次在途（避免热点路径把调用堆起来），真正的 binder 读放到独立线程。
+     * 代价是调用方这一次读到的仍是上一份快照 —— 快照本来就是低频自愈用的，可接受。
+     */
+    public static void refreshIfStale(final XposedInterface module, long maxAgeMs) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastRefreshAt < maxAgeMs) {
+            return;
+        }
+        lastRefreshAt = now;
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            executor().execute(() -> {
+                try {
+                    rebind(module);
+                } catch (Throwable ignored) {
+                    // rebind 内部已各自兜底；这里只保证 in-flight 标志一定被放开
+                } finally {
+                    refreshInFlight.set(false);
+                }
+            });
+        } catch (Throwable t) {
+            // 线程建不出来（极端情况）也不能让标志卡住，否则以后再也不刷新
+            refreshInFlight.set(false);
+        }
+    }
+
+    /**
+     * 显式触发一次后台刷新，不等节流。
+     *
+     * <p>给「会话开始」这类低频时机用：注入进程不一定收得到偏好变更通知，
+     * 靠 Hook 热点里的节流刷新又可能刚好卡在两次之间。
+     */
+    public static void refreshSoon(XposedInterface module) {
+        refreshIfStale(module, 0L);
+    }
+
+    /** 刷新线程：单线程、守护线程，名字带 fancypad 便于在 ps/日志里认出来。 */
+    private static java.util.concurrent.Executor executor() {
+        java.util.concurrent.Executor e = refreshExecutor;
+        if (e != null) {
+            return e;
+        }
+        synchronized (HookPrefs.class) {
+            if (refreshExecutor == null) {
+                refreshExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "fancypad-prefs");
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            return refreshExecutor;
+        }
+    }
+
+    /** 随手写总开关（读快照，不触发刷新）。 */
+    public static boolean stylusEnabled() {
+        return stylusEnabled;
+    }
+
+    /**
+     * 应用侧兼容兜底白名单。空列表 = 谁都不生效；作用域与这份列表必须同时命中。
+     */
+    public static boolean stylusAppAllowed(String pkg) {
+        String list = stylusApps;
+        if (list == null || list.trim().isEmpty() || pkg == null) {
+            return false;
+        }
+        for (String part : list.split("[,\\n]")) {
+            if (part.trim().equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean stylusToolbarEnabled() {
+        return stylusToolbarEnabled;
+    }
+
+
+    /** 停笔后触发识别的延迟（毫秒，clamp 到输入法自己的 50~1000 量程）。 */
+    public static float stylusDelayMs() {
+        return stylusDelayMs;
+    }
+
+    /**
+     * 让小爱进入随手写白名单（system_server 侧两个「声明」hook）。
+     *
+     * <p>带低频自愈刷新：system_server 是开机注入的，注入进程不一定收得到偏好变更通知。
+     */
+    public static boolean stylusWhitelist(XposedInterface module) {
+        refreshIfStale(module, STYLUS_REFRESH_MS);
+        return stylusWhitelist;
+    }
+
+    // ---- 随手写 · 笔迹显示（输入法进程的画布读这些） ----
+
+    /** 是否显示笔迹。 */
+    public static boolean stylusInkEnabled() {
+        return stylusInkEnabled;
+    }
+
+    /** 书写手势是否开启。 */
+    public static boolean stylusGestureEnabled() {
+        return stylusGestureEnabled;
+    }
+
+
+    /** 笔迹颜色（ARGB）。 */
+    public static int stylusInkColor() {
+        return stylusInkColor;
+    }
+
+    /** 笔迹线宽（px，直接用，不乘 density）。 */
+    public static float stylusInkWidthPx() {
+        return stylusInkWidthPx;
+    }
+
+
+
+
+    // ---- 右键菜单（目标应用进程侧） ----
+
+    public static boolean appMenuEnabled() {
+        return appMenuEnabled;
+    }
+
+    public static boolean appMenuWebviewEnabled() {
+        return appMenuWebviewEnabled;
+    }
+
+    /** 白名单为空 = 不限制；否则要求包名在列表里。 */
+    public static boolean appMenuAppAllowed(String pkg) {
+        String list = appMenuApps;
+        // **默认关闭**：没选任何应用 = 谁都不生效（用户要求）。
+        if (list == null || list.trim().isEmpty()) {
+            return false;
+        }
+        // 注意分隔符：App 侧用包名编解码器编码，是**换行**分隔；这里兼容逗号与换行
+        for (String part : list.split("[,\\n]")) {
+            if (part.trim().equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static float appMenuCornerDp() {
+        return appMenuCornerDp;
+    }
+
+    public static float appMenuTextSp() {
+        return appMenuTextSp;
+    }
+
+    public static float appMenuPaddingHDp() {
+        return appMenuPaddingHDp;
+    }
+
+    public static float appMenuPaddingVDp() {
+        return appMenuPaddingVDp;
+    }
+}

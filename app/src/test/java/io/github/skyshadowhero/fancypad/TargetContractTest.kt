@@ -1,5 +1,6 @@
 package io.github.skyshadowhero.fancypad
 
+import io.github.skyshadowhero.fancypad.hooks.Target
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue

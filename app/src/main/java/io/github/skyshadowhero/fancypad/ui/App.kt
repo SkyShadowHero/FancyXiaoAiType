@@ -17,12 +17,18 @@ import io.github.skyshadowhero.fancypad.PrefKeys
 import io.github.skyshadowhero.fancypad.RemoteConfig
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
+import io.github.skyshadowhero.fancypad.ui.navigation.BottomBarStyle
+import io.github.skyshadowhero.fancypad.ui.navigation.AppShell
+import io.github.skyshadowhero.fancypad.ui.navigation.RouteHome
+import io.github.skyshadowhero.fancypad.ui.theme.AppTheme
+import io.github.skyshadowhero.fancypad.ui.theme.ThemeMode
 
 /**
  * 顶层 UI 状态：跨页面共享（配置值；导航状态由 miuix-nav 的路由栈持有）。
  */
 class AppUiState {
     var themeMode by mutableIntStateOf(0)
+    var bottomBarStyle by mutableIntStateOf(PrefKeys.BOTTOM_BAR_STYLE_DEFAULT)
 
     var gapEnabled by mutableStateOf(false)
     var gapLand by mutableStateOf(284f)
@@ -52,6 +58,7 @@ class AppUiState {
     // ---- 悬浮键盘：圆角（工具栏与候选窗口共用）----
     var floatBarEnabled by mutableStateOf(false)
     var floatBarCornerDp by mutableStateOf(PrefKeys.FLOATBAR_CORNER_DEFAULT)
+    var floatBarUnifiedShadow by mutableStateOf(false)
 
     // ---- 悬浮键盘：工具栏 ----
     var toolbarShadowDp by mutableStateOf(PrefKeys.TOOLBAR_SHADOW_DEFAULT)
@@ -90,9 +97,9 @@ class AppUiState {
 
     // ---- 平行窗口动画（原 os4平行窗口动画fix模块，作用域 com.android.systemui）----
     var embeddingEnabled by mutableStateOf(false)
-    var embeddingFolmeDisable by mutableStateOf(true)
-    var embeddingMergeDisable by mutableStateOf(true)
-    var embeddingJumpCutDisable by mutableStateOf(true)
+    var embeddingFolmeDisable by mutableStateOf(false)
+    var embeddingMergeDisable by mutableStateOf(false)
+    var embeddingJumpCutDisable by mutableStateOf(false)
 
     // ---- 平行视界分栏无级（作用域各目标 App，与右键菜单一致）----
     var embeddingRatioEnabled by mutableStateOf(false)
@@ -101,12 +108,11 @@ class AppUiState {
     var embeddingRatioMax by mutableStateOf(0.65f)
 
     // ---- 一镜到底（HyperViewScale，作用域 system + 各目标 App）----
-    /** 默认开：平板本来就有完整实现，只是被 `!Build.IS_TABLET` 挡掉。 */
-    var hyperViewScaleEnabled by mutableStateOf(true)
+    var hyperViewScaleEnabled by mutableStateOf(false)
 
     // ---- 小窗控制器（作用域 com.android.systemui）----
-    /** 小窗控制器总开关（默认开）：关掉后这一域所有设置全部失效、回到系统原样。 */
-    var captionEnabled by mutableStateOf(true)
+    /** 小窗控制器总开关；关掉后这一域所有设置全部失效、回到系统原样。 */
+    var captionEnabled by mutableStateOf(false)
     /** 把控制菜单里「关闭」按钮的 × 图标换成 −（只换图标，点击行为不变）。 */
     var captionCloseAsMinus by mutableStateOf(false)
 
@@ -131,7 +137,7 @@ class AppUiState {
 
     // ---- 右键菜单（作用域 = 目标应用自身；菜单由应用自己 PopupWindow 弹出）----
     var appMenuEnabled by mutableStateOf(false)
-    var appMenuWebviewEnabled by mutableStateOf(true)
+    var appMenuWebviewEnabled by mutableStateOf(false)
     var appMenuApps by mutableStateOf("")
     var appMenuCornerDp by mutableStateOf(PrefKeys.APPMENU_CORNER_DEFAULT)
     var appMenuTextSp by mutableStateOf(PrefKeys.APPMENU_TEXT_DEFAULT)
@@ -144,18 +150,19 @@ class AppUiState {
     // res/xml/method.xml 里没有 android:supportsStylusHandwriting="true"，
     // 系统因此从不把手写会话交给它。
     var stylusEnabled by mutableStateOf(false)
+    /** 应用侧 WebView / 自绘编辑器兼容兜底白名单。 */
+    var stylusApps by mutableStateOf(PrefKeys.STYLUS_APPS_DEFAULT)
+    var stylusToolbarEnabled by mutableStateOf(false)
     var stylusDelayMs by mutableStateOf(PrefKeys.STYLUS_DELAY_DEFAULT)
 
     // ---- 笔迹显示（画布挂在框架的手写窗口里，满宽一条横带、跟着落笔点走）----
-    var stylusInkEnabled by mutableStateOf(true)
+    var stylusInkEnabled by mutableStateOf(false)
     var stylusInkColor by mutableIntStateOf(PrefKeys.STYLUS_INK_COLOR_DEFAULT)
     var stylusInkWidthPx by mutableStateOf(PrefKeys.STYLUS_INK_WIDTH_DEFAULT)
     var stylusGestureEnabled by mutableStateOf(false)
-    var stylusIflytek by mutableStateOf(true)
 
-    // 系统侧配合（system_server 进程，作用域 system）。默认开：
-    // 关掉它会让 MIUI 设置页里的随手写开关打不开（死锁），见 PrefKeys 的注释。
-    var stylusWhitelist by mutableStateOf(true)
+    // 系统侧配合（system_server 进程，作用域 system）。
+    var stylusWhitelist by mutableStateOf(false)
 
 
 
@@ -311,6 +318,10 @@ private fun loadConfigInto(uiState: AppUiState) {
 
     uiState.themeMode = p.runCatching { getInt(PrefKeys.THEME_MODE, 0) }.getOrDefault(0)
         .coerceIn(0, ThemeMode.entries.size - 1)
+    uiState.bottomBarStyle = p.runCatching {
+        getInt(PrefKeys.BOTTOM_BAR_STYLE, PrefKeys.BOTTOM_BAR_STYLE_DEFAULT)
+    }.getOrDefault(PrefKeys.BOTTOM_BAR_STYLE_DEFAULT)
+        .coerceIn(0, BottomBarStyle.entries.lastIndex)
 
     // ---- 悬浮候选词窗口 ----
     uiState.candidateEnabled = p.runCatching { getBoolean(PrefKeys.CANDIDATE_ENABLED, false) }
@@ -328,6 +339,9 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.floatBarCornerDp = p.runCatching {
         getFloat(PrefKeys.FLOATBAR_CORNER_DP, PrefKeys.FLOATBAR_CORNER_DEFAULT)
     }.getOrDefault(PrefKeys.FLOATBAR_CORNER_DEFAULT)
+    uiState.floatBarUnifiedShadow = p.runCatching {
+        getBoolean(PrefKeys.FLOATBAR_UNIFIED_SHADOW, false)
+    }.getOrDefault(false)
 
     // ---- 悬浮键盘：工具栏 ----
     uiState.toolbarShadowDp = p.runCatching {
@@ -407,18 +421,18 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.cursorEnabled = p.runCatching { getBoolean(PrefKeys.CURSOR_ENABLED, false) }
         .getOrDefault(false)
 
-    // ---- 平行窗口动画（总开关默认关闭；子项保持开启，打开总开关即生效）----
+    // ---- 平行窗口动画（所有开关默认关闭）----
     uiState.embeddingEnabled = p.runCatching { getBoolean(PrefKeys.EMBEDDING_ENABLED, false) }
         .getOrDefault(false)
     uiState.embeddingFolmeDisable = p.runCatching {
-        getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.EMBEDDING_FOLME_DISABLE, false)
+    }.getOrDefault(false)
     uiState.embeddingMergeDisable = p.runCatching {
-        getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.EMBEDDING_MERGE_DISABLE, false)
+    }.getOrDefault(false)
     uiState.embeddingJumpCutDisable = p.runCatching {
-        getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.EMBEDDING_JUMPCUT_DISABLE, false)
+    }.getOrDefault(false)
     uiState.embeddingRatioEnabled = p.runCatching {
         getBoolean(PrefKeys.EMBEDDING_RATIO_ENABLED, false)
     }.getOrDefault(false)
@@ -432,15 +446,15 @@ private fun loadConfigInto(uiState: AppUiState) {
         getFloat(PrefKeys.EMBEDDING_RATIO_MAX, 0.65f)
     }.getOrDefault(0.65f)
 
-    // ---- 一镜到底（默认开）----
+    // ---- 一镜到底（默认关闭）----
     uiState.hyperViewScaleEnabled = p.runCatching {
-        getBoolean(PrefKeys.HYPER_VIEW_SCALE_ENABLED, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.HYPER_VIEW_SCALE_ENABLED, false)
+    }.getOrDefault(false)
 
-    // ---- 小窗控制器（默认：总开关开、各功能关）----
+    // ---- 小窗控制器（所有功能开关默认关闭）----
     uiState.captionEnabled = p.runCatching {
-        getBoolean(PrefKeys.CAPTION_ENABLED, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.CAPTION_ENABLED, false)
+    }.getOrDefault(false)
     uiState.captionCloseAsMinus = p.runCatching {
         getBoolean(PrefKeys.CAPTION_CLOSE_AS_MINUS, false)
     }.getOrDefault(false)
@@ -467,8 +481,8 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.appMenuEnabled = p.runCatching { getBoolean(PrefKeys.APPMENU_ENABLED, false) }
         .getOrDefault(false)
     uiState.appMenuWebviewEnabled = p.runCatching {
-        getBoolean(PrefKeys.APPMENU_WEBVIEW_ENABLED, true)
-    }.getOrDefault(true)
+        getBoolean(PrefKeys.APPMENU_WEBVIEW_ENABLED, false)
+    }.getOrDefault(false)
     uiState.appMenuApps = p.runCatching { getString(PrefKeys.APPMENU_APPS, "") }
         .getOrNull().orEmpty()
     uiState.appMenuCornerDp = p.runCatching {
@@ -487,16 +501,21 @@ private fun loadConfigInto(uiState: AppUiState) {
     // ---- 随手写（默认关闭：实验功能，不改变输入法默认行为）----
     uiState.stylusEnabled = p.runCatching { getBoolean(PrefKeys.STYLUS_ENABLED, false) }
         .getOrDefault(false)
+    uiState.stylusApps = p.runCatching {
+        getString(PrefKeys.STYLUS_APPS, PrefKeys.STYLUS_APPS_DEFAULT)
+    }.getOrNull() ?: PrefKeys.STYLUS_APPS_DEFAULT
+    uiState.stylusToolbarEnabled = p.runCatching {
+        getBoolean(PrefKeys.STYLUS_TOOLBAR_ENABLED, false)
+    }.getOrDefault(false)
     uiState.stylusDelayMs = p.runCatching {
         getFloat(PrefKeys.STYLUS_DELAY_MS, PrefKeys.STYLUS_DELAY_DEFAULT)
     }.getOrDefault(PrefKeys.STYLUS_DELAY_DEFAULT)
-    // 这两个默认 true：缺键时必须走"开"，否则系统设置里的随手写打不开（见 PrefKeys 注释）
-    uiState.stylusWhitelist = p.runCatching { getBoolean(PrefKeys.STYLUS_WHITELIST, true) }
-        .getOrDefault(true)
+    uiState.stylusWhitelist = p.runCatching { getBoolean(PrefKeys.STYLUS_WHITELIST, false) }
+        .getOrDefault(false)
 
     // ---- 笔迹显示 ----
-    uiState.stylusInkEnabled = p.runCatching { getBoolean(PrefKeys.STYLUS_INK_ENABLED, true) }
-        .getOrDefault(true)
+    uiState.stylusInkEnabled = p.runCatching { getBoolean(PrefKeys.STYLUS_INK_ENABLED, false) }
+        .getOrDefault(false)
     uiState.stylusInkColor = p.runCatching {
         getInt(PrefKeys.STYLUS_INK_COLOR, PrefKeys.STYLUS_INK_COLOR_DEFAULT)
     }.getOrDefault(PrefKeys.STYLUS_INK_COLOR_DEFAULT)
@@ -506,7 +525,4 @@ private fun loadConfigInto(uiState: AppUiState) {
     uiState.stylusGestureEnabled = p.runCatching {
         getBoolean(PrefKeys.STYLUS_GESTURE_ENABLED, false)
     }.getOrDefault(false)
-    uiState.stylusIflytek = p.runCatching {
-        getBoolean(PrefKeys.STYLUS_IFLYTEK, true)
-    }.getOrDefault(true)
 }

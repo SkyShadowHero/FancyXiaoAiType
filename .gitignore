@@ -27,3 +27,6 @@ mapping.txt
 keystore.properties
 *.jks
 *.keystore
+
+# 本地构建缓存 / 临时分析产物
+.workbuddy/

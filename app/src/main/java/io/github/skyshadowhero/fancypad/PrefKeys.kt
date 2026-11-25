@@ -22,6 +22,10 @@ object PrefKeys {
     /** 主题模式（ThemeMode 序号），跨启动记忆 */
     const val THEME_MODE = "theme_mode"
 
+    /** 竖屏/窄屏底栏样式：0 = Miuix OS4 玻璃，1 = 经典胶囊。 */
+    const val BOTTOM_BAR_STYLE = "bottom_bar_style"
+    const val BOTTOM_BAR_STYLE_DEFAULT = 0
+
     // ---- 按键圆角（不分横竖屏，统一一个值） ----
     const val CORNER_ENABLED = "corner_enabled"
     const val CORNER_DP = "corner_dp"
@@ -127,9 +131,15 @@ object PrefKeys {
     const val FLOATBAR_CORNER_MAX = 48f
     const val FLOATBAR_CORNER_DEFAULT = 16f
 
+    /** 工具栏（展开态与 mini）和候选窗口使用同一套自绘阴影（默认关闭）。 */
+    const val FLOATBAR_UNIFIED_SHADOW = "floatbar_unified_shadow"
+
+    /** 随手写面板 `setShadowLayer` 的模糊半径为 14dp。 */
+    const val FLOATBAR_UNIFIED_SHADOW_DP = 14f
+
     // ---- 工具栏 ----
 
-    /** 工具栏阴影（dip），默认 8dp */
+    /** 工具栏独立阴影（dip）；仅在 [FLOATBAR_UNIFIED_SHADOW] 关闭时使用。 */
     const val TOOLBAR_SHADOW_DP = "toolbar_shadow_dp"
 
     /** 按钮间距（dip），默认 20dp */
@@ -182,7 +192,7 @@ object PrefKeys {
     /** 拼音行下边距（dip），默认 8dp */
     const val CAND_WIN_PINYIN_BOTTOM_DP = "candwin_pinyin_bottom_dp"
 
-    /** 候选窗口阴影（dip），默认 3dp */
+    /** 候选窗口独立阴影（dip）；仅在 [FLOATBAR_UNIFIED_SHADOW] 关闭时使用。 */
     const val CAND_WIN_SHADOW_DP = "candwin_shadow_dp"
 
     /** 候选词之间的间距（dip），默认 22dp */
@@ -410,7 +420,7 @@ object PrefKeys {
     const val EMBEDDING_RATIO_STEP = 0.01f
 
     /**
-     * 平行视界无级调节的生效应用白名单（换行分隔的包名，编解码见 MaterialPackages）。
+     * 平行视界无级调节的生效应用白名单（换行分隔的包名，编解码见 [PackageListCodec]）。
      * 空 = 谁都不生效；hook 侧按当前进程包名判断，与右键菜单 APPMENU_APPS 同款。
      */
     const val EMBEDDING_RATIO_APPS = "embedding_ratio_apps"
@@ -425,11 +435,9 @@ object PrefKeys {
     // ==================================================================
 
     /**
-     * 小窗控制器**总开关**（默认开）。
+     * 小窗控制器**总开关**（默认关闭）。
      *
      * 关掉后这一页所有设置立即失效，完全回到 HyperOS 原样（Hook 侧三处拦截点全部直接放行）。
-     * 默认开是因为下面每个功能各自还有独立开关、默认都关，所以开着总开关也不会改变任何行为，
-     * 但能让单独打开的开关立刻生效，不用再记得先开总闸。
      */
     const val CAPTION_ENABLED = "caption_enabled"
 
@@ -583,7 +591,7 @@ object PrefKeys {
     // 就是把这三种闸的返回值改成 true，动画本体仍由 ROM 执行。
     // ==================================================================
 
-    /** 一镜到底总开关（默认开：这是 OS4 已有能力，只是平板被机型判断挡掉了） */
+    /** 一镜到底总开关（默认关闭）。 */
     const val HYPER_VIEW_SCALE_ENABLED = "hyper_view_scale_enabled"
 
     /**
@@ -617,6 +625,19 @@ object PrefKeys {
     const val STYLUS_ENABLED = "stylus_enabled"
 
     /**
+     * 应用侧编辑器兼容兜底的生效应用（换行分隔包名）。
+     *
+     * LSPosed 作用域只决定模块能否注入；本列表进一步决定注入后是否放开该应用里被 ROM
+     * 禁用的 WebView / 自绘编辑器。默认只保留原先已单独适配的小米便签，避免升级后突然
+     * 对所有已加入作用域的应用生效。
+     */
+    const val STYLUS_APPS = "stylus_apps"
+    const val STYLUS_APPS_DEFAULT = "com.miui.notes"
+
+    /** 是否显示搜狗样式的可拖动操作工具栏（默认关闭）；关闭不影响识别与文字上屏。 */
+    const val STYLUS_TOOLBAR_ENABLED = "stylus_toolbar_enabled"
+
+    /**
      * 停笔后触发识别的延迟（毫秒）。
      *
      * 输入法自己的 `handwriting_recognition_delay` 量程是 50~1000（默认 500）；
@@ -632,7 +653,7 @@ object PrefKeys {
     const val STYLUS_DELAY_DEFAULT = 500f
 
     /**
-     * **让小爱进入系统的「随手写白名单」**（默认**开启**）。
+     * **让小爱进入系统的「随手写白名单」**（默认关闭）。
      *
      * 对应 system_server 侧两个 hook：`InputMethodInfo.supportsStylusHandwriting()`
      * 与 `InputMethodBindingController.getSupportsStylusHandwriting()` —— 也就是
@@ -643,9 +664,8 @@ object PrefKeys {
      * = 百度 / 搜狗 / 讯飞，**不含小爱**），系统据此决定谁能接随手写、以及"不支持"时把用户切给谁。
      * 打开这个开关等于把小爱补进那份白名单的效果。
      *
-     * ⚠ 默认**开**是有原因的，不是随手定的：真机验证过「关掉它 → 死锁」——
-     * 小爱被标为不支持 → MIUI 设置页里那个「随手写」开关**根本打不开** →
-     * 用户也就不会去动这个开关 → 回到不支持的起点。所以声明必须是默认开的。
+     * ⚠ 使用随手写时应先显式打开本项：关着时小爱被标为不支持，MIUI 设置页里的
+     * 「随手写」开关会打不开。
      */
     const val STYLUS_WHITELIST = "stylus_whitelist"
 
@@ -658,7 +678,7 @@ object PrefKeys {
     // 所以「书写区域高度」是那条带子的高度，不是窗口高度。
     // ==================================================================
 
-    /** 是否显示笔迹（默认开启：没有笔迹反馈的随手写很难用）。 */
+    /** 是否显示笔迹（默认关闭）。 */
     const val STYLUS_INK_ENABLED = "stylus_ink_enabled"
 
     /**
@@ -710,15 +730,12 @@ object PrefKeys {
     const val STYLUS_GESTURE_ENABLED = "stylus_gesture_enabled"
 
     // ==================================================================
-    // 随手写 · 识别引擎选择
+    // 随手写 · 识别引擎
     //
-    // 小爱自带两条识别路线：**讯飞 HCR**（商用、输入原始笔迹、逐点喂）与
-    // **系统笔引擎**（`ocr_model.tflite`，实测输入是 64 个整数的定长序列、只出 top-4，
-    // 拿它做 3755 类汉字识别天花板很低）。讯飞那条平时只有小爱切到手写键盘才被初始化，
-    // 打开这个开关我们**自己把它拉起来**（不切键盘），识别立刻换成它。
+    // 只用**系统笔引擎**（`/system_ext/framework/xiaomi-pencilengine-pad.jar`
+    // + `/system_ext/etc/ocr_model.tflite`，见 [PencilEngine]）。
+    //
+    // 曾经还有一条「借小爱自带讯飞 HCR」的路线（反射它的混淆类 `v4.x`），已整体删除：
+    // 那条路要吃小爱内部实现、随版本改名就断，而且和系统笔引擎抢同一份引擎状态。
     // ==================================================================
-
-
-    /** 优先使用小爱自带的讯飞手写引擎（默认开：这是识别质量的关键）。 */
-    const val STYLUS_IFLYTEK = "stylus_iflytek"
 }
