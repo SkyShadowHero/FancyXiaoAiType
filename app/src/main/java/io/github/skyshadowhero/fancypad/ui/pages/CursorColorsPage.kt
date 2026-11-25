@@ -91,9 +91,9 @@ fun CursorColorsPage(
     }
 }
 
-/** 顶栏副标题：改动即时生效 + 当前主题（由外壳调用） */
+/** 顶栏副标题：改动重启后生效 + 当前主题（由外壳调用） */
 internal fun cursorColorsSubtitle(): String =
-    "改动即时生效 · ${themeLabelOf(cursorState.preset)}"
+    "改动重启后生效 · ${themeLabelOf(cursorState.preset)}"
 
 @Composable
 private fun colorPickerCard(state: CursorUiState, isFill: Boolean) {

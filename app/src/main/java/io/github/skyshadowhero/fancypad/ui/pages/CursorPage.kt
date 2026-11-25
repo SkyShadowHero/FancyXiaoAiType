@@ -98,7 +98,7 @@ fun CursorPresetPage(
                     onCheckedChange = onCursorEnabledChange,
                     title = "接管系统光标",
                     summary = if (state.bound) {
-                        "已连接 LSPosed · 改动即时生效"
+                        "已连接 LSPosed · 改动重启后生效"
                     } else {
                         "未连接 LSPosed（模块未启用？）"
                     },

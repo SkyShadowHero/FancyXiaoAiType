@@ -19,6 +19,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
@@ -138,6 +139,7 @@ class StylusToolbar {
 
     /** 拖动时临时摘掉，避免系统继续用按下前的旧面板矩形做窗口命中。 */
     private var insetsListenerInstalled = false
+    private var insetsObserver: ViewTreeObserver? = null
 
     // ---- 退格长按连发（搜狗：60ms 起，每发减 1ms，最快 5ms） ----
     private val repeatHandler = Handler(Looper.getMainLooper())
@@ -190,8 +192,12 @@ class StylusToolbar {
 
     private fun applyTouchRegion(info: Any?) {
         if (info == null) return
+        val r = root ?: return
+        // panel 始终是 root 的子 View；仅检查 panel.parent 会在 root 已从 IME 窗口移除后
+        // 继续上报旧矩形，导致普通键盘只有原工具栏区域能点击。
+        if (!r.isAttachedToWindow || r.parent == null) return
         val p = panel ?: return
-        if (p.width <= 0 || p.parent == null) return
+        if (p.width <= 0) return
         runCatching {
             val region = insetsInfoClass.getField("touchableRegion").get(info) as? Region ?: return
             val left = p.left + p.translationX.roundToInt()
@@ -205,7 +211,7 @@ class StylusToolbar {
     // ------------------------------------------------------------------ 对外
 
     val isShowing: Boolean
-        get() = panel?.parent != null
+        get() = root?.isAttachedToWindow == true
 
     fun show(ime: InputMethodService, editorInfo: android.view.inputmethod.EditorInfo?) {
         this.ime = ime
@@ -253,7 +259,7 @@ class StylusToolbar {
         L.i("event=stylus_toolbar_shown")
     }
 
-    fun hide() {
+    fun hide(forceImeTouchable: Boolean = false) {
         repeatHandler.removeCallbacksAndMessages(null)
         repeating = false
         repeatStarted = false
@@ -264,7 +270,6 @@ class StylusToolbar {
         hoveredAction = null
         pointerActive = false
         resetButtonFeedback()
-        restoreImeWindowTouchability()
         val r = root
         if (r != null) {
             r.animate().cancel()
@@ -278,6 +283,10 @@ class StylusToolbar {
         restoreKeyboardContent()
         suppressKeyboardPopups = false
         restoreKeyboardPopupWindows()
+        // 切回软键盘时必须明确清掉 NOT_TOUCHABLE；普通退出（例如连接实体键盘）则仍按
+        // 进入前状态恢复，避免改变系统原本的窗口策略。
+        restoreImeWindowTouchability(forceTouchable = forceImeTouchable)
+        requestImeInsetsRefresh()
         L.i("event=stylus_toolbar_hidden")
     }
 
@@ -777,16 +786,22 @@ class StylusToolbar {
         overlay.invalidate()
     }
 
-    private fun restoreImeWindowTouchability() {
-        val window = stylusImeWindow
+    private fun restoreImeWindowTouchability(forceTouchable: Boolean = false) {
+        val window = stylusImeWindow ?: if (forceTouchable) {
+            runCatching { ime?.window?.window }.getOrNull()
+        } else {
+            null
+        }
         val wasNotTouchable = imeWindowWasNotTouchable
-        if (window != null && wasNotTouchable != null) {
+        if (window != null) {
             runCatching {
-                if (wasNotTouchable) {
+                if (!forceTouchable && wasNotTouchable == true) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                 }
+                window.decorView.requestLayout()
+                window.decorView.requestApplyInsets()
             }
         }
         stylusImeWindow = null
@@ -1146,7 +1161,9 @@ class StylusToolbar {
                 palette?.let { colors ->
                     handle?.setImageDrawable(StylusToolbarDrawables.handle(p.context, pressed = false, colors))
                 }
-                root?.let(::installInsetsListener)
+                // KEYBOARD 动作会在上面的回调中移除 root；此时不能把限定面板矩形的
+                // listener 又装回去，否则普通键盘仍只剩原工具栏区域可点击。
+                if (isShowing) root?.let(::installInsetsListener)
             }
         }
     }
@@ -1202,13 +1219,15 @@ class StylusToolbar {
     // ------------------------------------------------------------------ 可触摸区域
 
     private fun installInsetsListener(r: View) {
-        if (insetsListenerInstalled) return
+        val observer = r.viewTreeObserver
+        if (insetsListenerInstalled && insetsObserver === observer && observer.isAlive) return
+        if (insetsListenerInstalled) uninstallInsetsListener(r)
         runCatching {
-            val vto = r.viewTreeObserver
-            vto.javaClass.getMethod("addOnComputeInternalInsetsListener", insetsListenerClass)
-                .invoke(vto, insetsListener)
+            observer.javaClass.getMethod("addOnComputeInternalInsetsListener", insetsListenerClass)
+                .invoke(observer, insetsListener)
         }.onSuccess {
             insetsListenerInstalled = true
+            insetsObserver = observer
             r.requestLayout()
         }.onFailure { L.w("event=stylus_toolbar_insets_failed msg=${it.message}") }
     }
@@ -1216,11 +1235,28 @@ class StylusToolbar {
     private fun uninstallInsetsListener(r: View) {
         if (!insetsListenerInstalled) return
         runCatching {
-            val vto = r.viewTreeObserver
-            vto.javaClass.getMethod("removeOnComputeInternalInsetsListener", insetsListenerClass)
-                .invoke(vto, insetsListener)
-        }
+            val observer = insetsObserver ?: r.viewTreeObserver
+            if (observer.isAlive) {
+                observer.javaClass.getMethod("removeOnComputeInternalInsetsListener", insetsListenerClass)
+                    .invoke(observer, insetsListener)
+            }
+        }.onFailure { L.w("event=stylus_toolbar_insets_remove_failed msg=${it.message}") }
         insetsListenerInstalled = false
+        insetsObserver = null
+    }
+
+    /** 让 InputMethodService 自己的 Insets 监听器重新上报完整键盘触摸区域。 */
+    private fun requestImeInsetsRefresh() {
+        val decor = runCatching { ime?.window?.window?.decorView }.getOrNull() ?: return
+        decor.requestLayout()
+        decor.requestApplyInsets()
+        // hide() 从按钮的触摸回调内执行，再补一帧可避免当前事件分发保留旧 region。
+        decor.post {
+            if (!isShowing) {
+                decor.requestLayout()
+                decor.requestApplyInsets()
+            }
+        }
     }
 
     private companion object {
