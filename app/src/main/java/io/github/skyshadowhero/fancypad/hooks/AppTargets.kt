@@ -1,6 +1,9 @@
 package io.github.skyshadowhero.fancypad.hooks
 
 import io.github.skyshadowhero.fancypad.*
+import dalvik.system.DexFile
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 /**
  * 按输入法版本分档的混淆目标。
@@ -63,6 +66,14 @@ data class AppTargets(
     }
 }
 
+/** 悬浮键盘尺寸解锁只依赖夹取工具，不必与其它混淆目标绑在同一版本档。 */
+data class ClampTarget(
+    val label: String,
+    val className: String,
+    val floatMethod: String,
+    val intMethod: String,
+)
+
 // ---------------------------------------------------------------- 结构校验
 
 private fun loadOrNull(cl: ClassLoader, name: String): Class<*>? =
@@ -110,11 +121,13 @@ private fun hasClampShape(cl: ClassLoader, name: String): Boolean {
     val c = loadOrNull(cl, name) ?: return false
     return try {
         val f = c.declaredMethods.any {
+            Modifier.isStatic(it.modifiers) &&
             it.parameterCount == 3 &&
                 it.returnType == Float::class.javaPrimitiveType &&
                 it.parameterTypes.all { p -> p == Float::class.javaPrimitiveType }
         }
         val i = c.declaredMethods.any {
+            Modifier.isStatic(it.modifiers) &&
             it.parameterCount == 3 &&
                 it.returnType == Int::class.javaPrimitiveType &&
                 it.parameterTypes.all { p -> p == Int::class.javaPrimitiveType }
@@ -132,6 +145,21 @@ private fun hasClampShape(cl: ClassLoader, name: String): Boolean {
  * 加档时要填全：类名、方法名、以及诊断用的字段名。
  */
 object TargetCatalog {
+
+    /**
+     * 0.2.1448：夹取工具与分离键盘数据类再次改名；prefs 门面仍为 `j9.e`。
+     * `j9.e` 已不再提供单独的 split getter，但该字段没有参与当前 Hook。
+     */
+    private val V1448 = AppTargets(
+        label = "0.2.1448",
+        padSplitDims = "pa.n",
+        prefFacade = "j9.e",
+        clampUtil = "hi.c",
+        mPrefBool = "a",
+        mSplitGetter = "",
+        mClampFloat = "E",
+        mClampInt = "F",
+    )
 
     /** 0.2.910 与 0.2.974 的混淆名相同，合并为一档。 */
     private val V910_974 = AppTargets(
@@ -197,7 +225,7 @@ object TargetCatalog {
         mClampInt = "o",
     )
 
-    val known: List<AppTargets> = listOf(V1363, V1246, V1053, V910_974)
+    val known: List<AppTargets> = listOf(V1448, V1363, V1246, V1053, V910_974)
 
     /** 满分 = [AppTargets.score] 里实际校验的项数。 */
     private const val MAX_SCORE = 3
@@ -216,8 +244,34 @@ object TargetCatalog {
     @Volatile
     private var attempted = false
 
+    /** 当前目标 APK 的 dex 路径，供未知版本自动发现夹取工具。 */
+    @Volatile
+    private var dexPaths: List<String> = emptyList()
+
+    @Volatile
+    private var discoveredClamps: List<ClampTarget>? = null
+
+    @Volatile
+    private var clampDiscoveryAttempted = false
+
     /** 已经挑中的档位；未解析或未知版本时为 null。 */
     val active: AppTargets? get() = resolved
+
+    /** 在 `onPackageReady` 传入，不依赖此时尚未创建的 Application。 */
+    fun configureDexPaths(baseApk: String?, splitApks: Array<String>?) {
+        val paths = buildList {
+            if (!baseApk.isNullOrBlank()) add(baseApk)
+            splitApks?.filterTo(this) { it.isNotBlank() }
+        }.distinct()
+        if (paths == dexPaths) return
+        synchronized(this) {
+            if (paths != dexPaths) {
+                dexPaths = paths
+                discoveredClamps = null
+                clampDiscoveryAttempted = false
+            }
+        }
+    }
 
     /**
      * 挑出匹配当前输入法版本的档位并缓存。
@@ -273,4 +327,128 @@ object TargetCatalog {
             return target
         }
     }
+
+    /**
+     * 单独解析悬浮键盘的夹取工具。
+     *
+     * 已知版本直接使用表中目标；若以后只有其它类改名，则从所有已知夹取目标中独立匹配。
+     * 若连夹取类也改名，则枚举目标 APK 中的短混淆类，并通过方法签名和实际夹取语义发现
+     * `(float,float,float)->float` / `(int,int,int)->int` 方法，不再要求每次先补整套版本档。
+     */
+    fun resolveClampTargets(cl: ClassLoader, selected: AppTargets?): List<ClampTarget> {
+        selected?.toClampTarget()?.takeIf { it.matches(cl) }?.let { return listOf(it) }
+
+        val knownMatches = known
+            .map { it.toClampTarget() }
+            .distinctBy { it.className to it.floatMethod }
+            .filter { it.matches(cl) }
+        if (knownMatches.isNotEmpty()) {
+            L.i("event=clamp_resolved_independently targets=${knownMatches.joinToString { it.className }}")
+            return knownMatches
+        }
+
+        discoveredClamps?.let { return it }
+        synchronized(this) {
+            discoveredClamps?.let { return it }
+            if (clampDiscoveryAttempted || dexPaths.isEmpty()) return emptyList()
+            clampDiscoveryAttempted = true
+            val found = discoverClampTargets(cl, dexPaths)
+            discoveredClamps = found
+            if (found.isEmpty()) {
+                L.w("event=clamp_discovery_empty paths=${dexPaths.size}")
+            } else {
+                L.i(
+                    "event=clamp_discovered targets=" +
+                        found.joinToString { "${it.className}.${it.floatMethod}/${it.intMethod}" },
+                )
+            }
+            return found
+        }
+    }
+
+    private fun AppTargets.toClampTarget() = ClampTarget(
+        label = label,
+        className = clampUtil,
+        floatMethod = mClampFloat,
+        intMethod = mClampInt,
+    )
+
+    private fun ClampTarget.matches(cl: ClassLoader): Boolean {
+        val cls = loadOrNull(cl, className) ?: return false
+        return try {
+            cls.declaredMethods.any { it.name == floatMethod && it.isFloatClampShape() } &&
+                cls.declaredMethods.any { it.name == intMethod && it.isIntClampShape() }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** R8 的短类名过滤；避免未知版本时反射加载整个输入法及第三方 SDK。 */
+    private val shortObfuscatedName = Regex("^[a-z][a-z0-9]{0,5}\\.[a-z][a-z0-9]{0,5}$")
+
+    private fun discoverClampTargets(cl: ClassLoader, paths: List<String>): List<ClampTarget> {
+        val classNames = linkedSetOf<String>()
+        for (path in paths) {
+            var dex: DexFile? = null
+            try {
+                dex = DexFile(path)
+                val entries = dex.entries()
+                while (entries.hasMoreElements()) {
+                    val name = entries.nextElement()
+                    if (shortObfuscatedName.matches(name)) classNames += name
+                }
+            } catch (t: Throwable) {
+                L.w("event=dex_scan_failed path=$path error=${t.javaClass.simpleName}")
+            } finally {
+                runCatching { dex?.close() }
+            }
+        }
+
+        val found = mutableListOf<ClampTarget>()
+        for (name in classNames) {
+            val cls = loadOrNull(cl, name) ?: continue
+            val methods = try {
+                cls.declaredMethods
+            } catch (_: Throwable) {
+                continue
+            }
+            val floatMethods = methods.filter { it.isFloatClampShape() }
+            val intMethods = methods.filter { it.isIntClampShape() }
+            val floatClamp = floatMethods.firstOrNull { behavesAsFloatClamp(it) } ?: continue
+            val intClamp = intMethods.firstOrNull { behavesAsIntClamp(it) } ?: continue
+            found += ClampTarget(
+                label = "auto",
+                className = name,
+                floatMethod = floatClamp.name,
+                intMethod = intClamp.name,
+            )
+        }
+        return found.distinctBy { Triple(it.className, it.floatMethod, it.intMethod) }
+    }
+
+    private fun Method.isFloatClampShape(): Boolean =
+        Modifier.isStatic(modifiers) && parameterCount == 3 &&
+            returnType == Float::class.javaPrimitiveType &&
+            parameterTypes.all { it == Float::class.javaPrimitiveType }
+
+    private fun Method.isIntClampShape(): Boolean =
+        Modifier.isStatic(modifiers) && parameterCount == 3 &&
+            returnType == Int::class.javaPrimitiveType &&
+            parameterTypes.all { it == Int::class.javaPrimitiveType }
+
+    private fun behavesAsFloatClamp(method: Method): Boolean = runCatching {
+        method.isAccessible = true
+        val below = method.invoke(null, -1f, 0f, 1f) as Float
+        val middle = method.invoke(null, 0.5f, 0f, 1f) as Float
+        val above = method.invoke(null, 2f, 0f, 1f) as Float
+        below == 0f && middle == 0.5f && above == 1f
+    }.getOrDefault(false)
+
+    private fun behavesAsIntClamp(method: Method): Boolean = runCatching {
+        method.isAccessible = true
+        val below = method.invoke(null, -1, 0, 1) as Int
+        val middle = method.invoke(null, 1, 0, 2) as Int
+        val above = method.invoke(null, 3, 0, 2) as Int
+        below == 0 && middle == 1 && above == 2
+    }.getOrDefault(false)
 }

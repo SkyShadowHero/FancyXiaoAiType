@@ -180,6 +180,12 @@ class XposedEntry : XposedModule() {
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
+        if (param.packageName == Target.PACKAGE) {
+            TargetCatalog.configureDexPaths(
+                param.applicationInfo.sourceDir,
+                param.applicationInfo.splitSourceDirs,
+            )
+        }
         installForPackage(param.packageName, param.classLoader)
     }
 
@@ -392,10 +398,15 @@ class XposedEntry : XposedModule() {
         //    （圆角 / 间距 / 宽度 / 边距等）照常工作，日志里会明确提示。
         val t = TargetCatalog.resolve(cl)
         if (t == null) {
-            L.w("event=hooks_degraded reason=unknown_app_version 按类名定位的功能不可用")
+            L.w("event=hooks_degraded reason=unknown_app_version 分离键盘结构诊断不可用")
         } else {
             ok += hookPadSplitDims(cl, t)
-            ok += hookFloatingSize(cl, t)
+        }
+        val clampTargets = TargetCatalog.resolveClampTargets(cl, t)
+        if (clampTargets.isEmpty()) {
+            L.w("event=float_kb_hook_unavailable reason=clamp_not_found")
+        } else {
+            for (clamp in clampTargets) ok += hookFloatingSize(cl, clamp)
         }
 
         L.i("event=install_done hooks=$ok process=$processName appVersion=${t?.label ?: "unknown"}")
@@ -406,6 +417,8 @@ class XposedEntry : XposedModule() {
             buildString {
                 appendLine("process=$processName hooks=$ok")
                 appendLine("target=${t?.label ?: "unknown"} score=${t?.let { runCatching { it.score(cl) }.getOrDefault(-1) }}")
+                appendLine("clamps=${clampTargets.joinToString { "${it.className}.${it.floatMethod}/${it.intMethod}" }}")
+                appendLine("floatingUnlock=${FloatingSize.unlocked} maxScale=${FloatingSize.maxScale}")
                 for (c in TargetCatalog.known) {
                     appendLine("  candidate=${c.label} score=${runCatching { c.score(cl) }.getOrDefault(-1)}")
                 }
@@ -981,19 +994,20 @@ class XposedEntry : XposedModule() {
      * 只抬**上限**，下限原样保留 —— 下限决定键盘最小能缩多小，不该被影响。
      * 未解锁时一律原样透传，等于没装这个 hook。
      */
-    private fun hookFloatingSize(cl: ClassLoader, target: AppTargets): Int {
-        val util = loadClass(cl, target.clampUtil) ?: return 0
+    private fun hookFloatingSize(cl: ClassLoader, target: ClampTarget): Int {
+        val util = loadClass(cl, target.className) ?: return 0
         var ok = 0
+        val hookSuffix = target.className.replace('.', '_').replace('$', '_')
 
         // ---- 缩放倍率：(float, float, float) -> float ----
-        val clampFloat = findMethodByArity(util, target.mClampFloat, 3) {
+        val clampFloat = findMethodByArity(util, target.floatMethod, 3) {
             it.returnType == Float::class.javaPrimitiveType &&
                 it.parameterTypes.all { p -> p == Float::class.javaPrimitiveType }
         }
         if (clampFloat != null) {
             try {
                 hook(clampFloat)
-                    .setId("float_kb_scale")
+                    .setId("float_kb_scale_$hookSuffix")
                     .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                     .intercept { chain ->
                         val min = chain.getArg(1) as? Float
@@ -1020,14 +1034,14 @@ class XposedEntry : XposedModule() {
         }
 
         // ---- 窗口宽度：(int, int, int) -> int ----
-        val clampInt = findMethodByArity(util, target.mClampInt, 3) {
+        val clampInt = findMethodByArity(util, target.intMethod, 3) {
             it.returnType == Int::class.javaPrimitiveType &&
                 it.parameterTypes.all { p -> p == Int::class.javaPrimitiveType }
         }
         if (clampInt != null) {
             try {
                 hook(clampInt)
-                    .setId("float_kb_width")
+                    .setId("float_kb_width_$hookSuffix")
                     .setExceptionMode(XposedInterface.ExceptionMode.DEFAULT)
                     .intercept { chain ->
                         val lo = chain.getArg(1) as? Int
@@ -1053,7 +1067,7 @@ class XposedEntry : XposedModule() {
         }
 
         L.i(
-            "event=float_kb_hooks util=${target.clampUtil} " +
+            "event=float_kb_hooks version=${target.label} util=${target.className} " +
                 "scale=${if (clampFloat != null) "ok" else "missing"} " +
                 "width=${if (clampInt != null) "ok" else "missing"} " +
                 "unlock=${FloatingSize.unlocked} maxScale=${FloatingSize.maxScale}"

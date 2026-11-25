@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import io.github.skyshadowhero.fancypad.BuildConfig
@@ -22,6 +23,8 @@ import io.github.skyshadowhero.fancypad.data.UpdateRepository
 import io.github.skyshadowhero.fancypad.ui.ds.ArrowPreference
 import io.github.skyshadowhero.fancypad.ui.ds.Card
 import io.github.skyshadowhero.fancypad.ui.ds.SmallTitle
+import io.github.skyshadowhero.fancypad.ui.ds.SwitchPreference
+import io.github.skyshadowhero.fancypad.ui.utils.LauncherIcon
 import kotlinx.coroutines.launch
 
 private sealed interface UpdateUiState {
@@ -43,9 +46,11 @@ fun InfoPage(
     padding: PaddingValues,
     scaffoldPadding: PaddingValues,
 ) {
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val coroutineScope = rememberCoroutineScope()
     var updateState by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
+    var launcherIconHidden by remember { mutableStateOf(LauncherIcon.isHidden(context)) }
 
     fun checkForUpdates() {
         if (updateState == UpdateUiState.Checking) return
@@ -91,6 +96,20 @@ fun InfoPage(
                     title = "主题设置",
                     summary = "明暗模式与莫奈配色",
                     onClick = onTheme,
+                )
+            }
+        }
+
+        item { SmallTitle("应用") }
+        item {
+            Card {
+                SwitchPreference(
+                    checked = launcherIconHidden,
+                    onCheckedChange = { hidden ->
+                        launcherIconHidden = LauncherIcon.setHidden(context, hidden)
+                    },
+                    title = "隐藏桌面图标",
+                    summary = "隐藏后仍可从 LSPosed 管理器打开",
                 )
             }
         }

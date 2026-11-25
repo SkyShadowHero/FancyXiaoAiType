@@ -33,10 +33,25 @@
             android:theme="@style/Theme.Miuix">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- 不出现在桌面，但让 LSPosed 仍能找到并打开模块设置。 -->
+                <category android:name="android.intent.category.INFO" />
             </intent-filter>
         </activity>
 
+        <!-- 桌面入口单独放在 alias 上，设置页可只禁用它而不禁用真实 Activity。 -->
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".SettingsActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
     </application>
 
